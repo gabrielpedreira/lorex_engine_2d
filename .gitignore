@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+target/
+build.log
+*.log
+.vite/
+Thumbs.db
+desktop.ini
+.DS_Store
