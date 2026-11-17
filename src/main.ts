@@ -18,6 +18,8 @@ import type { FormaNova } from './editor/estado';
 import { icone, type ICONES } from './ui/icones';
 import { PainelPropriedades } from './ui/propriedades';
 import { ModoTeste } from './editor/testar';
+import { EditorPersonagens } from './ui/personagens';
+import { normalizarPersonagem, type Personagem } from './core/personagem';
 import { JOGADOR_PADRAO } from './core/fisica';
 import { TelaInicio } from './ui/inicio';
 import { CONFIG_PADRAO } from './plataforma/plataforma';
@@ -389,6 +391,7 @@ teste.aoIrPara = async (destino) => {
   teste.parar();
   if (!(await abrirFase(destino))) { estado.avisar(`Não consegui ir para ${destino}.`); return; }
   teste.config = { ...JOGADOR_PADRAO, ...(config.jogador ?? {}) };
+  await prepararPersonagemTeste();
   teste.levarInventario(inv);
   teste.iniciar();
   estado.avisar(`Chegou em ${estado.fase.nome}.`);
@@ -399,7 +402,28 @@ async function alternarTeste() {
   if (viewport.carimboAtivo) viewport.cancelarCarimbo();
   viewport.ferrColisao.cancelar();
   teste.config = { ...JOGADOR_PADRAO, ...(config.jogador ?? {}) };
+  await prepararPersonagemTeste();
   teste.iniciar();
+}
+
+/** Carrega o personagem animado escolhido para o teste (se houver). */
+async function prepararPersonagemTeste() {
+  let dados: Personagem | null = null;
+  if (config.personagemTeste) {
+    try { dados = normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', config.personagemTeste))); }
+    catch { estado.avisar(`Não achei o personagem ${config.personagemTeste}; testando com o retângulo provisório.`); }
+  }
+  try { await teste.definirPersonagem(dados, (folha) => viewport.textura(folha)); }
+  catch (err) { estado.avisar(`Não consegui carregar as animações: ${String(err)}`); await teste.definirPersonagem(null, (f) => viewport.textura(f)); }
+}
+
+// ---------- Personagens ----------
+const editorPersonagens = new EditorPersonagens(plat);
+editorPersonagens.aoAvisar = (m) => estado.avisar(m);
+editorPersonagens.aoDefinirTeste = (arquivo) => { config.personagemTeste = arquivo; salvarConfigDepois(); };
+async function abrirPersonagens() {
+  if (estado.testando) teste.parar();
+  await editorPersonagens.abrir(biblioteca.caminhos, config.personagemTeste ?? '');
 }
 
 async function atualizarListaFases() {
@@ -428,6 +452,8 @@ const itensTrilho: (ItemTrilho | 'sep')[] = [
     texto: 'Desenha onde o jogador pisa e esbarra. Ao escolher, aparece uma barra no topo do cenário com as formas (bloco, rampas, polígono, linha, mão livre) e o tipo (sólido ou atravessável).' },
   { id: 'inicio', modo: 'inicio', ico: 'bandeira', titulo: 'Início do jogador', atalho: 'I', acao: () => estado.definirModo('inicio'),
     texto: 'Clique no cenário onde ficam os pés da personagem quando a fase começa. A bandeira verde marca esse lugar.' },
+  { id: 'personagens', ico: 'personagem', titulo: 'Personagens', atalho: 'K', acao: () => void abrirPersonagens(),
+    texto: 'Monta personagens animados a partir dos spritesheets (parado, andando, pulando, caindo…), marca os pés e a caixa de colisão, e escolhe quem é o jogador no ▶ Testar.' },
   'sep',
   { id: 'testar', ico: 'play', titulo: 'Testar a fase', atalho: 'F5', acao: () => void alternarTeste(),
     texto: 'Jogue a fase agora: setas ou A/D para andar, Espaço, W ou ↑ para pular, R volta ao início, Esc volta ao editor.' },
@@ -560,7 +586,7 @@ function digitando(): boolean {
 }
 
 window.addEventListener('keydown', (e) => {
-  if (document.querySelector('.modal-fundo') || inicio.aberta) return;
+  if (document.querySelector('.modal-fundo') || inicio.aberta || editorPersonagens.aberta) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (ctrl && k === 's') { e.preventDefault(); void salvar(); return; }
@@ -598,6 +624,7 @@ window.addEventListener('keydown', (e) => {
       if (k === 't') alternarLateral();
       else if (k === 'v') estado.definirModo('selecionar');
       else if (k === 'h') estado.definirModo('mao');
+      else if (k === 'k') void abrirPersonagens();
       else if (k === 'x' && estado.modo === 'colisao') { estado.comportamentoNovo = estado.comportamentoNovo === 'solido' ? 'atravessavel' : 'solido'; atualizarOpcoesColisao(); }
       else if (k === 'c' && e.shiftKey) { estado.mostrarColisoes = !estado.mostrarColisoes; estado.emit('opcoes'); sincronizarAlternadores(); }
       else if (k === 'c') estado.definirModo(estado.modo === 'colisao' ? 'selecionar' : 'colisao');
@@ -628,6 +655,7 @@ plat.aoMudarProjeto(async (m) => {
     recarregandoBib = window.setTimeout(async () => { await biblioteca.recarregar(); ferramentas.definir(ferramentasAtuais, biblioteca.caminhos); }, 300);
     return;
   }
+  if (m.tipo === 'personagem') { await editorPersonagens.mudouPorFora(m.nome); return; }
   if (m.tipo === 'config') {
     config = { ...CONFIG_PADRAO, ...((await plat.lerConfigProjeto()) ?? {}) };
     ferramentasAtuais = config.ferramentas ?? [];

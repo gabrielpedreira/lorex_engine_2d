@@ -1,5 +1,6 @@
 // ▶ Testar: joga a fase dentro do editor, com o jogador correndo e pulando sobre as colisões desenhadas.
-import { Graphics } from 'pixi.js';
+import { Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
+import { ancoraPes, animacaoPara, estadoDoJogador, quadroEm, retanguloQuadro, type EstadoAnim, type Personagem } from '../core/personagem';
 import { Jogador, JOGADOR_PADRAO, montarSegmentos, type ConfigJogador, type Entrada, type Segmento } from '../core/fisica';
 import { MundoInterativo, type ResultadoInteracao } from '../core/comportamentos';
 import { el } from '../ui/dom';
@@ -30,6 +31,28 @@ export class ModoTeste {
   private timerToast = 0;
   /** Inventário levado para a próxima área ao passar por uma saída. */
   private inventarioLevado: Map<string, number> | null = null;
+
+  /** Personagem animado (null = retângulo provisório). */
+  private pers: { dados: Personagem; quadros: Map<EstadoAnim, Texture[]> } | null = null;
+  private spritePers = new Sprite(Texture.EMPTY);
+  private estadoAnim: EstadoAnim = 'parado';
+  private tempoAnim = 0;
+  private aterrissouHa = 9;
+  private estavaNoChao = false;
+
+  /** Prepara o personagem animado do teste. carregar = textura de uma folha (caminho relativo a jogo/). */
+  async definirPersonagem(dados: Personagem | null, carregar: (folha: string) => Promise<Texture>) {
+    if (!dados || !dados.animacoes.parado) { this.pers = null; return; }
+    const quadros = new Map<EstadoAnim, Texture[]>();
+    for (const [estado, anim] of Object.entries(dados.animacoes) as [EstadoAnim, NonNullable<Personagem['animacoes'][EstadoAnim]>][]) {
+      const base = await carregar(anim.folha);
+      quadros.set(estado, Array.from({ length: anim.quadros }, (_, i) => {
+        const r = retanguloQuadro(anim, base.width, i);
+        return new Texture({ source: base.source, frame: new Rectangle(r.x, r.y, Math.min(r.w, base.width - r.x), Math.min(r.h, base.height - r.y)) });
+      }));
+    }
+    this.pers = { dados, quadros };
+  }
 
   /** Saída para outra fase/área: o editor abre o destino e recomeça o teste lá. */
   aoIrPara: (destino: string) => void = () => {};
@@ -97,6 +120,7 @@ export class ModoTeste {
     this.viewport.aposSincronizar = null;
     this.grafico.removeFromParent();
     this.grafico.clear();
+    this.spritePers.removeFromParent();
     window.removeEventListener('keydown', this.tecla, true);
     window.removeEventListener('keyup', this.soltarTecla, true);
     window.removeEventListener('blur', this.perderFoco);
@@ -166,7 +190,10 @@ export class ModoTeste {
 
   private reiniciarJogador() {
     const [sx, sy] = this.estado.fase.spawnJogador;
-    this.jogador = new Jogador({ ...this.config }, sx, sy);
+    const cfg = { ...this.config };
+    if (this.pers) { cfg.largura = this.pers.dados.caixa.largura; cfg.altura = this.pers.dados.caixa.altura; }
+    this.jogador = new Jogador(cfg, sx, sy);
+    this.estadoAnim = 'parado'; this.tempoAnim = 0; this.aterrissouHa = 9;
   }
 
   /** O jogador é desenhado dentro da camada "Objetos" (atrás do primeiro plano, na frente do cenário). */
@@ -175,6 +202,7 @@ export class ModoTeste {
     const camada = fase.camadas.find((c) => c.id === 'objetos') ?? [...fase.camadas].reverse().find((c) => c.parallax[0] === 1) ?? fase.camadas[fase.camadas.length - 1];
     const cont = camada ? this.viewport.conteinerCamada(camada.id) : undefined;
     if (cont && this.grafico.parent !== cont) cont.addChild(this.grafico);
+    if (cont && this.pers && this.spritePers.parent !== cont) cont.addChild(this.spritePers);
   }
 
   private tecla = (ev: KeyboardEvent) => {
@@ -219,7 +247,7 @@ export class ModoTeste {
     const j = this.jogador;
     const m = this.mundo;
     if (!j || !m) return;
-    if (this.mensagemAberta) { this.desenharJogador(); return; } // jogo pausado lendo a mensagem
+    if (this.mensagemAberta) { this.desenharJogador(0); return; } // jogo pausado lendo a mensagem
     const [fw, fh] = this.estado.fase.tamanho;
     this.acumulado = Math.min(this.acumulado + ms / 1000, 0.25);
     while (this.acumulado >= PASSO) {
@@ -244,7 +272,7 @@ export class ModoTeste {
       if (prox) this.tratar(m.interagir(prox.o));
     }
     this.posicionarCamera(false, ms / 1000);
-    this.desenharJogador();
+    this.desenharJogador(ms / 1000);
     this.mostrarPrompt(prox);
   }
 
@@ -281,9 +309,35 @@ export class ModoTeste {
     e.camera.y = Math.round(this.camAlvo.y) + rh / 2 - h / 2 / z;
   }
 
-  private desenharJogador() {
+  private desenharJogador(dt = 0) {
     const j = this.jogador!;
     const g = this.grafico.clear();
+    if (this.pers) {
+      // Personagem animado: estado pela física (parado, andando, pulando, caindo, aterrissando)
+      if (j.noChao && !this.estavaNoChao) this.aterrissouHa = 0; else this.aterrissouHa += dt;
+      this.estavaNoChao = j.noChao;
+      const p = this.pers.dados;
+      const estado = estadoDoJogador(j, p.animacoes.aterrissando ? this.aterrissouHa : 9);
+      if (estado !== this.estadoAnim) { this.estadoAnim = estado; this.tempoAnim = 0; } else this.tempoAnim += dt;
+      const r = animacaoPara(p, estado);
+      const frames = r ? this.pers.quadros.get(r.estado) : undefined;
+      if (r && frames?.length) {
+        const sp = this.spritePers;
+        sp.texture = frames[quadroEm(r.anim, this.tempoAnim)];
+        const anc = ancoraPes(p);
+        sp.anchor.set(anc.ax, anc.ay);
+        const esc = p.escala * r.anim.escala;
+        const espelhar = j.olhandoDireita !== p.olhaDireita;
+        sp.scale.set(espelhar ? -esc : esc, esc);
+        sp.position.set(Math.round(j.x), Math.round(j.y));
+        sp.visible = true;
+      }
+      if (this.estado.mostrarColisoes) {
+        const w = j.cfg.largura, h = j.cfg.altura;
+        g.rect(Math.round(j.x - w / 2) + 0.5, Math.round(j.y - h) + 0.5, w, h).stroke({ width: 1, color: 0xa7dd3e });
+      }
+      return;
+    }
     const w = j.cfg.largura, h = j.cfg.altura;
     const x = Math.round(j.x - w / 2), y = Math.round(j.y - h);
     // Corpo provisório (a Lorena animada entra com o módulo de animação)
@@ -309,7 +363,7 @@ export class ModoTeste {
       const saida = el('output', { for: id }, `${this.config[chave]} ${un}`);
       input.addEventListener('input', () => {
         this.config = { ...this.config, [chave]: Number(input.value) };
-        if (this.jogador) this.jogador.cfg = { ...this.config };
+        if (this.jogador) this.jogador.cfg = { ...this.config, ...(this.pers ? { largura: this.pers.dados.caixa.largura, altura: this.pers.dados.caixa.altura } : {}) };
         saida.textContent = `${input.value} ${un}`;
       });
       input.addEventListener('change', () => { this.aoMudarConfig(this.config); input.blur(); });
@@ -321,9 +375,11 @@ export class ModoTeste {
       campo('Velocidade', 'velocidade', 60, 500, 10, 'px/s', 'Quão rápido o jogador anda.'),
       campo('Altura do pulo', 'alturaPulo', 20, 300, 5, 'px', 'Altura máxima do pulo segurando o botão. Soltando cedo, o pulo fica mais baixo.'),
       campo('Gravidade', 'gravidade', 400, 4000, 50, 'px/s²', 'Quanto mais alta, mais rápido o jogador cai (pulo mais "pesado").'),
-      campo('Largura', 'largura', 8, 120, 1, 'px', 'Largura da caixa de colisão do jogador.'),
-      campo('Altura', 'altura', 16, 240, 1, 'px', 'Altura da caixa de colisão do jogador (Lorena: frames de 128 px).'),
+      ...(this.pers ? [] : [
+        campo('Largura', 'largura', 8, 120, 1, 'px', 'Largura da caixa de colisão do jogador.'),
+        campo('Altura', 'altura', 16, 240, 1, 'px', 'Altura da caixa de colisão do jogador.')]),
     );
+    if (this.pers) ajustes.append(el('p', { class: 'dica-campo' }, `Jogador: ${this.pers.dados.nome}. A caixa de colisão vem do personagem (editor de Personagens).`));
     this.hud.replaceChildren(
       el('div', { class: 'hud-topo' },
         el('span', { class: 'hud-titulo' }, '▶ Testando'),

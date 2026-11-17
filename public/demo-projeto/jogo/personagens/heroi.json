@@ -1,0 +1,56 @@
+{
+  "versao": 1,
+  "nome": "Herói (demo)",
+  "pes": [
+    12,
+    32
+  ],
+  "caixa": {
+    "largura": 10,
+    "altura": 29
+  },
+  "escala": 1,
+  "olhaDireita": true,
+  "animacoes": {
+    "parado": {
+      "folha": "assets/personagens/heroi/heroi_parado_6fps.png",
+      "origem": "personagens/heroi_parado_6fps.png",
+      "larguraQuadro": 24,
+      "alturaQuadro": 32,
+      "quadros": 4,
+      "fps": 6,
+      "repetir": true,
+      "escala": 1
+    },
+    "andando": {
+      "folha": "assets/personagens/heroi/heroi_andando_10fps.png",
+      "origem": "personagens/heroi_andando_10fps.png",
+      "larguraQuadro": 24,
+      "alturaQuadro": 32,
+      "quadros": 6,
+      "fps": 10,
+      "repetir": true,
+      "escala": 1
+    },
+    "pulando": {
+      "folha": "assets/personagens/heroi/heroi_pulando_1fps.png",
+      "origem": "personagens/heroi_pulando_1fps.png",
+      "larguraQuadro": 24,
+      "alturaQuadro": 32,
+      "quadros": 1,
+      "fps": 1,
+      "repetir": true,
+      "escala": 1
+    },
+    "caindo": {
+      "folha": "assets/personagens/heroi/heroi_caindo_1fps.png",
+      "origem": "personagens/heroi_caindo_1fps.png",
+      "larguraQuadro": 24,
+      "alturaQuadro": 32,
+      "quadros": 1,
+      "fps": 1,
+      "repetir": true,
+      "escala": 1
+    }
+  }
+}

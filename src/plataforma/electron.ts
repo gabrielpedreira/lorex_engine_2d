@@ -5,14 +5,17 @@ interface ApiLorex {
   progresso(texto: string): void;
   pronto(): void;
   recentes(): Promise<InfoProjeto[]>;
-  aoMudarProjeto(fn: (m: { tipo: 'fase' | 'config' | 'assets'; nome: string }) => void): void;
+  aoMudarProjeto(fn: (m: { tipo: 'fase' | 'config' | 'assets' | 'personagem'; nome: string }) => void): void;
   abrirCaminho(caminho: string): Promise<InfoProjeto | null>;
   lerConfigProjeto(): Promise<ConfigProjeto | null>;
   salvarConfigProjeto(c: ConfigProjeto): Promise<boolean>;
   abrirProjeto(): Promise<InfoProjeto | null>;
   projetoAtual(): Promise<InfoProjeto | null>;
   listarAssets(): Promise<string[]>;
-  garantirEmUso(relRaiz: string): Promise<string>;
+  garantirEmUso(relRaiz: string, categoria?: string): Promise<string>;
+  listarDados(pasta: string): Promise<string[]>;
+  lerDados(pasta: string, nome: string): Promise<string>;
+  salvarDados(pasta: string, nome: string, conteudo: string): Promise<boolean>;
   otimizarAsset(fonteRaiz: string, largura: number, altura: number): Promise<ResultadoOtimizacao>;
   limparNaoUsados(emUsoAgora: string[]): Promise<string[]>;
   listarFases(): Promise<string[]>;
@@ -36,14 +39,17 @@ export class PlataformaElectron implements Plataforma {
   progresso(t: string) { this.api.progresso(t); }
   pronto() { this.api.pronto(); }
   recentes() { return this.api.recentes(); }
-  aoMudarProjeto(fn: (m: { tipo: 'fase' | 'config' | 'assets'; nome: string }) => void) { this.api.aoMudarProjeto(fn); }
+  aoMudarProjeto(fn: (m: { tipo: 'fase' | 'config' | 'assets' | 'personagem'; nome: string }) => void) { this.api.aoMudarProjeto(fn); }
   abrirCaminho(c: string) { return this.api.abrirCaminho(c); }
   lerConfigProjeto() { return this.api.lerConfigProjeto(); }
   async salvarConfigProjeto(c: ConfigProjeto) { await this.api.salvarConfigProjeto(c); }
   abrirProjeto() { return this.api.abrirProjeto(); }
   projetoAtual() { return this.api.projetoAtual(); }
   listarAssets() { return this.api.listarAssets(); }
-  garantirEmUso(c: string) { return this.api.garantirEmUso(c); }
+  garantirEmUso(c: string, categoria?: string) { return this.api.garantirEmUso(c, categoria); }
+  listarDados(p: 'personagens') { return this.api.listarDados(p); }
+  lerDados(p: 'personagens', n: string) { return this.api.lerDados(p, n); }
+  async salvarDados(p: 'personagens', n: string, c: string) { await this.api.salvarDados(p, n, c); }
   otimizarAsset(f: string, w: number, h: number) { return this.api.otimizarAsset(f, w, h); }
   limparNaoUsados(u: string[]) { return this.api.limparNaoUsados(u); }
   listarFases() { return this.api.listarFases(); }

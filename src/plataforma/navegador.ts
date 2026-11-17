@@ -2,7 +2,7 @@
 // Fases salvas ficam no armazenamento do navegador. Serve para testar a engine sem o Electron.
 import { codificarCaminho, normalizarCaminho, type ConfigProjeto, type InfoProjeto, type Plataforma } from './plataforma';
 
-interface Manifesto { nome: string; arquivos: string[]; fases: string[]; config?: ConfigProjeto }
+interface Manifesto { nome: string; arquivos: string[]; fases: string[]; personagens?: string[]; config?: ConfigProjeto }
 
 const BASE = './demo-projeto/';
 const CHAVE = 'lorex.demo.fases';
@@ -53,6 +53,24 @@ export class PlataformaNavegador implements Plataforma {
   }
 
   async otimizarAsset() { return null; }
+
+  private dadosSalvos(pasta: string): Record<string, string> {
+    try { return JSON.parse(localStorage.getItem(`lorex.demo.${pasta}`) ?? '{}'); } catch { return {}; }
+  }
+  async listarDados(pasta: 'personagens') {
+    const m = await this.carregarManifesto();
+    return [...new Set([...(m[pasta] ?? []), ...Object.keys(this.dadosSalvos(pasta))])].sort();
+  }
+  async lerDados(pasta: 'personagens', nome: string) {
+    const s = this.dadosSalvos(pasta)[nome];
+    if (s) return s;
+    return (await fetch(BASE + `jogo/${pasta}/` + encodeURIComponent(nome))).text();
+  }
+  async salvarDados(pasta: 'personagens', nome: string, conteudo: string) {
+    const s = this.dadosSalvos(pasta);
+    s[nome] = conteudo;
+    try { localStorage.setItem(`lorex.demo.${pasta}`, JSON.stringify(s)); } catch { /* armazenamento indisponível */ }
+  }
   async limparNaoUsados() { return []; }
 
   async listarFases() {

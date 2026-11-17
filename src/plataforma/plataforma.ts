@@ -19,6 +19,8 @@ export interface Ferramenta {
 export interface ConfigProjeto {
   /** Pastas da caixa de ferramentas. */
   ferramentas?: Ferramenta[];
+  /** Personagem animado usado no ▶ Testar (arquivo em jogo/personagens/). Vazio = retângulo provisório. */
+  personagemTeste?: string;
   /** Ajustes do jogador usados no ▶ Testar (tamanho, velocidade, pulo, gravidade). */
   jogador?: import('../core/fisica').ConfigJogador;
   /** Última escala usada para cada imagem (caminho relativo à raiz) — o carimbo reaproveita. */
@@ -44,7 +46,7 @@ export interface Plataforma {
   pronto(): void;
   recentes(): Promise<InfoProjeto[]>;
   /** Avisa quando algo em jogo/ muda fora do editor (ex.: o Claude editou uma fase). */
-  aoMudarProjeto(fn: (m: { tipo: 'fase' | 'config' | 'assets'; nome: string }) => void): void;
+  aoMudarProjeto(fn: (m: { tipo: 'fase' | 'config' | 'assets' | 'personagem'; nome: string }) => void): void;
   abrirCaminho(caminho: string): Promise<InfoProjeto | null>;
   lerConfigProjeto(): Promise<ConfigProjeto | null>;
   salvarConfigProjeto(c: ConfigProjeto): Promise<void>;
@@ -54,8 +56,12 @@ export interface Plataforma {
   projetoAtual(): Promise<InfoProjeto | null>;
   /** Imagens do projeto, caminhos relativos à raiz (ex.: "chaves e itens/chave.png"). */
   listarAssets(): Promise<string[]>;
-  /** Garante que o asset esteja em jogo/assets e devolve o caminho relativo a jogo/. */
-  garantirEmUso(caminhoRaiz: string): Promise<string>;
+  /** Garante que o asset esteja em jogo/assets e devolve o caminho relativo a jogo/. categoria: subpasta (ex.: "personagens/lorena"). */
+  garantirEmUso(caminhoRaiz: string, categoria?: string): Promise<string>;
+  /** Dados em JSON de jogo/<pasta>/ (por enquanto: "personagens"). */
+  listarDados(pasta: 'personagens'): Promise<string[]>;
+  lerDados(pasta: 'personagens', nome: string): Promise<string>;
+  salvarDados(pasta: 'personagens', nome: string, conteudo: string): Promise<void>;
   /** Manda para a Lixeira os arquivos de jogo/assets sem uso em nenhuma fase. Retorna os removidos. */
   limparNaoUsados(emUsoAgora: string[]): Promise<string[]>;
   /** Gera cópia reduzida em jogo/assets (só Electron). null = indisponível. */

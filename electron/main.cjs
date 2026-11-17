@@ -61,7 +61,9 @@ function observarProjeto() {
       clearTimeout(avisosPendentes.get(rel));
       avisosPendentes.set(rel, setTimeout(() => {
         avisosPendentes.delete(rel);
-        const tipo = rel.startsWith('fases/') && rel.endsWith('.json') ? 'fase' : rel === 'projeto.json' ? 'config' : rel.startsWith('assets/') ? 'assets' : 'outro';
+        const tipo = rel.startsWith('fases/') && rel.endsWith('.json') ? 'fase'
+          : rel.startsWith('personagens/') && rel.endsWith('.json') ? 'personagem'
+          : rel === 'projeto.json' ? 'config' : rel.startsWith('assets/') ? 'assets' : 'outro';
         if (tipo !== 'outro' && janelaEditor && !janelaEditor.isDestroyed()) {
           janelaEditor.webContents.send('projeto:mudou', { tipo, nome: path.basename(rel) });
         }
@@ -178,11 +180,14 @@ function registrarIpc() {
   });
 
   // Se o asset é do material de apoio, copia para jogo/assets/<categoria>/ (o original fica onde está).
-  ipcMain.handle('assets:garantirEmUso', async (_e, relRaiz) => {
+  ipcMain.handle('assets:garantirEmUso', async (_e, relRaiz, categoriaPedida) => {
     if (relRaiz.startsWith('jogo/')) return relRaiz.slice('jogo/'.length);
     const origem = resolverDentroDoProjeto(relRaiz);
     const partes = relRaiz.split('/');
-    const categoria = partes.length > 1 ? normalizarCategoria(partes[0]) : 'geral';
+    // categoriaPedida permite subpastas (ex.: "personagens/lorena"); cada parte é normalizada
+    const categoria = categoriaPedida
+      ? String(categoriaPedida).split('/').map(normalizarCategoria).join('/')
+      : partes.length > 1 ? normalizarCategoria(partes[0]) : 'geral';
     const relJogo = `assets/${categoria}/${partes[partes.length - 1]}`;
     const destino = resolverDentroDoProjeto('jogo/' + relJogo);
     await fsp.mkdir(path.dirname(destino), { recursive: true });
@@ -240,6 +245,26 @@ function registrarIpc() {
       try { marcarEscrita(abs); await shell.trashItem(abs); removidos.push(r); } catch { /* sem Lixeira: mantém o arquivo */ }
     }
     return removidos;
+  });
+
+  // Outros dados do jogo em JSON (por enquanto: personagens) → jogo/<pasta>/<nome>.json
+  const PASTAS_DADOS = new Set(['personagens']);
+  const pastaDados = (pasta) => {
+    if (!PASTAS_DADOS.has(pasta)) throw new Error('Pasta de dados não permitida: ' + pasta);
+    return resolverDentroDoProjeto('jogo/' + pasta);
+  };
+  ipcMain.handle('dados:listar', async (_e, pasta) => {
+    if (!raizProjeto) return [];
+    try { return (await fsp.readdir(pastaDados(pasta))).filter((n) => n.toLowerCase().endsWith('.json')).sort(); } catch { return []; }
+  });
+  ipcMain.handle('dados:ler', async (_e, pasta, nome) => fsp.readFile(path.join(pastaDados(pasta), path.basename(nome)), 'utf-8'));
+  ipcMain.handle('dados:salvar', async (_e, pasta, nome, conteudo) => {
+    const dir = pastaDados(pasta);
+    await fsp.mkdir(dir, { recursive: true });
+    const destino = path.join(dir, path.basename(nome));
+    marcarEscrita(destino);
+    await fsp.writeFile(destino, conteudo, 'utf-8');
+    return true;
   });
 
   ipcMain.handle('fases:listar', async () => {
@@ -302,11 +327,15 @@ function criarEditor() {
 }
 
 app.whenReady().then(() => {
-  protocol.handle('projeto', (req) => {
+  protocol.handle('projeto', async (req) => {
     try {
       const url = new URL(req.url);
       const rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
-      return net.fetch(pathToFileURL(resolverDentroDoProjeto(rel)).toString());
+      const r = await net.fetch(pathToFileURL(resolverDentroDoProjeto(rel)).toString());
+      // CORS liberado: o editor de personagens lê os pixels (achar pés e corpo) sem "sujar" o canvas
+      const cabecalhos = new Headers(r.headers);
+      cabecalhos.set('Access-Control-Allow-Origin', '*');
+      return new Response(r.body, { status: r.status, headers: cabecalhos });
     } catch (err) {
       return new Response(String(err), { status: 404 });
     }

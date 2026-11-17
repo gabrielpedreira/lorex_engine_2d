@@ -67,6 +67,11 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
   escolhido com um clique no cenário; a ligação aparece como linha tracejada), **saída** (leva para outra fase ou área,
   levando o inventário) e **mensagem/nota** (texto na tela). No ▶ Testar: `E` interage, com aviso "E Abrir/Ler/Entrar"
   sobre o objeto e inventário no canto.
+- **Personagens** (`K`): monte um personagem a partir de spritesheets, um por estado (Parado, Andando, Pulando,
+  Caindo, Aterrissando, Dano, Morte). O editor detecta os quadros pela folha (inclusive quadros não quadrados e
+  desenhos com espaços), lê o FPS do nome (`_8fps`), mostra a prévia animada com chão, cruz dos pés e caixa de
+  colisão, e detecta pés e caixa sozinho. Estados sem animação usam um substituto (ex.: Caindo → Pulando → Parado).
+  Salvo em `jogo/personagens/<nome>.json`; "Usar no ▶ Testar" troca o retângulo provisório pelo personagem animado.
 - **Trabalho a quatro mãos:** se uma fase é alterada fora do editor (por outra ferramenta ou pelo assistente), o
   editor recarrega sozinho ou, havendo alterações não salvas, pergunta antes.
 - **Início do jogador** (ferramenta `I`): bandeira na posição dos pés da personagem, arrastável.
@@ -96,6 +101,7 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 | Forma de colisão | `1` bloco · `2` rampa ◢ · `3` rampa ◣ · `4` polígono · `5` linha · `6` mão livre |
 | Sólido ↔ atravessável (modo Colisão) | `X` |
 | Polígono/linha: terminar · desfazer ponto · cancelar | `Enter` ou duplo clique · `Backspace` · `Esc` |
+| Personagens | `K` |
 | ▶ Testar / voltar | `F5` / `Esc` (no teste: `E` interage, `R` reinicia) |
 | Mostrar colisões / prévia de efeitos | `Shift+C` / `Shift+E` |
 | Mostrar/ocultar caixa de ferramentas | `T` |

@@ -17,7 +17,15 @@
     "jogo/assets/fundos/ceu.png",
     "jogo/assets/fundos/montanhas.png",
     "jogo/assets/fundos/predios.png",
-    "jogo/assets/itens/chave.png"
+    "jogo/assets/itens/chave.png",
+    "jogo/assets/personagens/heroi/heroi_andando_10fps.png",
+    "jogo/assets/personagens/heroi/heroi_caindo_1fps.png",
+    "jogo/assets/personagens/heroi/heroi_parado_6fps.png",
+    "jogo/assets/personagens/heroi/heroi_pulando_1fps.png",
+    "personagens/heroi_andando_10fps.png",
+    "personagens/heroi_caindo_1fps.png",
+    "personagens/heroi_parado_6fps.png",
+    "personagens/heroi_pulando_1fps.png"
   ],
   "fases": [
     "demonstracao.json"
@@ -41,11 +49,15 @@
       }
     ],
     "jogador": {
-      "largura": 14,
-      "altura": 30,
+      "largura": 10,
+      "altura": 29,
       "velocidade": 130,
       "alturaPulo": 58,
       "gravidade": 900
-    }
-  }
+    },
+    "personagemTeste": "heroi.json"
+  },
+  "personagens": [
+    "heroi.json"
+  ]
 }

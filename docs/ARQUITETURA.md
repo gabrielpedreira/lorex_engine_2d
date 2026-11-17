@@ -244,6 +244,24 @@ provisório (retângulo) dentro da camada Objetos. A Lorena animada entra com o 
 (objeto ao alcance + texto do botão), `interagir()` e `segmentosPortas()`. No editor: escolher o alvo da alavanca com
 um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as ligações.
 
+### 4.19 Personagens e animação (módulo 2, primeira parte)
+
+- **Formato** `jogo/personagens/<slug>.json`: `{versao, nome, pes:[x,y], caixa:{largura,altura}, escala, olhaDireita,
+  animacoes:{<estado>: {folha, larguraQuadro, alturaQuadro, quadros, fps, repetir, escala}}}`. `folha` é relativa à
+  raiz do projeto (normalmente `jogo/assets/personagens/<nome>/`). `pes` está em px do quadro da animação Parado;
+  `caixa` está em px do jogo (é a caixa da física).
+- **Estados** (`core/personagem.ts`): parado, andando, pulando, caindo, aterrissando, dano, morte. `SUBSTITUTOS`
+  define o que tocar quando falta uma animação (caindo → pulando → parado; aterrissando → parado etc.).
+  `estadoDoJogador()` deriva o estado da física (no chão/velocidade/aterrissou há pouco).
+- **Âncora:** `ancoraPes()` converte os pés em frações do quadro, assim animações com quadros de tamanhos diferentes
+  ficam presas ao mesmo ponto. O sprite é espelhado quando o lado para onde o jogador olha difere de `olhaDireita`.
+- **Detecção da folha** (`ui/personagens.ts`): primeiro por colunas vazias entre desenhos (`quadrosPorColunas`); se a
+  folha é múltipla exata da altura (quadros quadrados), usa a maior contagem exata. Pés = centro inferior da união
+  dos pixels da animação Parado; caixa = `min(largura, altura×0,4)×0,85` por `altura×0,95`.
+- **IPC de dados:** `dados:listar/ler/salvar` limitado à pasta `personagens`; o watcher avisa o tipo `personagem`.
+  `projeto.json.personagemTeste` diz qual personagem o ▶ Testar usa; sem ele, o retângulo provisório.
+- O protocolo `projeto://` responde com `Access-Control-Allow-Origin: *` para o canvas 2D ler os pixels (detecção).
+
 ### 4.18 Legendas e recarregar por fora
 
 - `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas

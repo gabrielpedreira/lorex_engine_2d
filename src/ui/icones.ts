@@ -29,6 +29,7 @@ export const ICONES = {
   poligono: svg('<path d="M8 2l5.5 4-2 7h-7l-2-7z"/>'),
   linha: svg('<path d="M2 12l4-5 3 3 5-6"/><circle cx="2" cy="12" r="1"/><circle cx="6" cy="7" r="1"/><circle cx="9" cy="10" r="1"/><circle cx="14" cy="4" r="1"/>'),
   maoLivre: svg('<path d="M2 11c1.5-3 3-4 4-2s1.5 3 3 1 2-5 5-4"/>'),
+  personagem: svg('<circle cx="8" cy="3.8" r="2"/><path d="M8 6v4.5M8 10.5l-2.5 3.5M8 10.5l2.5 3.5M4.5 8l3.5-1.5 3.5 1.5"/>'),
   salvar: svg('<path d="M3 2h8l3 3v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M5 2v3.5h5V2M5 14V9.5h6V14"/>'),
 };
 

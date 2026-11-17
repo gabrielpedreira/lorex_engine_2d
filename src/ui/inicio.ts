@@ -25,6 +25,7 @@ export class TelaInicio {
   private raiz: HTMLElement;
   private visivel = false;
   private podeVoltar = false;
+  private jogadorTeste = '';
   aoVoltar: () => void = () => {};
 
   constructor(private plat: Plataforma, private acoes: AcoesInicio) {
@@ -61,6 +62,7 @@ export class TelaInicio {
     ]);
     const config = projeto ? (await this.plat.lerConfigProjeto()) : null;
     const fases = projeto ? await this.lerFases() : [];
+    this.jogadorTeste = config?.personagemTeste ?? '';
 
     const cabecalho = el('header', { class: 'inicio-topo' },
       el('img', { src: './marca/logo-fundo-escuro.png', alt: 'Lorex Engine', class: 'inicio-logo' }),
@@ -108,6 +110,7 @@ export class TelaInicio {
       col.append(el('div', { class: 'cartao-projeto' },
         el('strong', {}, projeto.nome),
         projeto.caminho ? el('span', { class: 'caminho', title: projeto.caminho }, projeto.caminho) : el('span', { class: 'caminho' }, 'Assets genéricos para testar a engine'),
+        el('span', { class: 'caminho' }, this.jogadorTeste ? `Jogador do ▶ Testar: ${this.jogadorTeste.replace(/\.json$/, '')}` : 'Jogador do ▶ Testar: retângulo provisório (monte um personagem em Personagens)'),
       ));
     } else {
       col.append(el('p', { class: 'texto-suave' }, 'Abra a pasta do seu jogo. A engine cria as pastas jogo/assets e jogo/fases dentro dela, se ainda não existirem.'));
