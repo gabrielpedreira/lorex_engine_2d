@@ -2,7 +2,11 @@
 import { criarFase } from '../core/fase';
 import type { Camada, Fase, ObjetoFase } from '../core/tipos';
 
-export type Evento = 'fase' | 'selecao' | 'camera' | 'opcoes' | 'arquivo' | 'mensagem';
+export type Evento = 'fase' | 'selecao' | 'camera' | 'opcoes' | 'arquivo' | 'mensagem' | 'modo';
+
+/** Ferramenta ativa no cenário. */
+export type Modo = 'selecionar' | 'colisao' | 'inicio';
+export type TipoNovaColisao = 'solido' | 'atravessavel' | 'rampa-direita' | 'rampa-esquerda';
 
 const LIMITE_HISTORICO = 200;
 
@@ -13,7 +17,14 @@ export class Estado {
   sujo = false;
 
   selecionado: string | null = null;
+  /** Colisão selecionada (só no modo Colisão). */
+  colisaoSelecionada: string | null = null;
   camadaAtiva = 'objetos';
+
+  modo: Modo = 'selecionar';
+  tipoNovaColisao: TipoNovaColisao = 'solido';
+  mostrarColisoes = true;
+  previaEfeitos = true;
 
   /** Canto superior esquerdo da visão, em pixels do mundo (camadas com parallax 1). */
   camera = { x: 0, y: 0, zoom: 2 };
@@ -73,6 +84,7 @@ export class Estado {
     para.push(JSON.stringify(this.fase));
     this.fase = JSON.parse(anterior) as Fase;
     if (this.selecionado && !this.objeto(this.selecionado)) this.selecionado = null;
+    if (this.colisaoSelecionada && !this.colisao(this.colisaoSelecionada)) this.colisaoSelecionada = null;
     this.marcarAlterado();
     this.emit('selecao');
     this.avisar(msg);
@@ -84,6 +96,7 @@ export class Estado {
     this.arquivoFase = arquivo;
     this.sujo = false;
     this.selecionado = null;
+    this.colisaoSelecionada = null;
     this.desfazerPilha = [];
     this.refazerPilha = [];
     if (!fase.camadas.some((c) => c.id === this.camadaAtiva)) {
@@ -109,8 +122,29 @@ export class Estado {
   }
 
   selecionar(id: string | null) {
-    if (this.selecionado === id) return;
+    if (this.selecionado === id && !this.colisaoSelecionada) return;
     this.selecionado = id;
+    this.colisaoSelecionada = null;
+    this.emit('selecao');
+  }
+
+  colisao(id: string) {
+    return this.fase.colisoes.find((c) => c.id === id);
+  }
+
+  selecionarColisao(id: string | null) {
+    if (this.colisaoSelecionada === id && !this.selecionado) return;
+    this.colisaoSelecionada = id;
+    this.selecionado = null;
+    this.emit('selecao');
+  }
+
+  definirModo(m: Modo) {
+    if (this.modo === m) return;
+    this.modo = m;
+    if (m !== 'colisao') this.colisaoSelecionada = null;
+    if (m !== 'selecionar') this.selecionado = null;
+    this.emit('modo');
     this.emit('selecao');
   }
 

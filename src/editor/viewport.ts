@@ -1,7 +1,10 @@
 // Área do cenário: desenha a fase com PixiJS e trata mouse (selecionar, mover, redimensionar, zoom, pan).
 import 'pixi.js/unsafe-eval';
-import { Application, Assets, Container, Graphics, Sprite, Texture, TextureStyle } from 'pixi.js';
-import type { ObjetoFase } from '../core/tipos';
+import { Application, Assets, BlurFilter, ColorMatrixFilter, Container, Graphics, Sprite, Texture, TextureStyle } from 'pixi.js';
+import { calcularEfeitos, faseDoId, type EfeitoBrilhar, type ResultadoEfeitos } from '../core/efeitos';
+import { novoIdColisao } from '../core/fase';
+import type { Colisao, ObjetoFase } from '../core/tipos';
+import { colisaoEm, corDe, desenharColisoes, desenharInicio, sobreInicio } from './colisoes';
 import { urlAsset, type Plataforma } from '../plataforma/plataforma';
 import type { Estado } from './estado';
 
@@ -29,7 +32,23 @@ const COR_TELA_JOGO = 0xf89715; // laranja da logo
 type Arraste =
   | { tipo: 'pan'; sx: number; sy: number; cx: number; cy: number }
   | { tipo: 'mover'; id: string; dx: number; dy: number; mexeu: boolean }
-  | { tipo: 'escala'; id: string; mexeu: boolean; canto: Canto; ancoraX: number; ancoraY: number };
+  | { tipo: 'escala'; id: string; mexeu: boolean; canto: Canto; ancoraX: number; ancoraY: number }
+  | { tipo: 'colDesenhar'; x0: number; y0: number; x1: number; y1: number }
+  | { tipo: 'colMover'; id: string; dx: number; dy: number; mexeu: boolean }
+  | { tipo: 'colEscala'; id: string; canto: Canto; ancoraX: number; ancoraY: number; mexeu: boolean }
+  | { tipo: 'inicio'; mexeu: boolean; dx: number; dy: number };
+
+/** Halo (efeito Brilhar): cópia da imagem em silhueta colorida e borrada, atrás do objeto. */
+interface Halo { sp: Sprite; blur: BlurFilter; chave: string; raio: number }
+
+function filtroSilhueta(cor: string) {
+  const n = parseInt(cor.replace('#', ''), 16) || 0xffffff;
+  const f = new ColorMatrixFilter();
+  f.matrix = [0, 0, 0, 0, ((n >> 16) & 255) / 255, 0, 0, 0, 0, ((n >> 8) & 255) / 255, 0, 0, 0, 0, (n & 255) / 255, 0, 0, 0, 1, 0];
+  return f;
+}
+
+const SEM_EFEITO: ResultadoEfeitos = { dy: 0, escala: 1, alpha: 1, brilho: 0 };
 
 /** Cantos do retângulo de seleção (alças de redimensionar). */
 type Canto = 'no' | 'ne' | 'so' | 'se';
@@ -40,6 +59,8 @@ export class Viewport {
   private raizCamadas = new Container();
   private grade = new Graphics();
   private overlay = new Graphics();
+  private colisoesG = new Graphics();
+  private halos = new Map<string, Halo>();
   private fantasma = new Sprite(Texture.EMPTY);
   /** Carimbo armado pela caixa de ferramentas (caminho relativo à raiz do projeto). */
   private carimbo: { caminho: string; tex: Texture | null; escala: number } | null = null;
@@ -78,7 +99,7 @@ export class Viewport {
     this.el.appendChild(this.app.canvas);
     this.fantasma.alpha = 0.6;
     this.fantasma.visible = false;
-    this.app.stage.addChild(this.fundoFase, this.raizCamadas, this.grade, this.overlay, this.fantasma);
+    this.app.stage.addChild(this.fundoFase, this.raizCamadas, this.grade, this.colisoesG, this.overlay, this.fantasma);
 
     this.estado.on('fase', () => this.sincronizar());
     this.estado.on('selecao', () => (this.chaveCamera = ''));
@@ -252,18 +273,49 @@ export class Viewport {
         sp.anchor.set(0.5);
         this.sprites.set(o.id, sp);
       }
+      const cont = this.conteineres.get(o.camada);
+      const halo = this.sincronizarHalo(o);
+      if (halo) cont?.addChild(halo.sp);
       this.aplicarObjeto(sp, o);
-      this.conteineres.get(o.camada)?.addChild(sp);
+      cont?.addChild(sp);
     }
     for (const [id, sp] of this.sprites) if (!ids.has(id)) { sp.destroy(); this.sprites.delete(id); }
+    for (const [id, h] of this.halos) if (!ids.has(id)) { h.sp.destroy(); this.halos.delete(id); }
 
     this.chaveCamera = '';
   }
 
-  private aplicarObjeto(sp: Sprite, o: ObjetoFase) {
+  private sincronizarHalo(o: ObjetoFase): Halo | undefined {
+    const brilho = o.efeitos.find((e): e is EfeitoBrilhar => e.tipo === 'brilhar');
+    let halo = this.halos.get(o.id);
+    if (!brilho) {
+      if (halo) { halo.sp.destroy(); this.halos.delete(o.id); }
+      return undefined;
+    }
+    if (!halo) {
+      const sp = new Sprite(Texture.EMPTY);
+      sp.anchor.set(0.5);
+      halo = { sp, blur: new BlurFilter({ strength: 4, quality: 4 }), chave: '', raio: brilho.raio };
+      this.halos.set(o.id, halo);
+    }
+    if (halo.chave !== brilho.cor) {
+      halo.chave = brilho.cor;
+      halo.sp.filters = [filtroSilhueta(brilho.cor), halo.blur];
+    }
+    halo.raio = brilho.raio;
+    return halo;
+  }
+
+  /** Efeito estático (prévia de efeitos desligada): só o brilho aparece, parado. */
+  private efeitoEstatico(o: ObjetoFase): ResultadoEfeitos {
+    const b = o.efeitos.find((e): e is EfeitoBrilhar => e.tipo === 'brilhar');
+    return b ? { ...SEM_EFEITO, brilho: b.intensidade } : SEM_EFEITO;
+  }
+
+  private aplicarObjeto(sp: Sprite, o: ObjetoFase, r: ResultadoEfeitos = this.efeitoEstatico(o)) {
     const tex = this.texturas.get(o.asset);
     if (tex) sp.texture = tex;
-    else {
+    else if (sp.texture === Texture.EMPTY || sp.texture !== tex) {
       sp.texture = Texture.EMPTY;
       this.textura(o.asset)
         .then(() => this.sincronizar())
@@ -272,16 +324,46 @@ export class Viewport {
     // Sprite com âncora central; o objeto guarda o canto superior esquerdo
     const tw = sp.texture === Texture.EMPTY ? o.w : sp.texture.width;
     const th = sp.texture === Texture.EMPTY ? o.h : sp.texture.height;
-    sp.scale.set((o.escala * o.w / tw) * (o.espelharX ? -1 : 1), (o.escala * o.h / th) * (o.espelharY ? -1 : 1));
-    sp.position.set(o.x + (o.w * o.escala) / 2, o.y + (o.h * o.escala) / 2);
+    const ex = (o.escala * o.w / tw) * r.escala, ey = (o.escala * o.h / th) * r.escala;
+    sp.scale.set(ex * (o.espelharX ? -1 : 1), ey * (o.espelharY ? -1 : 1));
+    sp.position.set(o.x + (o.w * o.escala) / 2, o.y + (o.h * o.escala) / 2 + r.dy);
     sp.angle = o.rotacao;
-    sp.alpha = o.opacidade;
+    sp.alpha = o.opacidade * r.alpha;
     sp.visible = o.visivel;
+
+    const halo = this.halos.get(o.id);
+    if (halo) {
+      const larguraFinal = Math.max(1, o.w * o.escala * r.escala);
+      const cresce = (larguraFinal + halo.raio) / larguraFinal;
+      halo.sp.texture = sp.texture;
+      halo.sp.position.copyFrom(sp.position);
+      halo.sp.scale.set(sp.scale.x * cresce, sp.scale.y * cresce);
+      halo.sp.angle = sp.angle;
+      halo.sp.alpha = Math.min(1, r.brilho) * o.opacidade * r.alpha;
+      halo.sp.visible = o.visivel && r.brilho > 0;
+      const forca = Math.max(1, halo.raio * this.estado.camera.zoom * 0.6);
+      if (Math.abs(halo.blur.strength - forca) > 0.01) halo.blur.strength = forca;
+    }
+  }
+
+  /** Efeitos animados (pulsar, brilhar, flutuar, piscar) aplicados a cada quadro. */
+  private animarEfeitos() {
+    const t = performance.now() / 1000;
+    const a = this.arraste;
+    const arrastando = a && (a.tipo === 'mover' || a.tipo === 'escala') ? a.id : null;
+    for (const o of this.estado.fase.objetos) {
+      if (!o.efeitos.length) continue;
+      const sp = this.sprites.get(o.id);
+      if (!sp) continue;
+      const r = this.estado.previaEfeitos && o.id !== arrastando ? calcularEfeitos(o.efeitos, t, faseDoId(o.id)) : this.efeitoEstatico(o);
+      this.aplicarObjeto(sp, o, r);
+    }
   }
 
   // ---------- Quadro a quadro ----------
 
   private quadro() {
+    this.animarEfeitos();
     const { x, y, zoom } = this.estado.camera;
     for (const c of this.estado.fase.camadas) {
       const cont = this.conteineres.get(c.id);
@@ -291,13 +373,70 @@ export class Viewport {
       cont.scale.set(zoom);
     }
     const { w, h } = this.tamanhoTela();
-    const chave = `${x},${y},${zoom},${this.estado.fase.objetos.length},${this.estado.fase.objetos.reduce((n, o) => n + (o.tipo === 'interativo' ? o.x + o.y * 7 + o.escala * 13 : 0), 0)},${this.estado.previaParallax},${JSON.stringify(this.estado.fase.camadas)},${this.estado.fase.resolucaoBase},${w},${h},${this.estado.grade},${this.hover},${this.estado.selecionado},${JSON.stringify(this.estado.objetoSelecionado() ?? '')},${this.estado.fase.tamanho},${this.estado.fase.corFundo}`;
+    const chave = `${x},${y},${zoom},${this.estado.fase.objetos.length},${this.estado.fase.objetos.reduce((n, o) => n + (o.tipo === 'interativo' ? o.x + o.y * 7 + o.escala * 13 : 0), 0)},${this.estado.previaParallax},${JSON.stringify(this.estado.fase.camadas)},${this.estado.fase.resolucaoBase},${w},${h},${this.estado.grade},${this.hover},${this.estado.selecionado},${JSON.stringify(this.estado.objetoSelecionado() ?? '')},${this.estado.fase.tamanho},${this.estado.fase.corFundo},${this.estado.modo},${this.estado.mostrarColisoes},${this.estado.colisaoSelecionada},${JSON.stringify(this.estado.fase.colisoes)},${this.estado.fase.spawnJogador}`;
     if (this.carimbo) this.atualizarFantasma();
     if (chave === this.chaveCamera) return;
     this.chaveCamera = chave;
     this.desenharFundo();
     this.desenharGrade(w, h);
+    this.desenharColisoesEInicio();
     this.desenharOverlay();
+  }
+
+  private desenharColisoesEInicio() {
+    const g = this.colisoesG.clear();
+    const paraTela = (x: number, y: number) => this.camadaParaTela(x, y, '');
+    const modoCol = this.estado.modo === 'colisao';
+    if (this.estado.mostrarColisoes || modoCol) {
+      desenharColisoes(g, this.estado.fase, paraTela, this.estado.colisaoSelecionada, modoCol);
+    }
+    // Retângulo sendo desenhado
+    const a = this.arraste;
+    if (a?.tipo === 'colDesenhar') {
+      const r = this.normalizarRet(a.x0, a.y0, a.x1, a.y1);
+      const prov: Colisao = { id: '', ...r, ...this.tipoDaNova() };
+      desenharColisoes(g, { ...this.estado.fase, colisoes: [prov] }, paraTela, null, true);
+      const p = paraTela(r.x + r.w, r.y + r.h);
+      if (r.w > 0) this.mostrarLegenda(`${r.w} × ${r.h} px`, p.x, p.y);
+    }
+    // Alças da colisão selecionada
+    const sel = this.estado.colisaoSelecionada ? this.estado.colisao(this.estado.colisaoSelecionada) : undefined;
+    if (sel && modoCol) {
+      const r = this.retanguloColisaoTela(sel);
+      g.rect(Math.round(r.x) + 0.5, Math.round(r.y) + 0.5, Math.round(r.w), Math.round(r.h)).stroke({ width: 1, color: corDe(sel), alpha: 0.9 });
+      for (const [cx, cy] of [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]]) {
+        g.rect(Math.round(cx - TAM_ALCA / 2), Math.round(cy - TAM_ALCA / 2), TAM_ALCA, TAM_ALCA).fill({ color: 0xffffff }).stroke({ width: 1, color: corDe(sel) });
+      }
+    }
+    // Início do jogador (sempre visível)
+    const [ix, iy] = this.estado.fase.spawnJogador;
+    const pi = paraTela(ix, iy);
+    desenharInicio(g, pi.x, pi.y, this.estado.modo === 'inicio' || this.arraste?.tipo === 'inicio');
+  }
+
+  private tipoDaNova(): Pick<Colisao, 'tipo' | 'sobe'> {
+    const t = this.estado.tipoNovaColisao;
+    if (t === 'rampa-direita') return { tipo: 'rampa', sobe: 'direita' };
+    if (t === 'rampa-esquerda') return { tipo: 'rampa', sobe: 'esquerda' };
+    return { tipo: t };
+  }
+
+  private normalizarRet(x0: number, y0: number, x1: number, y1: number) {
+    return { x: Math.min(x0, x1), y: Math.min(y0, y1), w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) };
+  }
+
+  retanguloColisaoTela(c: Colisao) {
+    const a = this.camadaParaTela(c.x, c.y, '');
+    const z = this.estado.camera.zoom;
+    return { x: a.x, y: a.y, w: c.w * z, h: c.h * z };
+  }
+
+  /** Ponto da tela → mundo (parallax 1), com encaixe na grade se ativo. */
+  private mundoEncaixado(sx: number, sy: number) {
+    const p = this.telaParaCamada(sx, sy, '');
+    if (!this.estado.encaixar) return { x: Math.round(p.x), y: Math.round(p.y) };
+    const g = this.estado.fase.tamanhoGrade;
+    return { x: Math.round(p.x / g) * g, y: Math.round(p.y / g) * g };
   }
 
   private desenharFundo() {
@@ -391,17 +530,32 @@ export class Viewport {
     return undefined;
   }
 
-  /** Canto (alça) sob o ponto, se houver objeto selecionado. */
-  private sobreAlca(sx: number, sy: number): Canto | null {
-    const sel = this.estado.objetoSelecionado();
-    if (!sel) return null;
-    const r = this.retanguloTela(sel);
+  /** Canto (alça) de um retângulo da tela sob o ponto. */
+  private cantoEm(r: { x: number; y: number; w: number; h: number }, sx: number, sy: number): Canto | null {
     const perto = (ax: number, ay: number) => Math.abs(sx - ax) <= TAM_ALCA && Math.abs(sy - ay) <= TAM_ALCA;
     if (perto(r.x + r.w, r.y + r.h)) return 'se';
     if (perto(r.x, r.y)) return 'no';
     if (perto(r.x + r.w, r.y)) return 'ne';
     if (perto(r.x, r.y + r.h)) return 'so';
     return null;
+  }
+
+  /** Canto (alça) sob o ponto, se houver objeto selecionado. */
+  private sobreAlca(sx: number, sy: number): Canto | null {
+    const sel = this.estado.objetoSelecionado();
+    return sel ? this.cantoEm(this.retanguloTela(sel), sx, sy) : null;
+  }
+
+  private sobreAlcaColisao(sx: number, sy: number): Canto | null {
+    const id = this.estado.colisaoSelecionada;
+    const c = id ? this.estado.colisao(id) : undefined;
+    return c ? this.cantoEm(this.retanguloColisaoTela(c), sx, sy) : null;
+  }
+
+  private sobreMarcadorInicio(sx: number, sy: number) {
+    const [ix, iy] = this.estado.fase.spawnJogador;
+    const p = this.camadaParaTela(ix, iy, '');
+    return sobreInicio(p.x, p.y, sx, sy);
   }
 
   /** Legenda flutuante com o tamanho durante o redimensionamento. */
@@ -475,6 +629,67 @@ export class Viewport {
     this.app.canvas.style.cursor = pressionado ? 'grab' : '';
   }
 
+  // ---------- Modo Colisão e início do jogador ----------
+
+  private pointerDownColisao(sx: number, sy: number) {
+    const id = this.estado.colisaoSelecionada;
+    const sel = id ? this.estado.colisao(id) : undefined;
+    const canto = this.sobreAlcaColisao(sx, sy);
+    if (sel && canto) {
+      const ancoraX = canto === 'no' || canto === 'so' ? sel.x + sel.w : sel.x;
+      const ancoraY = canto === 'no' || canto === 'ne' ? sel.y + sel.h : sel.y;
+      this.arraste = { tipo: 'colEscala', id: sel.id, canto, ancoraX, ancoraY, mexeu: false };
+      return;
+    }
+    const w = this.telaParaCamada(sx, sy, '');
+    const alvo = colisaoEm(this.estado.fase, w.x, w.y);
+    if (alvo) {
+      this.estado.selecionarColisao(alvo.id);
+      this.arraste = { tipo: 'colMover', id: alvo.id, dx: w.x - alvo.x, dy: w.y - alvo.y, mexeu: false };
+      return;
+    }
+    this.estado.selecionarColisao(null);
+    const p0 = this.mundoEncaixado(sx, sy);
+    this.arraste = { tipo: 'colDesenhar', x0: p0.x, y0: p0.y, x1: p0.x, y1: p0.y };
+  }
+
+  private pointerMoveColisao(a: Extract<Arraste, { tipo: 'colDesenhar' | 'colMover' | 'colEscala' | 'inicio' }>, sx: number, sy: number) {
+    const w = this.mundoEncaixado(sx, sy);
+    if (a.tipo === 'colDesenhar') {
+      a.x1 = w.x; a.y1 = w.y;
+      this.chaveCamera = '';
+      return;
+    }
+    if (!a.mexeu) { this.estado.checkpoint(); a.mexeu = true; }
+    if (a.tipo === 'inicio') {
+      const livre = this.telaParaCamada(sx, sy, '');
+      let nx = livre.x - a.dx, ny = livre.y - a.dy;
+      if (this.estado.encaixar) {
+        const g = this.estado.fase.tamanhoGrade;
+        nx = Math.round(nx / g) * g; ny = Math.round(ny / g) * g;
+      }
+      this.estado.fase.spawnJogador = [Math.round(nx), Math.round(ny)];
+    } else {
+      const c = this.estado.colisao(a.id);
+      if (!c) return;
+      if (a.tipo === 'colMover') {
+        const livre = this.telaParaCamada(sx, sy, '');
+        let nx = livre.x - a.dx, ny = livre.y - a.dy;
+        if (this.estado.encaixar) {
+          const g = this.estado.fase.tamanhoGrade;
+          nx = Math.round(nx / g) * g; ny = Math.round(ny / g) * g;
+        }
+        c.x = Math.round(nx); c.y = Math.round(ny);
+      } else {
+        const r = this.normalizarRet(a.ancoraX, a.ancoraY, w.x, w.y);
+        c.x = r.x; c.y = r.y; c.w = Math.max(2, r.w); c.h = Math.max(2, r.h);
+        const p = this.camadaParaTela(c.x + c.w, c.y + c.h, '');
+        this.mostrarLegenda(`${c.w} × ${c.h} px`, p.x, p.y);
+      }
+    }
+    this.estado.marcarAlterado();
+  }
+
   private ligarEventos() {
     const cv = this.app.canvas;
     cv.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -495,6 +710,20 @@ export class Viewport {
         const escala = this.carimbo.escala;
         if (!e.shiftKey) this.cancelarCarimbo(true); // um clique = um objeto (Shift mantém o carimbo)
         this.aoCarimbar(caminho, p.x, p.y, escala);
+        return;
+      }
+      if (this.estado.modo === 'inicio') {
+        const w = this.mundoEncaixado(p.x, p.y);
+        this.estado.alterar((f) => { f.spawnJogador = [w.x, w.y]; });
+        this.estado.definirModo('selecionar');
+        this.estado.avisar(`Início do jogador em x ${w.x}, y ${w.y} (posição dos pés).`);
+        return;
+      }
+      if (this.estado.modo === 'colisao') { this.pointerDownColisao(p.x, p.y); return; }
+      if (this.sobreMarcadorInicio(p.x, p.y)) {
+        const w = this.telaParaCamada(p.x, p.y, '');
+        const [ix, iy] = this.estado.fase.spawnJogador;
+        this.arraste = { tipo: 'inicio', mexeu: false, dx: w.x - ix, dy: w.y - iy };
         return;
       }
       const sel = this.estado.objetoSelecionado();
@@ -525,15 +754,27 @@ export class Viewport {
       this.estado.emit('camera');
       const a = this.arraste;
       if (this.carimbo && !a) { this.atualizarFantasma(); return; }
+      const cursorCanto = (c: Canto | null) => (c ? (c === 'se' || c === 'no' ? 'nwse-resize' : 'nesw-resize') : null);
       if (!a) {
+        if (this.espacoPressionado) { cv.style.cursor = 'grab'; return; }
+        if (this.estado.modo === 'colisao') {
+          this.hover = null;
+          const w = this.telaParaCamada(p.x, p.y, '');
+          cv.style.cursor = cursorCanto(this.sobreAlcaColisao(p.x, p.y)) ?? (colisaoEm(this.estado.fase, w.x, w.y) ? 'move' : 'crosshair');
+          return;
+        }
+        if (this.estado.modo === 'inicio') { cv.style.cursor = 'crosshair'; return; }
         this.hover = this.objetoEm(p.x, p.y)?.id ?? null;
-        const canto = this.sobreAlca(p.x, p.y);
-        cv.style.cursor = this.espacoPressionado ? 'grab' : canto ? (canto === 'se' || canto === 'no' ? 'nwse-resize' : 'nesw-resize') : this.hover ? 'move' : '';
+        cv.style.cursor = cursorCanto(this.sobreAlca(p.x, p.y)) ?? (this.sobreMarcadorInicio(p.x, p.y) || this.hover ? 'move' : '');
         return;
       }
       if (a.tipo === 'pan') {
         cam.x = a.cx - (p.x - a.sx) / cam.zoom;
         cam.y = a.cy - (p.y - a.sy) / cam.zoom;
+        return;
+      }
+      if (a.tipo === 'colDesenhar' || a.tipo === 'colMover' || a.tipo === 'colEscala' || a.tipo === 'inicio') {
+        this.pointerMoveColisao(a, p.x, p.y);
         return;
       }
       const o = this.estado.objeto(a.id);
@@ -570,7 +811,18 @@ export class Viewport {
         const o = this.estado.objeto(a.id);
         if (a.mexeu && o) this.aoEscalar(o);
       }
+      if (a?.tipo === 'colEscala') this.mostrarLegenda(null);
+      if (a?.tipo === 'colDesenhar') {
+        this.mostrarLegenda(null);
+        const r = this.normalizarRet(a.x0, a.y0, a.x1, a.y1);
+        if (r.w >= 2 && r.h >= 2) {
+          const nova: Colisao = { id: novoIdColisao(this.estado.fase), ...r, ...this.tipoDaNova() };
+          this.estado.alterar((f) => { f.colisoes.push(nova); });
+          this.estado.selecionarColisao(nova.id);
+        }
+      }
       this.arraste = null;
+      this.chaveCamera = '';
     };
     cv.addEventListener('pointerup', soltar);
     cv.addEventListener('pointercancel', soltar);

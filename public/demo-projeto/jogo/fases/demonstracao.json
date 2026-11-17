@@ -728,17 +728,69 @@
       "espelharY": false,
       "opacidade": 1,
       "visivel": true,
-      "efeitos": [],
+      "efeitos": [
+        {
+          "tipo": "pulsar",
+          "intensidade": 0.12,
+          "velocidade": 1.2
+        },
+        {
+          "tipo": "brilhar",
+          "cor": "#fff3a0",
+          "raio": 6,
+          "intensidade": 0.85,
+          "pulsar": true,
+          "velocidade": 0.8
+        },
+        {
+          "tipo": "flutuar",
+          "amplitude": 2,
+          "velocidade": 0.6
+        }
+      ],
       "comportamentos": [],
       "conexoes": {},
       "script": null,
       "tipo": "interativo"
     }
   ],
-  "colisoes": [],
+  "colisoes": [
+    {
+      "id": "col_001",
+      "tipo": "solido",
+      "x": 0,
+      "y": 238,
+      "w": 1440,
+      "h": 32
+    },
+    {
+      "id": "col_002",
+      "tipo": "atravessavel",
+      "x": 300,
+      "y": 170,
+      "w": 96,
+      "h": 6
+    },
+    {
+      "id": "col_003",
+      "tipo": "atravessavel",
+      "x": 520,
+      "y": 130,
+      "w": 96,
+      "h": 6
+    },
+    {
+      "id": "col_004",
+      "tipo": "solido",
+      "x": 200,
+      "y": 214,
+      "w": 48,
+      "h": 24
+    }
+  ],
   "spawnJogador": [
     64,
-    200
+    238
   ],
   "tipo": "area",
   "regiao": "Cidade",

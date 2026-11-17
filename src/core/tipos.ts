@@ -1,4 +1,18 @@
 // Formato de dados de uma fase (salvo como JSON em jogo/fases/). Versão 1.
+import type { Efeito } from './efeitos';
+
+/** Forma de colisão desenhada no cenário (espaço do mundo, parallax 1). */
+export interface Colisao {
+  id: string;
+  /** solido = chão/parede; atravessavel = plataforma que se atravessa por baixo; rampa = triângulo */
+  tipo: 'solido' | 'atravessavel' | 'rampa';
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Só para rampa: de que lado ela sobe. */
+  sobe?: 'direita' | 'esquerda';
+}
 
 export interface Camada {
   id: string;
@@ -37,7 +51,7 @@ export interface ObjetoFase {
   espelharY: boolean;
   opacidade: number;
   visivel: boolean;
-  efeitos: unknown[];
+  efeitos: Efeito[];
   comportamentos: unknown[];
   conexoes: Record<string, string>;
   script: string | null;
@@ -57,6 +71,7 @@ export interface Fase {
   /** Ordem de desenho: índice 0 = mais distante. */
   camadas: Camada[];
   objetos: ObjetoFase[];
-  colisoes: unknown[];
+  colisoes: Colisao[];
+  /** Onde ficam os PÉS do jogador ao começar (espaço do mundo). */
   spawnJogador: [number, number];
 }

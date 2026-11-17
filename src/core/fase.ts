@@ -1,4 +1,5 @@
-import type { Camada, Fase, ObjetoFase, TipoCena } from './tipos';
+import type { Camada, Colisao, Fase, ObjetoFase, TipoCena } from './tipos';
+import { normalizarEfeitos } from './efeitos';
 
 export const VERSAO_FASE = 1;
 
@@ -63,7 +64,8 @@ export function normalizarFase(dados: unknown): Fase {
     versao: VERSAO_FASE,
     camadas,
     objetos,
-    colisoes: Array.isArray(d.colisoes) ? d.colisoes : [],
+    colisoes: normalizarColisoes(d.colisoes),
+    spawnJogador: Array.isArray(d.spawnJogador) && d.spawnJogador.length === 2 ? [Number(d.spawnJogador[0]) || 0, Number(d.spawnJogador[1]) || 0] : base.spawnJogador,
     tamanhoGrade: typeof d.tamanhoGrade === 'number' && d.tamanhoGrade > 0 ? d.tamanhoGrade : 16,
     tipo: d.tipo === 'area' ? 'area' : 'fase',
     regiao: typeof d.regiao === 'string' ? d.regiao : '',
@@ -85,7 +87,7 @@ function normalizarObjeto(o: Partial<ObjetoFase>, camadaPadrao: string): ObjetoF
     espelharX: !!o.espelharX, espelharY: !!o.espelharY,
     opacidade: o.opacidade === undefined ? 1 : Number(o.opacidade),
     visivel: o.visivel !== false,
-    efeitos: o.efeitos ?? [], comportamentos: o.comportamentos ?? [],
+    efeitos: normalizarEfeitos(o.efeitos), comportamentos: o.comportamentos ?? [],
     conexoes: o.conexoes ?? {}, script: o.script ?? null,
   };
 }
@@ -108,4 +110,27 @@ export function nomeArquivoFase(nome: string): string {
   const slug = nome.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
     .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   return (slug || 'fase') + '.json';
+}
+
+function normalizarColisoes(lista: unknown): Colisao[] {
+  if (!Array.isArray(lista)) return [];
+  return lista.filter((c) => c && typeof c === 'object').map((c, i) => {
+    const b = c as Partial<Colisao>;
+    const tipo = b.tipo === 'atravessavel' || b.tipo === 'rampa' ? b.tipo : 'solido';
+    return {
+      id: String(b.id ?? `col_${String(i + 1).padStart(3, '0')}`), tipo,
+      x: Math.round(Number(b.x) || 0), y: Math.round(Number(b.y) || 0),
+      w: Math.max(1, Math.round(Number(b.w) || 1)), h: Math.max(1, Math.round(Number(b.h) || 1)),
+      ...(tipo === 'rampa' ? { sobe: b.sobe === 'esquerda' ? 'esquerda' as const : 'direita' as const } : {}),
+    };
+  });
+}
+
+export function novoIdColisao(fase: Fase): string {
+  let maior = 0;
+  for (const c of fase.colisoes) {
+    const m = /^col_(\d+)$/.exec(c.id);
+    if (m) maior = Math.max(maior, Number(m[1]));
+  }
+  return 'col_' + String(maior + 1).padStart(3, '0');
 }

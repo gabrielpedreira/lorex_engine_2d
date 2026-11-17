@@ -94,7 +94,7 @@ export class TelaInicio {
     return Promise.all(arquivos.map(async (arquivo) => {
       try {
         const f = normalizarFase(JSON.parse(await this.plat.lerFase(arquivo)));
-        return { arquivo, nome: f.nome, tipo: f.tipo, regiao: f.regiao, info: `${f.tamanho[0]} × ${f.tamanho[1]} px · ${f.objetos.length} objeto(s)` };
+        return { arquivo, nome: f.nome, tipo: f.tipo, regiao: f.regiao, info: `${f.tamanho[0]} × ${f.tamanho[1]} px · ${f.objetos.length} objeto(s) · ${f.colisoes.length ? `${f.colisoes.length} colisão(ões)` : 'sem colisão'}` };
       } catch {
         return { arquivo, nome: arquivo, tipo: 'fase' as const, regiao: '', info: 'não consegui ler este arquivo' };
       }

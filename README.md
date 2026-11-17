@@ -10,8 +10,8 @@ escrever código para o comportamento de cada objeto. Tudo testável na hora com
 
 ## Status
 
-🟨 **Construtor de Fases: etapa 1 pronta** (cenário, camadas com parallax, biblioteca, mover/redimensionar,
-desfazer, salvar/abrir). Próximo: etapa 2 (inspetor com efeitos como pulsar/brilhar, colisão, spawn).
+🟨 **Construtor de Fases: etapas 1 e 2 prontas** (cenário, camadas, caixa de ferramentas, efeitos, colisão e
+início do jogador). Próximo: etapa 3, **▶ Testar** (jogador correndo e pulando na fase).
 
 ## Como rodar
 
@@ -49,6 +49,12 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 - **Otimizar imagem**: se a imagem aparece bem menor do que é, a engine gera em `jogo/assets` uma cópia
   reduzida exatamente no tamanho usado (o original de apoio fica intacto) e manda para a Lixeira as cópias grandes
   que ficaram sem uso.
+- **Efeitos** (painel de propriedades): **pulsar**, **brilhar** (halo colorido), **flutuar** e **piscar**, cada um
+  com seus ajustes e prévia animada no cenário (liga/desliga com `Shift+E`).
+- **Colisão** (ferramenta `C`): desenhe por cima da arte **sólidos** (chão e paredes), plataformas
+  **atravessáveis** (sobe-se por baixo) e **rampas** nos dois sentidos. Clique para editar, arraste para mover,
+  alças para redimensionar; `Shift+C` mostra/oculta.
+- **Início do jogador** (ferramenta `I`): bandeira na posição dos pés da personagem, arrastável.
 - **Biblioteca**: lista as imagens do projeto em "Em uso no jogo" (`jogo/assets`) e no material de apoio (resto
   da pasta). Ao colocar um asset de apoio numa fase, ele é **copiado** para `jogo/assets/<categoria>/`.
 - **Cenário**: zoom em níveis inteiros (pixel art nítida), grade de 16 px, quadro amarelo mostrando a **tela do
@@ -71,6 +77,9 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 | Espelhar | `F` |
 | Mover 1 px (8 px) | setas (Shift + setas) |
 | Grade / encaixar / prévia de parallax | `G` / `E` / `P` |
+| Ferramentas: selecionar / colisão / início | `V` / `C` / `I` |
+| Tipo de colisão (no modo Colisão) | `1` sólido · `2` atravessável · `3` rampa ◢ · `4` rampa ◣ |
+| Mostrar colisões / prévia de efeitos | `Shift+C` / `Shift+E` |
 | Mostrar/ocultar caixa de ferramentas | `T` |
 | Carimbar e continuar | `Shift` + clique |
 | Cancelar o carimbo | `Esc` ou botão direito |

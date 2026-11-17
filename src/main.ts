@@ -63,6 +63,12 @@ const biblioteca = new Biblioteca(conteudoBib, plat);
 
 // ---------- Ações sobre objetos ----------
 function excluirSelecionado() {
+  const idCol = estado.colisaoSelecionada;
+  if (idCol) {
+    estado.alterar((f) => { f.colisoes = f.colisoes.filter((c) => c.id !== idCol); });
+    estado.selecionarColisao(null);
+    return;
+  }
   const id = estado.selecionado;
   if (!id) return;
   estado.alterar((f) => { f.objetos = f.objetos.filter((o) => o.id !== id); });
@@ -89,6 +95,8 @@ function mudarOrdem(direcao: 'frente' | 'tras') {
 }
 
 function moverSelecionado(dx: number, dy: number) {
+  const c = estado.colisaoSelecionada ? estado.colisao(estado.colisaoSelecionada) : undefined;
+  if (c) { estado.alterar(() => { c.x += dx; c.y += dy; }); return; }
   const o = estado.objetoSelecionado();
   if (!o) return;
   estado.alterar(() => { o.x += dx; o.y += dy; });
@@ -351,6 +359,59 @@ async function atualizarListaFases() {
   }
 }
 
+// Modos de ferramenta do cenário
+const modos: { modo: 'selecionar' | 'colisao' | 'inicio'; ico: keyof typeof ICONES; dica: string }[] = [
+  { modo: 'selecionar', ico: 'cursor', dica: 'Selecionar e mover objetos (V)' },
+  { modo: 'colisao', ico: 'colisao', dica: 'Colisão: desenhar chão, paredes, plataformas e rampas (C)' },
+  { modo: 'inicio', ico: 'bandeira', dica: 'Início do jogador: clique onde a personagem começa (I)' },
+];
+const grupoModos = el('div', { class: 'grupo modos', role: 'radiogroup', 'aria-label': 'Ferramenta' });
+for (const m of modos) {
+  const b = el('button', { type: 'button', class: 'bt modo', title: m.dica, 'aria-label': m.dica, role: 'radio' }, icone(m.ico));
+  b.dataset.modo = m.modo;
+  b.addEventListener('click', () => estado.definirModo(m.modo));
+  grupoModos.append(b);
+}
+function atualizarModos() {
+  grupoModos.querySelectorAll<HTMLButtonElement>('.modo').forEach((b) => {
+    const ativo = b.dataset.modo === estado.modo;
+    b.classList.toggle('ligado', ativo); b.setAttribute('aria-checked', String(ativo));
+  });
+  barraColisao.hidden = estado.modo !== 'colisao';
+  centro.classList.toggle('modo-inicio', estado.modo === 'inicio');
+}
+
+// Barra flutuante do modo Colisão
+const tiposColisao: { t: 'solido' | 'atravessavel' | 'rampa-direita' | 'rampa-esquerda'; rotulo: string; dica: string }[] = [
+  { t: 'solido', rotulo: 'Sólido', dica: 'Chão e paredes: o jogador não atravessa (1)' },
+  { t: 'atravessavel', rotulo: 'Atravessável', dica: 'Plataforma: o jogador sobe por baixo e fica em cima (2)' },
+  { t: 'rampa-direita', rotulo: 'Rampa ◢', dica: 'Rampa que sobe para a direita (3)' },
+  { t: 'rampa-esquerda', rotulo: 'Rampa ◣', dica: 'Rampa que sobe para a esquerda (4)' },
+];
+const segTipos = el('div', { class: 'segmentado', role: 'radiogroup', 'aria-label': 'Tipo de colisão' });
+for (const t of tiposColisao) {
+  const b = el('button', { type: 'button', title: t.dica, role: 'radio' }, el('span', { class: 'amostra ' + t.t }), t.rotulo);
+  b.dataset.tipo = t.t;
+  b.addEventListener('click', () => { estado.tipoNovaColisao = t.t; atualizarTiposColisao(); });
+  segTipos.append(b);
+}
+function atualizarTiposColisao() {
+  segTipos.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+    const ativo = b.dataset.tipo === estado.tipoNovaColisao;
+    b.classList.toggle('ativo', ativo); b.setAttribute('aria-checked', String(ativo));
+  });
+}
+const barraColisao = el('div', { class: 'barra-flutuante' }, segTipos,
+  el('span', { class: 'dica-flutuante' }, 'Arraste para desenhar · clique numa forma para editar · Del exclui · Esc sai'));
+barraColisao.hidden = true;
+centro.append(barraColisao);
+atualizarTiposColisao();
+estado.on('modo', () => {
+  atualizarModos();
+  if (estado.modo === 'colisao') estado.avisar('Colisão: escolha o tipo na barra e arraste no cenário para desenhar.');
+  if (estado.modo === 'inicio') estado.avisar('Início do jogador: clique onde ficam os pés da personagem ao começar.');
+});
+
 barra.append(
   botaoMarca,
   el('div', { class: 'grupo' }, nomeProjeto),
@@ -359,6 +420,7 @@ barra.append(
     seletorFases,
     botaoBarra('salvar', 'Salvar', 'Salvar fase (Ctrl+S)', () => void salvar()),
     indicadorSujo),
+  grupoModos,
   el('div', { class: 'grupo' },
     botaoBarra('desfazer', '', 'Desfazer (Ctrl+Z)', () => estado.desfazer()),
     botaoBarra('refazer', '', 'Refazer (Ctrl+Y)', () => estado.refazer())),
@@ -366,6 +428,8 @@ barra.append(
     alternar('grade', 'Mostrar grade (G)', () => estado.grade, () => { estado.grade = !estado.grade; }),
     alternar('ima', 'Encaixar na grade (E)', () => estado.encaixar, () => { estado.encaixar = !estado.encaixar; }),
     alternar('camadas', 'Prévia de parallax: desligada = todas as camadas alinhadas (P)', () => estado.previaParallax, () => { estado.previaParallax = !estado.previaParallax; }),
+    alternar('verColisao', 'Mostrar colisões (Shift+C)', () => estado.mostrarColisoes, () => { estado.mostrarColisoes = !estado.mostrarColisoes; }),
+    alternar('brilho', 'Prévia dos efeitos animados (pulsar, brilhar…) (Shift+E)', () => estado.previaEfeitos, () => { estado.previaEfeitos = !estado.previaEfeitos; }),
     botaoBarra('enquadrar', '', 'Enquadrar a fase (Home)', () => viewport.enquadrar()),
     rotuloZoom),
   el('div', { class: 'espaco' }),
@@ -376,7 +440,7 @@ barra.append(
 const stCoord = el('span', {});
 const stCamada = el('span', {});
 const stMsg = el('span', { class: 'msg', role: 'status' });
-const stAtalhos = el('span', { class: 'atalhos' }, 'T: ferramentas · Roda: zoom · Espaço/botão do meio: mover a visão · Del: excluir · Ctrl+D: duplicar · F: espelhar · Setas: mover 1 px (Shift: 8)');
+const stAtalhos = el('span', { class: 'atalhos' }, 'V/C/I: selecionar, colisão, início · T: ferramentas · Roda: zoom · Espaço/botão do meio: mover a visão · Del: excluir · Ctrl+D: duplicar · F: espelhar · Setas: mover 1 px (Shift: 8)');
 status.append(stCoord, stCamada, stMsg, stAtalhos);
 let timerMsg = 0;
 
@@ -417,7 +481,14 @@ window.addEventListener('keydown', (e) => {
   switch (e.key) {
     case ' ': e.preventDefault(); viewport.setEspaco(true); break;
     case 'Delete': case 'Backspace': excluirSelecionado(); break;
-    case 'Escape': if (viewport.carimboAtivo) viewport.cancelarCarimbo(); else estado.selecionar(null); break;
+    case 'Escape':
+      if (viewport.carimboAtivo) viewport.cancelarCarimbo();
+      else if (estado.modo !== 'selecionar') estado.definirModo('selecionar');
+      else estado.selecionar(null);
+      break;
+    case '1': case '2': case '3': case '4':
+      if (estado.modo === 'colisao') { estado.tipoNovaColisao = (['solido', 'atravessavel', 'rampa-direita', 'rampa-esquerda'] as const)[Number(e.key) - 1]; atualizarTiposColisao(); }
+      break;
     case 'Home': viewport.enquadrar(); break;
     case '[': viewport.escalarSelecionado(e.shiftKey ? 1 / 1.01 : 1 / 1.1); break;
     case ']': viewport.escalarSelecionado(e.shiftKey ? 1.01 : 1.1); break;
@@ -429,9 +500,14 @@ window.addEventListener('keydown', (e) => {
     case 'ArrowDown': e.preventDefault(); moverSelecionado(0, e.shiftKey ? 8 : 1); break;
     default:
       if (k === 't') alternarLateral();
+      else if (k === 'v') estado.definirModo('selecionar');
+      else if (k === 'c' && e.shiftKey) { estado.mostrarColisoes = !estado.mostrarColisoes; estado.emit('opcoes'); sincronizarAlternadores(); }
+      else if (k === 'c') estado.definirModo(estado.modo === 'colisao' ? 'selecionar' : 'colisao');
+      else if (k === 'i') estado.definirModo('inicio');
+      else if (k === 'e' && e.shiftKey) { estado.previaEfeitos = !estado.previaEfeitos; estado.emit('opcoes'); sincronizarAlternadores(); }
       else if (k === 'f') { const o = estado.objetoSelecionado(); if (o) estado.alterar(() => { o.espelharX = !o.espelharX; }); }
       else if (k === 'g') { estado.grade = !estado.grade; estado.emit('opcoes'); sincronizarAlternadores(); }
-      else if (k === 'e') { estado.encaixar = !estado.encaixar; estado.emit('opcoes'); sincronizarAlternadores(); }
+      else if (k === 'e' && !e.shiftKey) { estado.encaixar = !estado.encaixar; estado.emit('opcoes'); sincronizarAlternadores(); }
       else if (k === 'p') { estado.previaParallax = !estado.previaParallax; estado.emit('opcoes'); sincronizarAlternadores(); }
   }
 });
@@ -439,7 +515,7 @@ window.addEventListener('keyup', (e) => { if (e.key === ' ') viewport.setEspaco(
 window.addEventListener('beforeunload', (e) => { if (estado.sujo) e.preventDefault(); });
 
 function sincronizarAlternadores() {
-  const estados = [estado.grade, estado.encaixar, estado.previaParallax];
+  const estados = [estado.grade, estado.encaixar, estado.previaParallax, estado.mostrarColisoes, estado.previaEfeitos];
   barra.querySelectorAll<HTMLButtonElement>('.alternar').forEach((b, i) => {
     b.classList.toggle('ligado', estados[i]);
     b.setAttribute('aria-pressed', String(estados[i]));
@@ -475,6 +551,7 @@ async function iniciar() {
   await inicio.mostrar(false);
   inicio.aoVoltar = () => viewport.enquadrar();
   atualizarStatus();
+  atualizarModos();
   plat.progresso('Pronto');
   plat.pronto();
 }

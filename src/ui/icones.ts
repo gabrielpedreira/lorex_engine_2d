@@ -16,6 +16,11 @@ export const ICONES = {
   play: svg('<path d="M5 3l8 5-8 5z"/>'),
   pasta: svg('<path d="M2 4.5V12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H8L6.5 3H3a1 1 0 0 0-1 1.5z"/>'),
   novo: svg('<path d="M9 2H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6z"/><path d="M9 2v4h4M8 8.5v3M6.5 10h3"/>'),
+  cursor: svg('<path d="M3 2l9.5 5.2-4.2 1.1L6.6 12.5z"/><path d="M8.6 8.4l3.4 4.1"/>'),
+  colisao: svg('<rect x="2" y="9" width="12" height="5" rx="0.5"/><path d="M4 9l-1 2M7 9l-2 5M10 9l-2 5M13 9l-2 5"/><path d="M8 2v4M6 4.5L8 6.5l2-2"/>'),
+  bandeira: svg('<path d="M4 14V2"/><path d="M4 2.5h7.5l-1.8 2.7 1.8 2.8H4"/>'),
+  brilho: svg('<path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3M3.4 3.4l2 2M10.6 10.6l2 2M3.4 12.6l2-2M10.6 5.4l2-2"/>'),
+  verColisao: svg('<rect x="2" y="9" width="12" height="5" rx="0.5"/><path d="M4 9l-1 2M7 9l-2 5M10 9l-2 5M13 9l-2 5"/><circle cx="8" cy="4.5" r="2"/>'),
   salvar: svg('<path d="M3 2h8l3 3v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M5 2v3.5h5V2M5 14V9.5h6V14"/>'),
 };
 

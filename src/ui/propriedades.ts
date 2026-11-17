@@ -1,6 +1,7 @@
 // Painel de propriedades: do objeto selecionado ou, sem seleção, da fase.
 import type { Estado } from '../editor/estado';
-import type { ObjetoFase } from '../core/tipos';
+import type { Colisao, ObjetoFase } from '../core/tipos';
+import { EFEITOS_PADRAO, type Efeito, type TipoEfeito } from '../core/efeitos';
 import { el } from './dom';
 
 export interface AcoesObjeto {
@@ -32,7 +33,128 @@ export class PainelPropriedades {
     if (!forcar && digitando && this.corpo.contains(ativo)) return;
     this.corpo.replaceChildren();
     const o = this.estado.objetoSelecionado();
-    if (o) this.renderObjeto(o); else this.renderFase();
+    const c = this.estado.colisaoSelecionada ? this.estado.colisao(this.estado.colisaoSelecionada) : undefined;
+    if (o) this.renderObjeto(o);
+    else if (c) this.renderColisao(c);
+    else this.renderFase();
+  }
+
+  // ---------- Controle deslizante com desfazer de uma vez (registra no histórico só ao começar a arrastar) ----------
+  private deslizante(rotulo: string, valor: number, min: number, max: number, passo: number, formatar: (v: number) => string, aplicar: (v: number) => void) {
+    const id = 'd-' + rotulo.replace(/\W+/g, '') + Math.random().toString(36).slice(2, 6);
+    const input = el('input', { type: 'range', id, min, max, step: passo, value: valor });
+    const saida = el('output', { for: id }, formatar(valor));
+    let registrado = false;
+    input.addEventListener('input', () => {
+      if (!registrado) { this.estado.checkpoint(); registrado = true; }
+      const v = Number(input.value);
+      aplicar(v);
+      saida.textContent = formatar(v);
+      this.estado.marcarAlterado();
+    });
+    input.addEventListener('change', () => { registrado = false; });
+    return el('div', { class: 'deslizante' }, el('label', { for: id }, rotulo), input, saida);
+  }
+
+  // ---------- Efeitos ----------
+  private secaoEfeitos(o: ObjetoFase) {
+    const nomes: Record<TipoEfeito, [string, string]> = {
+      pulsar: ['Pulsar', 'Cresce e volta, chamando atenção'],
+      brilhar: ['Brilhar', 'Halo colorido em volta da imagem'],
+      flutuar: ['Flutuar', 'Sobe e desce devagar'],
+      piscar: ['Piscar', 'Acende e apaga'],
+    };
+    const secao = el('div', { class: 'secao' }, el('h3', {}, 'Efeitos'));
+    const pct = (v: number) => `${Math.round(v * 100)}%`;
+    const porSeg = (v: number) => `${v.toFixed(1).replace('.', ',')}/s`;
+    for (const tipo of Object.keys(nomes) as TipoEfeito[]) {
+      const atual = o.efeitos.find((e) => e.tipo === tipo);
+      const cb = el('input', { type: 'checkbox' });
+      cb.checked = !!atual;
+      cb.addEventListener('change', () => {
+        this.estado.alterar(() => {
+          if (cb.checked) o.efeitos = [...o.efeitos.filter((e) => e.tipo !== tipo), { ...EFEITOS_PADRAO[tipo] } as Efeito];
+          else o.efeitos = o.efeitos.filter((e) => e.tipo !== tipo);
+        });
+        this.render(true);
+      });
+      const bloco = el('div', { class: 'efeito' + (atual ? ' ligado' : '') },
+        el('label', { class: 'check efeito-titulo', title: nomes[tipo][1] }, cb, el('strong', {}, nomes[tipo][0]), el('span', {}, nomes[tipo][1])));
+      if (atual) {
+        const params = el('div', { class: 'efeito-params' });
+        if (atual.tipo === 'pulsar') {
+          params.append(
+            this.deslizante('Intensidade', atual.intensidade, 0.02, 0.5, 0.01, pct, (v) => { atual.intensidade = v; }),
+            this.deslizante('Velocidade', atual.velocidade, 0.2, 5, 0.1, porSeg, (v) => { atual.velocidade = v; }));
+        } else if (atual.tipo === 'brilhar') {
+          const cor = el('input', { type: 'color', value: atual.cor, 'aria-label': 'Cor do brilho' });
+          cor.addEventListener('change', () => this.estado.alterar(() => { atual.cor = cor.value; }));
+          const pulsa = el('input', { type: 'checkbox' });
+          pulsa.checked = atual.pulsar;
+          pulsa.addEventListener('change', () => { this.estado.alterar(() => { atual.pulsar = pulsa.checked; }); this.render(true); });
+          params.append(
+            el('div', { class: 'deslizante' }, el('label', {}, 'Cor'), cor, el('span', {})),
+            this.deslizante('Tamanho', atual.raio, 1, 32, 1, (v) => `${v} px`, (v) => { atual.raio = v; }),
+            this.deslizante('Intensidade', atual.intensidade, 0.1, 1, 0.05, pct, (v) => { atual.intensidade = v; }),
+            el('label', { class: 'check' }, pulsa, 'O brilho pulsa'));
+          if (atual.pulsar) params.append(this.deslizante('Velocidade', atual.velocidade, 0.2, 4, 0.1, porSeg, (v) => { atual.velocidade = v; }));
+        } else if (atual.tipo === 'flutuar') {
+          params.append(
+            this.deslizante('Altura', atual.amplitude, 1, 32, 1, (v) => `${v} px`, (v) => { atual.amplitude = v; }),
+            this.deslizante('Velocidade', atual.velocidade, 0.1, 3, 0.1, porSeg, (v) => { atual.velocidade = v; }));
+        } else if (atual.tipo === 'piscar') {
+          params.append(
+            this.deslizante('Intervalo', atual.intervalo, 0.1, 3, 0.05, (v) => `${v.toFixed(2).replace('.', ',')} s`, (v) => { atual.intervalo = v; }),
+            this.deslizante('Apagado', atual.minimo, 0, 0.9, 0.05, pct, (v) => { atual.minimo = v; }));
+        }
+        bloco.append(params);
+      }
+      secao.append(bloco);
+    }
+    if (o.efeitos.length && !this.estado.previaEfeitos) {
+      secao.append(el('span', { class: 'dica-campo' }, 'A prévia dos efeitos está desligada (botão ✳ na barra ou Shift+E).'));
+    }
+    return secao;
+  }
+
+  // ---------- Colisão ----------
+  private renderColisao(c: Colisao) {
+    const nomes = { solido: 'Sólido (chão e paredes)', atravessavel: 'Atravessável (sobe por baixo)', rampa: 'Rampa' };
+    const tipo = el('select', { id: 'p-col-tipo' }, ...Object.entries(nomes).map(([v, r]) => el('option', { value: v }, r)));
+    tipo.value = c.tipo;
+    tipo.addEventListener('change', () => {
+      this.estado.alterar(() => {
+        c.tipo = tipo.value as Colisao['tipo'];
+        if (c.tipo === 'rampa') c.sobe = c.sobe ?? 'direita'; else delete c.sobe;
+      });
+      this.render(true);
+    });
+    const blocos: HTMLElement[] = [
+      el('h3', {}, 'Colisão'),
+      el('div', { class: 'campo largo' }, el('label', { for: 'p-col-tipo' }, 'Tipo'), tipo),
+    ];
+    if (c.tipo === 'rampa') {
+      const sobe = el('div', { class: 'segmentado', role: 'radiogroup', 'aria-label': 'Sentido da rampa' });
+      for (const [v, r] of [['direita', 'Sobe para a direita ◢'], ['esquerda', 'Sobe para a esquerda ◣']] as const) {
+        const b = el('button', { type: 'button', class: c.sobe === v ? 'ativo' : '', role: 'radio', 'aria-checked': String(c.sobe === v) }, r);
+        b.addEventListener('click', () => { this.estado.alterar(() => { c.sobe = v; }); this.render(true); });
+        sobe.append(b);
+      }
+      blocos.push(sobe);
+    }
+    const excluir = el('button', { type: 'button', class: 'perigo' }, 'Excluir colisão');
+    excluir.addEventListener('click', () => this.acoes.excluir());
+    blocos.push(
+      el('div', { class: 'linha2' },
+        this.num('X', c.x, (v) => { c.x = Math.round(v); }),
+        this.num('Y', c.y, (v) => { c.y = Math.round(v); })),
+      el('div', { class: 'linha2' },
+        this.num('Largura', c.w, (v) => { c.w = Math.max(2, Math.round(v)); }, { min: 2 }),
+        this.num('Altura', c.h, (v) => { c.h = Math.max(2, Math.round(v)); }, { min: 2 })),
+      el('div', { class: 'secao acoes' }, excluir),
+      el('p', { class: 'dica-campo' }, 'Arraste a forma para mover e as alças para redimensionar. Setas movem 1 px (Shift: 8).'),
+    );
+    this.corpo.append(el('div', { class: 'secao' }, ...blocos));
   }
 
   private atualizarMantendoFoco(id: string) {
@@ -120,10 +242,7 @@ export class PainelPropriedades {
           this.check('Espelhar ↕', o.espelharY, (v) => { o.espelharY = v; })),
         this.num('Opacidade', o.opacidade, (v) => { o.opacidade = v; }, { passo: 0.1, min: 0, max: 1 }),
       ),
-      el('div', { class: 'secao' },
-        el('h3', {}, 'Efeitos e comportamento'),
-        el('div', { class: 'em-breve' }, 'Pulsar, brilhar, coletável, porta… chegam na etapa 2.'),
-      ),
+      this.secaoEfeitos(o),
       el('div', { class: 'secao acoes' },
         botao('Trazer p/ frente', () => this.acoes.ordem('frente')),
         botao('Enviar p/ trás', () => this.acoes.ordem('tras')),
@@ -208,7 +327,12 @@ export class PainelPropriedades {
         el('div', { class: 'linha2' },
           this.num('Grade (px)', f.tamanhoGrade, (v) => { f.tamanhoGrade = Math.max(1, Math.round(v)); }, { min: 1, passo: 8 }),
           el('div', { class: 'campo largo' }, el('label', { for: 'p-cor' }, 'Cor de fundo'), cor)),
-        el('div', { class: 'dica' }, `${f.objetos.length} objeto(s). Selecione um objeto no cenário para editar.`),
+        el('h3', {}, 'Início do jogador'),
+        el('div', { class: 'linha2' },
+          this.num('Início X', f.spawnJogador[0], (v) => { f.spawnJogador = [Math.round(v), f.spawnJogador[1]]; }),
+          this.num('Início Y', f.spawnJogador[1], (v) => { f.spawnJogador = [f.spawnJogador[0], Math.round(v)]; })),
+        el('span', { class: 'dica-campo' }, 'Posição dos pés da personagem. Arraste a bandeira no cenário ou use a ferramenta Início (I).'),
+        el('div', { class: 'dica' }, `${f.objetos.length} objeto(s) · ${f.colisoes.length} colisão(ões). Selecione algo no cenário para editar.`),
       ),
     );
   }

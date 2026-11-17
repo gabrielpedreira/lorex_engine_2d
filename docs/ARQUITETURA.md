@@ -186,6 +186,30 @@ importa é outra: (1) desenhar os assets na escala de pixel do jogo, sem PNGs gi
 `objeto.tipo`: `estatico` (só visual) ou `interativo` (recebe comportamentos na ferramenta de interação). No
 editor, os interativos ganham um losango lima no canto.
 
+### 4.15 Efeitos (etapa 2)
+
+`src/core/efeitos.ts` tem os tipos e a função pura `calcularEfeitos(efeitos, t, fase)` → `{ dy, escala, alpha, brilho }`,
+que o editor usa na prévia e o jogo vai usar no runtime.
+
+| Efeito | Parâmetros | Como funciona |
+|---|---|---|
+| pulsar | intensidade (0–50%), velocidade (/s) | escala × (1 + intensidade × onda) |
+| brilhar | cor, raio (px), intensidade, pulsar?, velocidade | halo: cópia da imagem em silhueta (ColorMatrixFilter) + BlurFilter, atrás do objeto |
+| flutuar | amplitude (px), velocidade | deslocamento vertical em pixels inteiros (não borra a pixel art) |
+| piscar | intervalo (s), opacidade mínima | alterna opacidade |
+
+Cada objeto tem uma fase própria (hash do id), para que vários itens não pisquem em sincronia. Os deslizantes registram
+no desfazer uma vez por arraste.
+
+### 4.16 Colisão e início do jogador (etapa 2)
+
+- `fase.colisoes[]`: `{ id, tipo: 'solido' | 'atravessavel' | 'rampa', x, y, w, h, sobe?: 'direita' | 'esquerda' }`,
+  no espaço do mundo (parallax 1), desenhadas por cima da arte (os cenários são pintados à mão, sem tiles).
+  Atravessável = só a borda de cima segura o jogador. Rampa = triângulo dentro do retângulo.
+- `fase.spawnJogador = [x, y]`: posição dos **pés** do jogador ao começar.
+- Modos de ferramenta (`estado.modo`): `selecionar` (objetos e bandeira), `colisao` (só formas de colisão; arrastar
+  no vazio desenha), `inicio` (um clique posiciona a bandeira e volta para selecionar). Código: `src/editor/colisoes.ts`.
+
 ## 5. Estrutura do código
 
 ```
@@ -193,9 +217,10 @@ electron/main.cjs        processo principal: janela, protocolo projeto://, IPC d
 electron/preload.cjs     ponte segura (window.lorex)
 splash.html + src/splash/ splash de inicialização
 src/main.ts              monta a tela, barra, atalhos, abrir/salvar, fluxo de inicialização
-src/core/                formato de dados da fase (tipos, criação, normalização)
+src/core/                formato de dados da fase (tipos, criação, normalização) e efeitos (puros, reaproveitados pelo jogo)
 src/editor/estado.ts     estado central + eventos + desfazer/refazer (snapshots JSON)
-src/editor/viewport.ts   cenário PixiJS: câmera, camadas, grade, seleção, mouse
+src/editor/viewport.ts   cenário PixiJS: câmera, camadas, grade, seleção, mouse, efeitos ao vivo
+src/editor/colisoes.ts   desenho e seleção das colisões e da bandeira de início
 src/plataforma/          acesso a arquivos: Electron (disco) ou navegador (demo)
 src/ui/                  painéis: tela inicial, caixa de ferramentas, biblioteca, camadas, propriedades, diálogos, ícones
 public/demo-projeto/     projeto de demonstração com assets genéricos (para portfólio e testes)

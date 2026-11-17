@@ -293,3 +293,33 @@ button.largo { width: 100%; justify-content: center; padding: 8px 12px; }
 }
 
 .bib-acao { padding: 0 4px 10px; }
+
+/* ---------- Modos (selecionar / colisão / início) ---------- */
+.grupo.modos .bt.modo.ligado { background: var(--acento-suave); color: var(--acento); }
+.barra-flutuante {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 6;
+  display: flex; align-items: center; gap: 12px; padding: 6px 8px 6px 6px;
+  background: rgba(24, 32, 30, 0.96); border: 1px solid var(--borda); border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); white-space: nowrap;
+}
+.barra-flutuante[hidden] { display: none; }
+.barra-flutuante .segmentado button { gap: 6px; padding: 5px 10px; }
+.dica-flutuante { color: var(--texto-2); font-size: 11px; }
+.amostra { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
+.amostra.solido { background: rgba(167, 221, 62, 0.45); border: 1px solid #a7dd3e; }
+.amostra.atravessavel { background: rgba(248, 151, 21, 0.25); border-top: 3px solid #f89715; }
+.amostra.rampa-direita { background: linear-gradient(to top left, #2ca782 50%, transparent 50%); }
+.amostra.rampa-esquerda { background: linear-gradient(to top right, #2ca782 50%, transparent 50%); }
+
+/* ---------- Efeitos ---------- */
+.efeito { border: 1px solid var(--borda); border-radius: 6px; padding: 6px 8px; }
+.efeito.ligado { border-color: rgba(167, 221, 62, 0.4); background: rgba(167, 221, 62, 0.05); }
+.efeito-titulo { display: grid !important; grid-template-columns: auto auto 1fr; align-items: center; gap: 6px; }
+.efeito-titulo span { color: var(--texto-2); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.efeito-params { display: flex; flex-direction: column; gap: 6px; padding: 8px 0 2px; }
+.deslizante { display: grid; grid-template-columns: 70px 1fr 48px; align-items: center; gap: 8px; }
+.deslizante label { color: var(--texto-2); font-size: 12px; }
+.deslizante output { color: var(--texto); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+.deslizante input[type='color'] { height: 22px; }
+input[type='range'] { width: 100%; accent-color: var(--acento); }
+.secao.acoes .perigo:only-child { grid-column: 1 / -1; }
