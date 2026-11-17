@@ -39,6 +39,13 @@
         "nome": "Itens",
         "tipoPadrao": "interativo"
       }
-    ]
+    ],
+    "jogador": {
+      "largura": 14,
+      "altura": 30,
+      "velocidade": 130,
+      "alturaPulo": 58,
+      "gravidade": 900
+    }
   }
 }

@@ -5,8 +5,9 @@ import type { Camada, Fase, ObjetoFase } from '../core/tipos';
 export type Evento = 'fase' | 'selecao' | 'camera' | 'opcoes' | 'arquivo' | 'mensagem' | 'modo';
 
 /** Ferramenta ativa no cenário. */
-export type Modo = 'selecionar' | 'colisao' | 'inicio';
-export type TipoNovaColisao = 'solido' | 'atravessavel' | 'rampa-direita' | 'rampa-esquerda';
+export type Modo = 'selecionar' | 'mao' | 'colisao' | 'inicio';
+/** Forma desenhada pela ferramenta Colisão. */
+export type FormaNova = 'bloco' | 'rampa-direita' | 'rampa-esquerda' | 'poligono' | 'linha' | 'maoLivre';
 
 const LIMITE_HISTORICO = 200;
 
@@ -22,7 +23,10 @@ export class Estado {
   camadaAtiva = 'objetos';
 
   modo: Modo = 'selecionar';
-  tipoNovaColisao: TipoNovaColisao = 'solido';
+  formaNova: FormaNova = 'bloco';
+  comportamentoNovo: 'solido' | 'atravessavel' = 'solido';
+  /** Modo ▶ Testar ativo (edição bloqueada). */
+  testando = false;
   mostrarColisoes = true;
   previaEfeitos = true;
 

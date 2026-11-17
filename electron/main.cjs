@@ -12,6 +12,9 @@ const MAX_RECENTES = 6;
 const SPLASH_MINIMO_MS = 1800; // tempo mínimo da splash na tela, para não "piscar"
 
 let raizProjeto = null; // caminho absoluto da pasta do projeto (ex.: ...\jogo invasão)
+let observador = null;  // vigia jogo/ para avisar o editor de mudanças feitas por fora (ex.: pelo Claude)
+const escritasProprias = new Map(); // caminho → hora da última escrita feita pelo próprio editor
+const avisosPendentes = new Map();
 let janelaSplash = null;
 let janelaEditor = null;
 let inicioSplash = 0;
@@ -41,6 +44,32 @@ function normalizarCategoria(nome) {
     .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'geral';
 }
 
+function marcarEscrita(abs) { escritasProprias.set(path.resolve(abs), Date.now()); }
+
+/** Vigia a pasta jogo/ e avisa a interface quando algo muda por fora (fases, assets, projeto.json). */
+function observarProjeto() {
+  if (observador) { observador.close(); observador = null; }
+  if (!raizProjeto) return;
+  const dirJogo = path.join(raizProjeto, 'jogo');
+  try {
+    observador = fs.watch(dirJogo, { recursive: true }, (_evento, nome) => {
+      if (!nome) return;
+      const abs = path.resolve(dirJogo, String(nome));
+      const t = escritasProprias.get(abs);
+      if (t && Date.now() - t < 2000) return; // fui eu que escrevi
+      const rel = path.relative(dirJogo, abs).split(path.sep).join('/');
+      clearTimeout(avisosPendentes.get(rel));
+      avisosPendentes.set(rel, setTimeout(() => {
+        avisosPendentes.delete(rel);
+        const tipo = rel.startsWith('fases/') && rel.endsWith('.json') ? 'fase' : rel === 'projeto.json' ? 'config' : rel.startsWith('assets/') ? 'assets' : 'outro';
+        if (tipo !== 'outro' && janelaEditor && !janelaEditor.isDestroyed()) {
+          janelaEditor.webContents.send('projeto:mudou', { tipo, nome: path.basename(rel) });
+        }
+      }, 350));
+    });
+  } catch { /* sem vigia: o editor continua funcionando, só não recarrega sozinho */ }
+}
+
 function infoProjeto() {
   return raizProjeto ? { nome: path.basename(raizProjeto), caminho: raizProjeto } : null;
 }
@@ -54,6 +83,7 @@ async function abrirProjeto(raiz) {
   cfg.ultimoProjeto = raiz;
   cfg.recentes = [raiz, ...(cfg.recentes ?? []).filter((r) => r !== raiz)].slice(0, MAX_RECENTES);
   salvarConfig(cfg);
+  observarProjeto();
   return infoProjeto();
 }
 
@@ -134,7 +164,9 @@ function registrarIpc() {
     try { return JSON.parse(await fsp.readFile(resolverDentroDoProjeto('jogo/projeto.json'), 'utf-8')); } catch { return null; }
   });
   ipcMain.handle('projeto:salvarConfig', async (_e, dados) => {
-    await fsp.writeFile(resolverDentroDoProjeto('jogo/projeto.json'), JSON.stringify(dados, null, 2), 'utf-8');
+    const destino = resolverDentroDoProjeto('jogo/projeto.json');
+    marcarEscrita(destino);
+    await fsp.writeFile(destino, JSON.stringify(dados, null, 2), 'utf-8');
     return true;
   });
 
@@ -154,7 +186,7 @@ function registrarIpc() {
     const relJogo = `assets/${categoria}/${partes[partes.length - 1]}`;
     const destino = resolverDentroDoProjeto('jogo/' + relJogo);
     await fsp.mkdir(path.dirname(destino), { recursive: true });
-    if (!fs.existsSync(destino)) await fsp.copyFile(origem, destino);
+    if (!fs.existsSync(destino)) { marcarEscrita(destino); await fsp.copyFile(origem, destino); }
     return relJogo;
   });
 
@@ -173,6 +205,7 @@ function registrarIpc() {
     const relJogo = `assets/${categoria}/${base}_${w}x${h}.png`;
     const destino = resolverDentroDoProjeto('jogo/' + relJogo);
     await fsp.mkdir(path.dirname(destino), { recursive: true });
+    marcarEscrita(destino);
     await fsp.writeFile(destino, reduzida.toPNG());
     const antes = fs.statSync(origem).size, depois = fs.statSync(destino).size;
     return { asset: relJogo, w, h, bytesAntes: antes, bytesDepois: depois, pixelsAntes: img.getSize().width * img.getSize().height };
@@ -204,7 +237,7 @@ function registrarIpc() {
     for (const r of arquivos) {
       if (usados.has(r)) continue;
       const abs = resolverDentroDoProjeto('jogo/' + r);
-      try { await shell.trashItem(abs); removidos.push(r); } catch { /* sem Lixeira: mantém o arquivo */ }
+      try { marcarEscrita(abs); await shell.trashItem(abs); removidos.push(r); } catch { /* sem Lixeira: mantém o arquivo */ }
     }
     return removidos;
   });
@@ -219,7 +252,9 @@ function registrarIpc() {
   ipcMain.handle('fases:ler', async (_e, nome) =>
     fsp.readFile(resolverDentroDoProjeto('jogo/fases/' + path.basename(nome)), 'utf-8'));
   ipcMain.handle('fases:salvar', async (_e, nome, conteudo) => {
-    await fsp.writeFile(resolverDentroDoProjeto('jogo/fases/' + path.basename(nome)), conteudo, 'utf-8');
+    const destino = resolverDentroDoProjeto('jogo/fases/' + path.basename(nome));
+    marcarEscrita(destino);
+    await fsp.writeFile(destino, conteudo, 'utf-8');
     return true;
   });
 }

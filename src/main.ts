@@ -13,8 +13,12 @@ import type { ConfigProjeto, Ferramenta } from './plataforma/plataforma';
 import type { TipoObjeto } from './core/tipos';
 import { PainelCamadas } from './ui/camadas';
 import { el, perguntar } from './ui/dom';
+import { Legendas, dica } from './ui/legenda';
+import type { FormaNova } from './editor/estado';
 import { icone, type ICONES } from './ui/icones';
 import { PainelPropriedades } from './ui/propriedades';
+import { ModoTeste } from './editor/testar';
+import { JOGADOR_PADRAO } from './core/fisica';
 import { TelaInicio } from './ui/inicio';
 import { CONFIG_PADRAO } from './plataforma/plataforma';
 
@@ -40,8 +44,7 @@ const recolher = el('button', { type: 'button', class: 'aba-recolher', title: 'O
 const conteudoFerr = el('div', { class: 'aba-conteudo', role: 'tabpanel' });
 const conteudoBib = el('div', { class: 'aba-conteudo', role: 'tabpanel' });
 conteudoBib.hidden = true;
-const trilho = el('button', { type: 'button', class: 'trilho', title: 'Mostrar caixa de ferramentas (T)', 'aria-label': 'Mostrar caixa de ferramentas' }, el('span', {}, '»'), el('span', { class: 'trilho-texto' }, 'Ferramentas'));
-esquerda.append(el('div', { class: 'abas', role: 'tablist' }, abaFerr, abaBib, recolher), conteudoFerr, conteudoBib, trilho);
+esquerda.append(el('div', { class: 'abas', role: 'tablist' }, abaFerr, abaBib, recolher), conteudoFerr, conteudoBib);
 
 function mostrarAba(qual: 'ferr' | 'bib') {
   conteudoFerr.hidden = qual !== 'ferr'; conteudoBib.hidden = qual !== 'bib';
@@ -51,13 +54,15 @@ function mostrarAba(qual: 'ferr' | 'bib') {
 function alternarLateral(mostrar?: boolean) {
   const oculta = mostrar === undefined ? !app.classList.contains('lateral-oculta') : !mostrar;
   app.classList.toggle('lateral-oculta', oculta);
+  atualizarModos();
 }
 abaFerr.addEventListener('click', () => mostrarAba('ferr'));
 abaBib.addEventListener('click', () => mostrarAba('bib'));
 recolher.addEventListener('click', () => alternarLateral(false));
-trilho.addEventListener('click', () => alternarLateral(true));
 
 const viewport = new Viewport(centro, estado, plat);
+const legendas = new Legendas();
+viewport.aoPairar = (info, cx, cy) => legendas.mostrarNaCena(info, cx, cy);
 const ferramentas = new CaixaFerramentas(conteudoFerr, plat);
 const biblioteca = new Biblioteca(conteudoBib, plat);
 
@@ -96,7 +101,7 @@ function mudarOrdem(direcao: 'frente' | 'tras') {
 
 function moverSelecionado(dx: number, dy: number) {
   const c = estado.colisaoSelecionada ? estado.colisao(estado.colisaoSelecionada) : undefined;
-  if (c) { estado.alterar(() => { c.x += dx; c.y += dy; }); return; }
+  if (c) { estado.alterar(() => { c.pontos = c.pontos.map(([x, y]) => [x + dx, y + dy]); }); return; }
   const o = estado.objetoSelecionado();
   if (!o) return;
   estado.alterar(() => { o.x += dx; o.y += dy; });
@@ -288,8 +293,17 @@ async function abrirFase(arquivo: string): Promise<boolean> {
   }
 }
 
+/** Nome de arquivo livre em jogo/fases (não sobrescreve outra fase com o mesmo nome). */
+async function arquivoLivre(nome: string) {
+  const existentes = new Set(await plat.listarFases());
+  const base = nomeArquivoFase(nome).replace(/\.json$/, '');
+  let candidato = base + '.json';
+  for (let i = 2; existentes.has(candidato); i++) candidato = `${base}_${i}.json`;
+  return candidato;
+}
+
 async function salvar(): Promise<boolean> {
-  const arquivo = estado.arquivoFase ?? nomeArquivoFase(estado.fase.nome);
+  const arquivo = estado.arquivoFase ?? await arquivoLivre(estado.fase.nome);
   try {
     await plat.salvarFase(arquivo, JSON.stringify(estado.fase, null, 2));
     estado.arquivoFase = arquivo;
@@ -345,8 +359,26 @@ seletorFases.addEventListener('change', () => { if (seletorFases.value) void abr
 const indicadorSujo = el('span', { class: 'sujo', title: 'Alterações não salvas' });
 const rotuloZoom = el('button', { type: 'button', class: 'bt zoom', title: 'Zoom: clique para voltar a 100%' }, '200%');
 rotuloZoom.addEventListener('click', () => { const { w, h } = viewport.tamanhoTela(); viewport.zoomEm(w / 2, h / 2, 1); });
-const botaoTestar = botaoBarra('play', 'Testar', 'Testar a fase (chega na etapa 3)', () => estado.avisar('O ▶ Testar chega na etapa 3 do construtor de fases.'), 'testar');
-botaoTestar.setAttribute('aria-disabled', 'true');
+const botaoTestar = botaoBarra('play', 'Testar', 'Testar a fase', () => void alternarTeste(), 'testar');
+dica(botaoTestar, 'Testar a fase', 'Jogue a fase agora com um jogador provisório: setas ou A/D andam, Espaço pula, Esc volta ao editor.', 'F5');
+
+// ---------- ▶ Testar ----------
+const teste = new ModoTeste(viewport, estado, centro);
+teste.aoMudarConfig = (c) => { config.jogador = c; salvarConfigDepois(); };
+teste.aoMudarEstado = () => {
+  app.classList.toggle('testando', estado.testando);
+  botaoTestar.classList.toggle('ligado', estado.testando);
+  botaoTestar.querySelector('span:last-child')!.textContent = estado.testando ? 'Parar' : 'Testar';
+  atualizarModos();
+  if (!estado.testando) viewport.app.canvas.focus();
+};
+async function alternarTeste() {
+  if (estado.testando) { teste.parar(); return; }
+  if (viewport.carimboAtivo) viewport.cancelarCarimbo();
+  viewport.ferrColisao.cancelar();
+  teste.config = { ...JOGADOR_PADRAO, ...(config.jogador ?? {}) };
+  teste.iniciar();
+}
 
 async function atualizarListaFases() {
   const fases = await plat.listarFases();
@@ -359,57 +391,96 @@ async function atualizarListaFases() {
   }
 }
 
-// Modos de ferramenta do cenário
-const modos: { modo: 'selecionar' | 'colisao' | 'inicio'; ico: keyof typeof ICONES; dica: string }[] = [
-  { modo: 'selecionar', ico: 'cursor', dica: 'Selecionar e mover objetos (V)' },
-  { modo: 'colisao', ico: 'colisao', dica: 'Colisão: desenhar chão, paredes, plataformas e rampas (C)' },
-  { modo: 'inicio', ico: 'bandeira', dica: 'Início do jogador: clique onde a personagem começa (I)' },
+// ---------- Barra de ferramentas lateral (estilo Photoshop) ----------
+const trilhoFerr = el('nav', { class: 'trilho-ferramentas', 'aria-label': 'Ferramentas' });
+type ItemTrilho = { id: string; ico: keyof typeof ICONES; titulo: string; texto: string; atalho: string; acao: () => void; modo?: 'selecionar' | 'mao' | 'colisao' | 'inicio' };
+const itensTrilho: (ItemTrilho | 'sep')[] = [
+  { id: 'selecionar', modo: 'selecionar', ico: 'cursor', titulo: 'Selecionar e mover', atalho: 'V', acao: () => estado.definirModo('selecionar'),
+    texto: 'Clique num objeto para selecionar, arraste para mover, use as alças dos cantos para mudar o tamanho. A bandeira verde (início do jogador) também se arrasta.' },
+  { id: 'mao', modo: 'mao', ico: 'mao', titulo: 'Mover a visão', atalho: 'H', acao: () => estado.definirModo('mao'),
+    texto: 'Arraste para navegar pelo cenário sem mexer em nada. Em qualquer ferramenta, segure Espaço para o mesmo efeito. A roda do mouse dá zoom.' },
+  { id: 'elementos', ico: 'elementos', titulo: 'Elementos (caixa de ferramentas)', atalho: 'T', acao: () => alternarLateral(),
+    texto: 'Mostra ou oculta o painel com suas pastas de elementos e a biblioteca. Clique numa miniatura e depois no cenário para colocar o elemento na camada ativa.' },
+  'sep',
+  { id: 'colisao', modo: 'colisao', ico: 'colisao', titulo: 'Colisão', atalho: 'C', acao: () => estado.definirModo(estado.modo === 'colisao' ? 'selecionar' : 'colisao'),
+    texto: 'Desenha onde o jogador pisa e esbarra. Ao escolher, aparece uma barra no topo do cenário com as formas (bloco, rampas, polígono, linha, mão livre) e o tipo (sólido ou atravessável).' },
+  { id: 'inicio', modo: 'inicio', ico: 'bandeira', titulo: 'Início do jogador', atalho: 'I', acao: () => estado.definirModo('inicio'),
+    texto: 'Clique no cenário onde ficam os pés da personagem quando a fase começa. A bandeira verde marca esse lugar.' },
+  'sep',
+  { id: 'testar', ico: 'play', titulo: 'Testar a fase', atalho: 'F5', acao: () => void alternarTeste(),
+    texto: 'Jogue a fase agora: setas ou A/D para andar, Espaço, W ou ↑ para pular, R volta ao início, Esc volta ao editor.' },
 ];
-const grupoModos = el('div', { class: 'grupo modos', role: 'radiogroup', 'aria-label': 'Ferramenta' });
-for (const m of modos) {
-  const b = el('button', { type: 'button', class: 'bt modo', title: m.dica, 'aria-label': m.dica, role: 'radio' }, icone(m.ico));
-  b.dataset.modo = m.modo;
-  b.addEventListener('click', () => estado.definirModo(m.modo));
-  grupoModos.append(b);
+for (const item of itensTrilho) {
+  if (item === 'sep') { trilhoFerr.append(el('div', { class: 'trilho-sep', role: 'separator' })); continue; }
+  const b = el('button', { type: 'button', class: 'ferramenta' + (item.id === 'testar' ? ' testar' : '') }, icone(item.ico));
+  b.dataset.id = item.id;
+  if (item.modo) b.dataset.modo = item.modo;
+  dica(b, item.titulo, item.texto, item.atalho);
+  b.setAttribute('aria-label', `${item.titulo} (${item.atalho})`);
+  b.addEventListener('click', item.acao);
+  trilhoFerr.append(b);
 }
+app.append(trilhoFerr);
+
 function atualizarModos() {
-  grupoModos.querySelectorAll<HTMLButtonElement>('.modo').forEach((b) => {
-    const ativo = b.dataset.modo === estado.modo;
-    b.classList.toggle('ligado', ativo); b.setAttribute('aria-checked', String(ativo));
+  trilhoFerr.querySelectorAll<HTMLButtonElement>('.ferramenta').forEach((b) => {
+    const ativo = b.dataset.modo === estado.modo || (b.dataset.id === 'elementos' && !app.classList.contains('lateral-oculta')) || (b.dataset.id === 'testar' && estado.testando);
+    b.classList.toggle('ligado', ativo);
+    b.setAttribute('aria-pressed', String(ativo));
   });
-  barraColisao.hidden = estado.modo !== 'colisao';
-  centro.classList.toggle('modo-inicio', estado.modo === 'inicio');
+  barraColisao.hidden = estado.modo !== 'colisao' || estado.testando;
+  if (estado.modo !== 'colisao') viewport.ferrColisao.cancelar();
 }
 
-// Barra flutuante do modo Colisão
-const tiposColisao: { t: 'solido' | 'atravessavel' | 'rampa-direita' | 'rampa-esquerda'; rotulo: string; dica: string }[] = [
-  { t: 'solido', rotulo: 'Sólido', dica: 'Chão e paredes: o jogador não atravessa (1)' },
-  { t: 'atravessavel', rotulo: 'Atravessável', dica: 'Plataforma: o jogador sobe por baixo e fica em cima (2)' },
-  { t: 'rampa-direita', rotulo: 'Rampa ◢', dica: 'Rampa que sobe para a direita (3)' },
-  { t: 'rampa-esquerda', rotulo: 'Rampa ◣', dica: 'Rampa que sobe para a esquerda (4)' },
+// ---------- Barra de opções da ferramenta Colisão ----------
+type FormaItem = { f: FormaNova; ico: keyof typeof ICONES; titulo: string; texto: string };
+const formasColisao: FormaItem[] = [
+  { f: 'bloco', ico: 'bloco', titulo: 'Bloco', texto: 'Arraste para desenhar um retângulo: chão, parede, caixa, degrau.' },
+  { f: 'rampa-direita', ico: 'rampaDireita', titulo: 'Rampa que sobe para a direita', texto: 'Arraste para desenhar a rampa dentro de um retângulo.' },
+  { f: 'rampa-esquerda', ico: 'rampaEsquerda', titulo: 'Rampa que sobe para a esquerda', texto: 'Arraste para desenhar a rampa dentro de um retângulo.' },
+  { f: 'poligono', ico: 'poligono', titulo: 'Polígono', texto: 'Clique para cada vértice e feche clicando no primeiro ponto, com duplo clique ou Enter. Bom para terrenos irregulares e pedras.' },
+  { f: 'linha', ico: 'linha', titulo: 'Linha', texto: 'Clique ponto a ponto para traçar uma superfície (chão ondulado, telhado, galho). Termine com duplo clique, Enter ou botão direito.' },
+  { f: 'maoLivre', ico: 'maoLivre', titulo: 'Mão livre', texto: 'Arraste para desenhar uma linha à mão livre seguindo o relevo da arte. A engine simplifica o traço automaticamente.' },
 ];
-const segTipos = el('div', { class: 'segmentado', role: 'radiogroup', 'aria-label': 'Tipo de colisão' });
-for (const t of tiposColisao) {
-  const b = el('button', { type: 'button', title: t.dica, role: 'radio' }, el('span', { class: 'amostra ' + t.t }), t.rotulo);
-  b.dataset.tipo = t.t;
-  b.addEventListener('click', () => { estado.tipoNovaColisao = t.t; atualizarTiposColisao(); });
-  segTipos.append(b);
+const segFormas = el('div', { class: 'segmentado formas', role: 'radiogroup', 'aria-label': 'Forma' });
+formasColisao.forEach((item, i) => {
+  const b = el('button', { type: 'button', role: 'radio' }, icone(item.ico));
+  b.dataset.forma = item.f;
+  dica(b, item.titulo, item.texto, String(i + 1));
+  b.addEventListener('click', () => { estado.formaNova = item.f; viewport.ferrColisao.cancelar(); atualizarOpcoesColisao(); });
+  segFormas.append(b);
+});
+const segComportamento = el('div', { class: 'segmentado', role: 'radiogroup', 'aria-label': 'Tipo' });
+for (const [c, rotulo, texto] of [
+  ['solido', 'Sólido', 'O jogador não atravessa: chão, paredes e teto.'],
+  ['atravessavel', 'Atravessável', 'Plataforma: o jogador sobe por baixo e fica em cima (só as bordas de cima seguram).'],
+] as const) {
+  const b = el('button', { type: 'button', role: 'radio' }, el('span', { class: 'amostra ' + c }), rotulo);
+  b.dataset.comp = c;
+  dica(b, rotulo, texto + ' Vale para as próximas formas; para mudar uma forma pronta, selecione-a e use o painel de propriedades.', 'X');
+  b.addEventListener('click', () => { estado.comportamentoNovo = c; atualizarOpcoesColisao(); });
+  segComportamento.append(b);
 }
-function atualizarTiposColisao() {
-  segTipos.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
-    const ativo = b.dataset.tipo === estado.tipoNovaColisao;
-    b.classList.toggle('ativo', ativo); b.setAttribute('aria-checked', String(ativo));
+const dicaColisao = el('span', { class: 'dica-flutuante' });
+function atualizarOpcoesColisao() {
+  segFormas.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+    const a = b.dataset.forma === estado.formaNova; b.classList.toggle('ativo', a); b.setAttribute('aria-checked', String(a));
   });
+  segComportamento.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
+    const a = b.dataset.comp === estado.comportamentoNovo; b.classList.toggle('ativo', a); b.setAttribute('aria-checked', String(a));
+  });
+  const f = formasColisao.find((x) => x.f === estado.formaNova)!;
+  dicaColisao.textContent = `${f.titulo}: ${f.texto}`;
 }
-const barraColisao = el('div', { class: 'barra-flutuante' }, segTipos,
-  el('span', { class: 'dica-flutuante' }, 'Arraste para desenhar · clique numa forma para editar · Del exclui · Esc sai'));
+const barraColisao = el('div', { class: 'barra-flutuante' }, segFormas, el('div', { class: 'sep-v' }), segComportamento, dicaColisao);
 barraColisao.hidden = true;
 centro.append(barraColisao);
-atualizarTiposColisao();
+atualizarOpcoesColisao();
 estado.on('modo', () => {
   atualizarModos();
-  if (estado.modo === 'colisao') estado.avisar('Colisão: escolha o tipo na barra e arraste no cenário para desenhar.');
+  if (estado.modo === 'colisao') estado.avisar('Colisão: escolha a forma e o tipo na barra do topo e desenhe no cenário. Clique numa forma pronta para editar.');
   if (estado.modo === 'inicio') estado.avisar('Início do jogador: clique onde ficam os pés da personagem ao começar.');
+  if (estado.modo === 'mao') estado.avisar('Mover a visão: arraste o cenário.');
 });
 
 barra.append(
@@ -420,7 +491,6 @@ barra.append(
     seletorFases,
     botaoBarra('salvar', 'Salvar', 'Salvar fase (Ctrl+S)', () => void salvar()),
     indicadorSujo),
-  grupoModos,
   el('div', { class: 'grupo' },
     botaoBarra('desfazer', '', 'Desfazer (Ctrl+Z)', () => estado.desfazer()),
     botaoBarra('refazer', '', 'Refazer (Ctrl+Y)', () => estado.refazer())),
@@ -474,6 +544,9 @@ window.addEventListener('keydown', (e) => {
   if (ctrl && k === 's') { e.preventDefault(); void salvar(); return; }
   if (ctrl && k === 'n') { e.preventDefault(); void novaFase(); return; }
   if (digitando()) return;
+  if (estado.testando) return; // o modo Testar trata as próprias teclas
+  if (e.key === 'F5') { e.preventDefault(); void alternarTeste(); return; }
+  if (estado.modo === 'colisao' && !ctrl && viewport.ferrColisao.tecla(e.key)) { e.preventDefault(); return; }
   if (ctrl && k === 'z' && !e.shiftKey) { e.preventDefault(); estado.desfazer(); return; }
   if (ctrl && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); estado.refazer(); return; }
   if (ctrl && k === 'd') { e.preventDefault(); duplicarSelecionado(); return; }
@@ -486,8 +559,8 @@ window.addEventListener('keydown', (e) => {
       else if (estado.modo !== 'selecionar') estado.definirModo('selecionar');
       else estado.selecionar(null);
       break;
-    case '1': case '2': case '3': case '4':
-      if (estado.modo === 'colisao') { estado.tipoNovaColisao = (['solido', 'atravessavel', 'rampa-direita', 'rampa-esquerda'] as const)[Number(e.key) - 1]; atualizarTiposColisao(); }
+    case '1': case '2': case '3': case '4': case '5': case '6':
+      if (estado.modo === 'colisao') { estado.formaNova = formasColisao[Number(e.key) - 1].f; viewport.ferrColisao.cancelar(); atualizarOpcoesColisao(); }
       break;
     case 'Home': viewport.enquadrar(); break;
     case '[': viewport.escalarSelecionado(e.shiftKey ? 1 / 1.01 : 1 / 1.1); break;
@@ -501,6 +574,8 @@ window.addEventListener('keydown', (e) => {
     default:
       if (k === 't') alternarLateral();
       else if (k === 'v') estado.definirModo('selecionar');
+      else if (k === 'h') estado.definirModo('mao');
+      else if (k === 'x' && estado.modo === 'colisao') { estado.comportamentoNovo = estado.comportamentoNovo === 'solido' ? 'atravessavel' : 'solido'; atualizarOpcoesColisao(); }
       else if (k === 'c' && e.shiftKey) { estado.mostrarColisoes = !estado.mostrarColisoes; estado.emit('opcoes'); sincronizarAlternadores(); }
       else if (k === 'c') estado.definirModo(estado.modo === 'colisao' ? 'selecionar' : 'colisao');
       else if (k === 'i') estado.definirModo('inicio');
@@ -521,6 +596,44 @@ function sincronizarAlternadores() {
     b.setAttribute('aria-pressed', String(estados[i]));
   });
 }
+
+// ---------- Mudanças feitas fora do editor (ex.: pelo Claude) ----------
+let recarregandoBib = 0;
+plat.aoMudarProjeto(async (m) => {
+  if (m.tipo === 'assets') {
+    clearTimeout(recarregandoBib);
+    recarregandoBib = window.setTimeout(async () => { await biblioteca.recarregar(); ferramentas.definir(ferramentasAtuais, biblioteca.caminhos); }, 300);
+    return;
+  }
+  if (m.tipo === 'config') {
+    config = { ...CONFIG_PADRAO, ...((await plat.lerConfigProjeto()) ?? {}) };
+    ferramentasAtuais = config.ferramentas ?? [];
+    ferramentas.definir(ferramentasAtuais, biblioteca.caminhos);
+    estado.avisar('Configuração do projeto atualizada por fora.');
+    return;
+  }
+  // Fase
+  await atualizarListaFases();
+  if (inicio.aberta) await inicio.render();
+  if (m.nome !== estado.arquivoFase) { estado.avisar(`A fase ${m.nome} foi alterada por fora.`); return; }
+  if (estado.testando) teste.parar();
+  if (estado.sujo) {
+    const r = await perguntar('A fase mudou fora do editor',
+      `O arquivo ${m.nome} foi alterado fora do editor (por exemplo, pelo Claude), e você tem alterações não salvas aqui.`,
+      ['Manter as minhas', 'Carregar a versão do arquivo']);
+    if (r !== 1) { estado.avisar('Mantidas as suas alterações. Ao salvar, elas substituem a versão do arquivo.'); return; }
+  }
+  try {
+    const fase = normalizarFase(JSON.parse(await plat.lerFase(m.nome)));
+    const camera = { ...estado.camera };
+    estado.carregarFase(fase, m.nome);
+    Object.assign(estado.camera, camera);
+    estado.emit('camera');
+    estado.avisar(`Fase atualizada por fora: ${m.nome} recarregada.`);
+  } catch (err) {
+    estado.avisar(`A fase mudou por fora, mas não consegui ler: ${String(err)}`);
+  }
+});
 
 // ---------- Início ----------
 async function carregarProjeto(nome: string) {

@@ -201,14 +201,40 @@ que o editor usa na prévia e o jogo vai usar no runtime.
 Cada objeto tem uma fase própria (hash do id), para que vários itens não pisquem em sincronia. Os deslizantes registram
 no desfazer uma vez por arraste.
 
-### 4.16 Colisão e início do jogador (etapa 2)
+### 4.16 Colisão (formas por pontos) e início do jogador
 
-- `fase.colisoes[]`: `{ id, tipo: 'solido' | 'atravessavel' | 'rampa', x, y, w, h, sobe?: 'direita' | 'esquerda' }`,
-  no espaço do mundo (parallax 1), desenhadas por cima da arte (os cenários são pintados à mão, sem tiles).
-  Atravessável = só a borda de cima segura o jogador. Rampa = triângulo dentro do retângulo.
+- `fase.colisoes[]`: `{ id, comportamento: 'solido' | 'atravessavel', forma: 'bloco' | 'rampa' | 'poligono' | 'linha', pontos: [x, y][] }`
+  no espaço do mundo (parallax 1). Bloco, rampa e polígono são **fechados**; linha é **aberta** (a mão livre vira
+  linha, simplificada por Ramer–Douglas–Peucker). Fases do formato antigo (`tipo/x/y/w/h/sobe`) são convertidas
+  ao abrir (`normalizarColisoes`).
+- Edição (`src/editor/ferramentaColisao.ts`): mover, escalar pela caixa (Shift = proporcional), arrastar vértices,
+  duplo clique na borda insere vértice, Alt+clique ou botão direito apaga vértice.
 - `fase.spawnJogador = [x, y]`: posição dos **pés** do jogador ao começar.
-- Modos de ferramenta (`estado.modo`): `selecionar` (objetos e bandeira), `colisao` (só formas de colisão; arrastar
-  no vazio desenha), `inicio` (um clique posiciona a bandeira e volta para selecionar). Código: `src/editor/colisoes.ts`.
+- Ferramentas (`estado.modo`): `selecionar`, `mao`, `colisao`, `inicio`, na barra lateral (`main.ts → itensTrilho`).
+  Novas ferramentas entram nessa lista.
+
+### 4.17 ▶ Testar e física (etapa 3)
+
+`src/core/fisica.ts` (puro, reaproveitado pelo jogo):
+- `montarSegmentos(colisoes)` classifica cada borda pela normal para fora: **chão** (normal para cima, até ~60°),
+  **teto** e **parede**. Atravessáveis geram só chão de **uma via**. Linhas sólidas geram chão + teto (bloqueiam por baixo).
+- `Jogador.passo(dt, entrada, segmentos)`: caixa com os pés em (x, y); horizontal barrado por paredes (raios na frente,
+  acima da altura de degrau); vertical com raios para baixo (sobe degraus de até ~16% da altura, acompanha rampas) ou
+  para cima (teto). Pulo com altura configurável (`v = √(2·g·h)`), pulo curto ao soltar, *coyote time* 0,1 s e
+  *buffer* 0,12 s. Passo fixo de 1/120 s.
+- `projeto.json → jogador`: `{ largura, altura, velocidade, alturaPulo, gravidade }`, ajustável ao vivo no HUD do teste.
+
+`src/editor/testar.ts`: bloqueia a edição, põe o zoom inteiro que cabe, centraliza a visão na câmera do jogo
+(seguindo o jogador, presa na fase, com suavização), escurece o que fica fora da tela do jogador e desenha o jogador
+provisório (retângulo) dentro da camada Objetos. A Lorena animada entra com o módulo de animação.
+
+### 4.18 Legendas e recarregar por fora
+
+- `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas
+  de objetos, colisões, vértices e da bandeira (`viewport.aoPairar`). **Regra:** toda função nova ganha legenda.
+- `electron/main.cjs → observarProjeto()`: `fs.watch` recursivo em `jogo/`. Ignora as escritas do próprio editor
+  (janela de 2 s) e avisa a interface (`projeto:mudou`): fase aberta → recarrega (ou pergunta, se houver alteração não
+  salva); assets → recarrega a biblioteca; `projeto.json` → recarrega a configuração.
 
 ## 5. Estrutura do código
 
@@ -220,7 +246,10 @@ src/main.ts              monta a tela, barra, atalhos, abrir/salvar, fluxo de in
 src/core/                formato de dados da fase (tipos, criação, normalização) e efeitos (puros, reaproveitados pelo jogo)
 src/editor/estado.ts     estado central + eventos + desfazer/refazer (snapshots JSON)
 src/editor/viewport.ts   cenário PixiJS: câmera, camadas, grade, seleção, mouse, efeitos ao vivo
-src/editor/colisoes.ts   desenho e seleção das colisões e da bandeira de início
+src/editor/colisoes.ts   geometria e desenho das colisões e da bandeira de início
+src/editor/ferramentaColisao.ts  ferramenta Colisão (desenhar e editar formas)
+src/editor/testar.ts     modo ▶ Testar (HUD, câmera, entrada)
+src/core/fisica.ts       física de plataforma (pura)
 src/plataforma/          acesso a arquivos: Electron (disco) ou navegador (demo)
 src/ui/                  painéis: tela inicial, caixa de ferramentas, biblioteca, camadas, propriedades, diálogos, ícones
 public/demo-projeto/     projeto de demonstração com assets genéricos (para portfólio e testes)

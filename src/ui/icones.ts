@@ -21,6 +21,14 @@ export const ICONES = {
   bandeira: svg('<path d="M4 14V2"/><path d="M4 2.5h7.5l-1.8 2.7 1.8 2.8H4"/>'),
   brilho: svg('<path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3M3.4 3.4l2 2M10.6 10.6l2 2M3.4 12.6l2-2M10.6 5.4l2-2"/>'),
   verColisao: svg('<rect x="2" y="9" width="12" height="5" rx="0.5"/><path d="M4 9l-1 2M7 9l-2 5M10 9l-2 5M13 9l-2 5"/><circle cx="8" cy="4.5" r="2"/>'),
+  mao: svg('<path d="M5.5 8V3.8a1 1 0 0 1 2 0V7.5M7.5 7V2.8a1 1 0 0 1 2 0V7.2M9.5 7.2V3.6a1 1 0 0 1 2 0V9c0 3-1.8 5-4.4 5-2 0-3-1-4.2-3L1.7 9a1 1 0 0 1 1.6-1.1L5.5 10"/>'),
+  elementos: svg('<rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><path d="M11.5 9v5M9 11.5h5"/>'),
+  bloco: svg('<rect x="2.5" y="4" width="11" height="8" rx="0.5"/>'),
+  rampaDireita: svg('<path d="M2.5 13h11V3.5z"/>'),
+  rampaEsquerda: svg('<path d="M13.5 13h-11V3.5z"/>'),
+  poligono: svg('<path d="M8 2l5.5 4-2 7h-7l-2-7z"/>'),
+  linha: svg('<path d="M2 12l4-5 3 3 5-6"/><circle cx="2" cy="12" r="1"/><circle cx="6" cy="7" r="1"/><circle cx="9" cy="10" r="1"/><circle cx="14" cy="4" r="1"/>'),
+  maoLivre: svg('<path d="M2 11c1.5-3 3-4 4-2s1.5 3 3 1 2-5 5-4"/>'),
   salvar: svg('<path d="M3 2h8l3 3v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M5 2v3.5h5V2M5 14V9.5h6V14"/>'),
 };
 

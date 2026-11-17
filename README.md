@@ -10,8 +10,9 @@ escrever código para o comportamento de cada objeto. Tudo testável na hora com
 
 ## Status
 
-🟨 **Construtor de Fases: etapas 1 e 2 prontas** (cenário, camadas, caixa de ferramentas, efeitos, colisão e
-início do jogador). Próximo: etapa 3, **▶ Testar** (jogador correndo e pulando na fase).
+🟨 **Construtor de Fases: etapas 1, 2 e 3 prontas** (cenário, camadas, caixa de ferramentas, efeitos,
+colisões desenhadas à mão, início do jogador e **▶ Testar** com física de plataforma). Próximo: etapa 4,
+interação (comportamentos dos objetos interativos, conexões entre áreas, painel de código).
 
 ## Como rodar
 
@@ -51,9 +52,18 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
   que ficaram sem uso.
 - **Efeitos** (painel de propriedades): **pulsar**, **brilhar** (halo colorido), **flutuar** e **piscar**, cada um
   com seus ajustes e prévia animada no cenário (liga/desliga com `Shift+E`).
-- **Colisão** (ferramenta `C`): desenhe por cima da arte **sólidos** (chão e paredes), plataformas
-  **atravessáveis** (sobe-se por baixo) e **rampas** nos dois sentidos. Clique para editar, arraste para mover,
-  alças para redimensionar; `Shift+C` mostra/oculta.
+- **Barra de ferramentas lateral** (estilo Photoshop): Selecionar, Mover a visão, Elementos, Colisão, Início e
+  ▶ Testar. Todo botão, ferramenta e objeto tem **legenda ao passar o mouse** explicando o que é e como usar.
+- **Colisão** (ferramenta `C`): desenhe por cima da arte com **bloco**, **rampas** ◢◣, **polígono** (clique a
+  clique), **linha** (superfícies) e **mão livre** (traço simplificado automaticamente). Cada forma é **sólida** ou
+  **atravessável**. Para modelar: arraste para mover, alças dos cantos para aumentar ou diminuir, bolinhas
+  (vértices) para modelar, duplo clique numa borda cria vértice, Alt+clique apaga. `Shift+C` mostra/oculta.
+- **▶ Testar** (`F5`): jogue a fase dentro do editor. Um jogador provisório anda (setas ou A/D) e pula (Espaço/W/↑)
+  sobre as colisões, com pulo de altura variável, *coyote time*, *buffer* de pulo, rampas, degraus e plataformas
+  atravessáveis. A câmera segue o jogador, com parallax real e a área fora da tela escurecida. Velocidade, pulo,
+  gravidade e tamanho se ajustam ao vivo e ficam salvos no projeto.
+- **Trabalho a quatro mãos:** se uma fase é alterada fora do editor (por outra ferramenta ou pelo assistente), o
+  editor recarrega sozinho ou, havendo alterações não salvas, pergunta antes.
 - **Início do jogador** (ferramenta `I`): bandeira na posição dos pés da personagem, arrastável.
 - **Biblioteca**: lista as imagens do projeto em "Em uso no jogo" (`jogo/assets`) e no material de apoio (resto
   da pasta). Ao colocar um asset de apoio numa fase, ele é **copiado** para `jogo/assets/<categoria>/`.
@@ -77,8 +87,11 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 | Espelhar | `F` |
 | Mover 1 px (8 px) | setas (Shift + setas) |
 | Grade / encaixar / prévia de parallax | `G` / `E` / `P` |
-| Ferramentas: selecionar / colisão / início | `V` / `C` / `I` |
-| Tipo de colisão (no modo Colisão) | `1` sólido · `2` atravessável · `3` rampa ◢ · `4` rampa ◣ |
+| Ferramentas: selecionar / mover a visão / colisão / início | `V` / `H` / `C` / `I` |
+| Forma de colisão | `1` bloco · `2` rampa ◢ · `3` rampa ◣ · `4` polígono · `5` linha · `6` mão livre |
+| Sólido ↔ atravessável (modo Colisão) | `X` |
+| Polígono/linha: terminar · desfazer ponto · cancelar | `Enter` ou duplo clique · `Backspace` · `Esc` |
+| ▶ Testar / voltar | `F5` / `Esc` (no teste: `R` reinicia) |
 | Mostrar colisões / prévia de efeitos | `Shift+C` / `Shift+E` |
 | Mostrar/ocultar caixa de ferramentas | `T` |
 | Carimbar e continuar | `Shift` + clique |

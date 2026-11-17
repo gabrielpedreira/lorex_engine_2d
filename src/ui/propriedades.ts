@@ -1,6 +1,8 @@
 // Painel de propriedades: do objeto selecionado ou, sem seleção, da fase.
 import type { Estado } from '../editor/estado';
 import type { Colisao, ObjetoFase } from '../core/tipos';
+import { NOMES_FORMA, caixa, reescalar } from '../editor/colisoes';
+import { dica } from './legenda';
 import { EFEITOS_PADRAO, type Efeito, type TipoEfeito } from '../core/efeitos';
 import { el } from './dom';
 
@@ -119,42 +121,38 @@ export class PainelPropriedades {
 
   // ---------- Colisão ----------
   private renderColisao(c: Colisao) {
-    const nomes = { solido: 'Sólido (chão e paredes)', atravessavel: 'Atravessável (sobe por baixo)', rampa: 'Rampa' };
-    const tipo = el('select', { id: 'p-col-tipo' }, ...Object.entries(nomes).map(([v, r]) => el('option', { value: v }, r)));
-    tipo.value = c.tipo;
-    tipo.addEventListener('change', () => {
-      this.estado.alterar(() => {
-        c.tipo = tipo.value as Colisao['tipo'];
-        if (c.tipo === 'rampa') c.sobe = c.sobe ?? 'direita'; else delete c.sobe;
-      });
-      this.render(true);
-    });
-    const blocos: HTMLElement[] = [
-      el('h3', {}, 'Colisão'),
-      el('div', { class: 'campo largo' }, el('label', { for: 'p-col-tipo' }, 'Tipo'), tipo),
-    ];
-    if (c.tipo === 'rampa') {
-      const sobe = el('div', { class: 'segmentado', role: 'radiogroup', 'aria-label': 'Sentido da rampa' });
-      for (const [v, r] of [['direita', 'Sobe para a direita ◢'], ['esquerda', 'Sobe para a esquerda ◣']] as const) {
-        const b = el('button', { type: 'button', class: c.sobe === v ? 'ativo' : '', role: 'radio', 'aria-checked': String(c.sobe === v) }, r);
-        b.addEventListener('click', () => { this.estado.alterar(() => { c.sobe = v; }); this.render(true); });
-        sobe.append(b);
-      }
-      blocos.push(sobe);
+    const b = caixa(c);
+    const comp = el('div', { class: 'segmentado', role: 'radiogroup', 'aria-label': 'Comportamento' });
+    for (const [v, r, texto] of [
+      ['solido', 'Sólido', 'O jogador não atravessa: chão, paredes e teto.'],
+      ['atravessavel', 'Atravessável', 'O jogador sobe por baixo e fica em cima; só as bordas de cima seguram.'],
+    ] as const) {
+      const bt = el('button', { type: 'button', class: c.comportamento === v ? 'ativo' : '', role: 'radio', 'aria-checked': String(c.comportamento === v) }, r);
+      dica(bt, r, texto);
+      bt.addEventListener('click', () => { this.estado.alterar(() => { c.comportamento = v; }); this.render(true); });
+      comp.append(bt);
     }
-    const excluir = el('button', { type: 'button', class: 'perigo' }, 'Excluir colisão');
+    // Tamanho/posição pela caixa: alterar escala os pontos
+    const aplicarCaixa = (nova: Partial<{ x: number; y: number; w: number; h: number }>) => {
+      const atual = caixa(c);
+      c.pontos = reescalar(c.pontos, atual, { ...atual, ...nova });
+    };
+    const excluir = el('button', { type: 'button', class: 'perigo' }, 'Excluir forma');
+    dica(excluir, 'Excluir forma', 'Apaga esta forma de colisão (Ctrl+Z desfaz).', 'Del');
     excluir.addEventListener('click', () => this.acoes.excluir());
-    blocos.push(
+    this.corpo.append(el('div', { class: 'secao' },
+      el('h3', {}, `Colisão · ${NOMES_FORMA[c.forma]}`),
+      el('div', { class: 'campo largo' }, el('span', { class: 'rotulo' }, 'Comportamento'), comp),
       el('div', { class: 'linha2' },
-        this.num('X', c.x, (v) => { c.x = Math.round(v); }),
-        this.num('Y', c.y, (v) => { c.y = Math.round(v); })),
+        this.num('X', b.x, (v) => aplicarCaixa({ x: Math.round(v) })),
+        this.num('Y', b.y, (v) => aplicarCaixa({ y: Math.round(v) }))),
       el('div', { class: 'linha2' },
-        this.num('Largura', c.w, (v) => { c.w = Math.max(2, Math.round(v)); }, { min: 2 }),
-        this.num('Altura', c.h, (v) => { c.h = Math.max(2, Math.round(v)); }, { min: 2 })),
+        this.num('Largura', b.w, (v) => aplicarCaixa({ w: Math.max(2, Math.round(v)) }), { min: 2 }),
+        this.num('Altura', b.h, (v) => aplicarCaixa({ h: Math.max(2, Math.round(v)) }), { min: 2 })),
+      el('div', { class: 'tamanho-info' }, `${c.pontos.length} vértices · ${c.forma === 'linha' ? 'aberta' : 'fechada'}`),
       el('div', { class: 'secao acoes' }, excluir),
-      el('p', { class: 'dica-campo' }, 'Arraste a forma para mover e as alças para redimensionar. Setas movem 1 px (Shift: 8).'),
-    );
-    this.corpo.append(el('div', { class: 'secao' }, ...blocos));
+      el('p', { class: 'dica-campo' }, 'Arraste a forma para mover; alças dos cantos mudam o tamanho (Shift mantém a proporção). Bolinhas = vértices: arraste para modelar, duplo clique numa borda cria um vértice, Alt+clique apaga. Setas movem 1 px (Shift: 8).'),
+    ));
   }
 
   private atualizarMantendoFoco(id: string) {

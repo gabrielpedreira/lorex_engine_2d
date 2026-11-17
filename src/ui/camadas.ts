@@ -2,13 +2,16 @@
 import type { Estado } from '../editor/estado';
 import { el } from './dom';
 import { icone } from './icones';
+import { dica } from './legenda';
 
 export class PainelCamadas {
   private lista: HTMLElement;
 
   constructor(raiz: HTMLElement, private estado: Estado) {
     this.lista = el('div', { class: 'camadas-lista' });
-    raiz.append(el('div', { class: 'painel-titulo' }, 'Camadas'), this.lista);
+    const titulo = el('div', { class: 'painel-titulo' }, 'Camadas');
+    dica(titulo, 'Camadas', 'A de cima aparece na frente. Clique numa camada para torná-la ativa: é nela que os elementos novos entram. O número é o parallax: 0 = parada no fundo, 1 = anda junto com o jogador, maior que 1 = primeiro plano.');
+    raiz.append(titulo, this.lista);
     estado.on('fase', () => this.render());
     this.render();
   }
@@ -38,7 +41,10 @@ export class PainelCamadas {
         this.estado.alterar(() => { c.parallax = [v, v]; });
       });
 
-      const linha = el('div', { class: 'camada' + (ativa ? ' ativa' : ''), title: 'Clique para tornar a camada ativa' },
+      dica(olho, c.visivel ? 'Ocultar camada' : 'Mostrar camada', 'Só esconde no editor; não apaga nada.');
+      dica(cadeado, c.travada ? 'Destravar camada' : 'Travar camada', 'Camada travada não deixa selecionar nem mover os objetos dela (bom para o fundo não sair do lugar sem querer).');
+      dica(par, 'Parallax', 'Quanto a camada acompanha a câmera: 0 = parada, 0,5 = metade da velocidade (fundo distante), 1 = junto com o jogador, 1,2 = primeiro plano passando mais rápido.');
+      const linha = el('div', { class: 'camada' + (ativa ? ' ativa' : '') },
         olho, cadeado, nome, el('span', { class: 'contador' }, String(qtd)), par);
       linha.addEventListener('click', () => this.estado.ativarCamada(c.id));
       this.lista.append(linha);

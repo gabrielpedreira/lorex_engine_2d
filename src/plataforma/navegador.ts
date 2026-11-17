@@ -27,6 +27,7 @@ export class PlataformaNavegador implements Plataforma {
   async versao() { return import.meta.env.VITE_VERSAO ?? '0.0.0'; }
   progresso() { /* sem splash no navegador */ }
   pronto() { /* sem splash no navegador */ }
+  aoMudarProjeto() { /* no navegador não há arquivos para vigiar */ }
   async recentes() { const p = await this.projetoAtual(); return p ? [p] : []; }
   async abrirCaminho() { return this.projetoAtual(); }
   async lerConfigProjeto(): Promise<ConfigProjeto | null> {

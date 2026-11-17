@@ -2,9 +2,9 @@
 import 'pixi.js/unsafe-eval';
 import { Application, Assets, BlurFilter, ColorMatrixFilter, Container, Graphics, Sprite, Texture, TextureStyle } from 'pixi.js';
 import { calcularEfeitos, faseDoId, type EfeitoBrilhar, type ResultadoEfeitos } from '../core/efeitos';
-import { novoIdColisao } from '../core/fase';
-import type { Colisao, ObjetoFase } from '../core/tipos';
-import { colisaoEm, corDe, desenharColisoes, desenharInicio, sobreInicio } from './colisoes';
+import type { ObjetoFase } from '../core/tipos';
+import { desenharInicio, sobreInicio } from './colisoes';
+import { FerramentaColisao } from './ferramentaColisao';
 import { urlAsset, type Plataforma } from '../plataforma/plataforma';
 import type { Estado } from './estado';
 
@@ -33,9 +33,6 @@ type Arraste =
   | { tipo: 'pan'; sx: number; sy: number; cx: number; cy: number }
   | { tipo: 'mover'; id: string; dx: number; dy: number; mexeu: boolean }
   | { tipo: 'escala'; id: string; mexeu: boolean; canto: Canto; ancoraX: number; ancoraY: number }
-  | { tipo: 'colDesenhar'; x0: number; y0: number; x1: number; y1: number }
-  | { tipo: 'colMover'; id: string; dx: number; dy: number; mexeu: boolean }
-  | { tipo: 'colEscala'; id: string; canto: Canto; ancoraX: number; ancoraY: number; mexeu: boolean }
   | { tipo: 'inicio'; mexeu: boolean; dx: number; dy: number };
 
 /** Halo (efeito Brilhar): cópia da imagem em silhueta colorida e borrada, atrás do objeto. */
@@ -68,6 +65,7 @@ export class Viewport {
   private conteineres = new Map<string, Container>();
   private sprites = new Map<string, Sprite>();
   private texturas = new Map<string, Texture>();
+  private carregando = new Set<string>();
   private arraste: Arraste | null = null;
   private espacoPressionado = false;
   private chaveCamera = '';
@@ -82,10 +80,32 @@ export class Viewport {
   /** Chamado ao terminar de redimensionar um objeto pelas alças. */
   aoEscalar: (o: ObjetoFase) => void = () => {};
 
+  /** Chamado a cada quadro (ms desde o anterior), antes de desenhar. Usado pelo ▶ Testar. */
+  aoQuadro: ((dtMs: number) => void) | null = null;
+  /** Chamado depois de reconstruir a cena (para reinserir o jogador do teste). */
+  aposSincronizar: (() => void) | null = null;
+
+  /** Container de uma camada (espaço da camada). */
+  conteinerCamada(id: string) { return this.conteineres.get(id); }
+
+  /** Legenda ao passar o mouse sobre algo do cenário (null = esconder). (cx, cy) = posição na janela. */
+  aoPairar: (info: { titulo: string; texto: string } | null, cx: number, cy: number) => void = () => {};
+
+  /** Ferramenta Colisão (desenhar e editar formas). */
+  readonly ferrColisao: FerramentaColisao;
+
   /** Chamado quando um asset da biblioteca é solto no cenário. */
   aoSoltarAsset: (caminhoRaiz: string, sx: number, sy: number) => void = () => {};
 
-  constructor(private el: HTMLElement, private estado: Estado, private plat: Plataforma) {}
+  constructor(private el: HTMLElement, private estado: Estado, private plat: Plataforma) {
+    this.ferrColisao = new FerramentaColisao({
+      estado,
+      telaParaMundo: (sx, sy) => this.telaParaCamada(sx, sy, ''),
+      mundoParaTela: (x, y) => this.camadaParaTela(x, y, ''),
+      zoom: () => this.estado.camera.zoom,
+      legenda: (t, sx, sy) => this.mostrarLegenda(t, sx, sy),
+    });
+  }
 
   async iniciar() {
     await this.app.init({
@@ -104,7 +124,7 @@ export class Viewport {
     this.estado.on('fase', () => this.sincronizar());
     this.estado.on('selecao', () => (this.chaveCamera = ''));
     this.estado.on('opcoes', () => { this.chaveCamera = ''; this.sincronizar(); });
-    this.app.ticker.add(() => this.quadro());
+    this.app.ticker.add((t) => { this.aoQuadro?.(t.deltaMS); this.quadro(); });
     this.ligarEventos();
     this.sincronizar();
   }
@@ -281,6 +301,7 @@ export class Viewport {
     }
     for (const [id, sp] of this.sprites) if (!ids.has(id)) { sp.destroy(); this.sprites.delete(id); }
     for (const [id, h] of this.halos) if (!ids.has(id)) { h.sp.destroy(); this.halos.delete(id); }
+    this.aposSincronizar?.();
 
     this.chaveCamera = '';
   }
@@ -315,11 +336,16 @@ export class Viewport {
   private aplicarObjeto(sp: Sprite, o: ObjetoFase, r: ResultadoEfeitos = this.efeitoEstatico(o)) {
     const tex = this.texturas.get(o.asset);
     if (tex) sp.texture = tex;
-    else if (sp.texture === Texture.EMPTY || sp.texture !== tex) {
+    else {
       sp.texture = Texture.EMPTY;
-      this.textura(o.asset)
-        .then(() => this.sincronizar())
-        .catch(() => this.estado.avisar(`Não consegui carregar: ${o.asset}`));
+      // Carrega uma vez só (antes, a animação dos efeitos pedia a mesma imagem a cada quadro)
+      if (!this.carregando.has(o.asset)) {
+        this.carregando.add(o.asset);
+        this.textura(o.asset)
+          .then(() => this.sincronizar())
+          .catch(() => this.estado.avisar(`Não consegui carregar: ${o.asset}`))
+          .finally(() => this.carregando.delete(o.asset));
+      }
     }
     // Sprite com âncora central; o objeto guarda o canto superior esquerdo
     const tw = sp.texture === Texture.EMPTY ? o.w : sp.texture.width;
@@ -373,7 +399,7 @@ export class Viewport {
       cont.scale.set(zoom);
     }
     const { w, h } = this.tamanhoTela();
-    const chave = `${x},${y},${zoom},${this.estado.fase.objetos.length},${this.estado.fase.objetos.reduce((n, o) => n + (o.tipo === 'interativo' ? o.x + o.y * 7 + o.escala * 13 : 0), 0)},${this.estado.previaParallax},${JSON.stringify(this.estado.fase.camadas)},${this.estado.fase.resolucaoBase},${w},${h},${this.estado.grade},${this.hover},${this.estado.selecionado},${JSON.stringify(this.estado.objetoSelecionado() ?? '')},${this.estado.fase.tamanho},${this.estado.fase.corFundo},${this.estado.modo},${this.estado.mostrarColisoes},${this.estado.colisaoSelecionada},${JSON.stringify(this.estado.fase.colisoes)},${this.estado.fase.spawnJogador}`;
+    const chave = `${x},${y},${zoom},${this.estado.fase.objetos.length},${this.estado.fase.objetos.reduce((n, o) => n + (o.tipo === 'interativo' ? o.x + o.y * 7 + o.escala * 13 : 0), 0)},${this.estado.previaParallax},${JSON.stringify(this.estado.fase.camadas)},${this.estado.fase.resolucaoBase},${w},${h},${this.estado.grade},${this.hover},${this.estado.selecionado},${JSON.stringify(this.estado.objetoSelecionado() ?? '')},${this.estado.fase.tamanho},${this.estado.fase.corFundo},${this.estado.modo},${this.estado.mostrarColisoes},${this.estado.colisaoSelecionada},${JSON.stringify(this.estado.fase.colisoes)},${this.ferrColisao.versao},${this.estado.testando},${this.estado.fase.spawnJogador}`;
     if (this.carimbo) this.atualizarFantasma();
     if (chave === this.chaveCamera) return;
     this.chaveCamera = chave;
@@ -385,50 +411,14 @@ export class Viewport {
 
   private desenharColisoesEInicio() {
     const g = this.colisoesG.clear();
-    const paraTela = (x: number, y: number) => this.camadaParaTela(x, y, '');
-    const modoCol = this.estado.modo === 'colisao';
-    if (this.estado.mostrarColisoes || modoCol) {
-      desenharColisoes(g, this.estado.fase, paraTela, this.estado.colisaoSelecionada, modoCol);
-    }
-    // Retângulo sendo desenhado
-    const a = this.arraste;
-    if (a?.tipo === 'colDesenhar') {
-      const r = this.normalizarRet(a.x0, a.y0, a.x1, a.y1);
-      const prov: Colisao = { id: '', ...r, ...this.tipoDaNova() };
-      desenharColisoes(g, { ...this.estado.fase, colisoes: [prov] }, paraTela, null, true);
-      const p = paraTela(r.x + r.w, r.y + r.h);
-      if (r.w > 0) this.mostrarLegenda(`${r.w} × ${r.h} px`, p.x, p.y);
-    }
-    // Alças da colisão selecionada
-    const sel = this.estado.colisaoSelecionada ? this.estado.colisao(this.estado.colisaoSelecionada) : undefined;
-    if (sel && modoCol) {
-      const r = this.retanguloColisaoTela(sel);
-      g.rect(Math.round(r.x) + 0.5, Math.round(r.y) + 0.5, Math.round(r.w), Math.round(r.h)).stroke({ width: 1, color: corDe(sel), alpha: 0.9 });
-      for (const [cx, cy] of [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]]) {
-        g.rect(Math.round(cx - TAM_ALCA / 2), Math.round(cy - TAM_ALCA / 2), TAM_ALCA, TAM_ALCA).fill({ color: 0xffffff }).stroke({ width: 1, color: corDe(sel) });
-      }
-    }
-    // Início do jogador (sempre visível)
+    if (this.estado.testando && !this.estado.mostrarColisoes) return;
+    const modoCol = this.estado.modo === 'colisao' && !this.estado.testando;
+    if (this.estado.mostrarColisoes || modoCol) this.ferrColisao.desenhar(g, modoCol);
+    if (this.estado.testando) return;
+    // Início do jogador (sempre visível no editor)
     const [ix, iy] = this.estado.fase.spawnJogador;
-    const pi = paraTela(ix, iy);
+    const pi = this.camadaParaTela(ix, iy, '');
     desenharInicio(g, pi.x, pi.y, this.estado.modo === 'inicio' || this.arraste?.tipo === 'inicio');
-  }
-
-  private tipoDaNova(): Pick<Colisao, 'tipo' | 'sobe'> {
-    const t = this.estado.tipoNovaColisao;
-    if (t === 'rampa-direita') return { tipo: 'rampa', sobe: 'direita' };
-    if (t === 'rampa-esquerda') return { tipo: 'rampa', sobe: 'esquerda' };
-    return { tipo: t };
-  }
-
-  private normalizarRet(x0: number, y0: number, x1: number, y1: number) {
-    return { x: Math.min(x0, x1), y: Math.min(y0, y1), w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) };
-  }
-
-  retanguloColisaoTela(c: Colisao) {
-    const a = this.camadaParaTela(c.x, c.y, '');
-    const z = this.estado.camera.zoom;
-    return { x: a.x, y: a.y, w: c.w * z, h: c.h * z };
   }
 
   /** Ponto da tela → mundo (parallax 1), com encaixe na grade se ativo. */
@@ -451,7 +441,7 @@ export class Viewport {
 
   private desenharGrade(w: number, h: number) {
     this.grade.clear();
-    if (!this.estado.grade) return;
+    if (!this.estado.grade || this.estado.testando) return;
     const { x, y, zoom } = this.estado.camera;
     const passo = this.estado.fase.tamanhoGrade;
     if (passo * zoom < 6) return;
@@ -480,6 +470,18 @@ export class Viewport {
 
   private desenharOverlay() {
     const g = this.overlay.clear();
+    if (this.estado.testando) {
+      // Só a tela do jogador fica visível: escurece em volta (como o jogo vai aparecer)
+      const cj = this.cameraJogo();
+      const a = this.camadaParaTela(cj.x, cj.y, '');
+      const z = this.estado.camera.zoom;
+      const { w, h } = this.tamanhoTela();
+      const x0 = Math.round(a.x), y0 = Math.round(a.y), x1 = Math.round(a.x + cj.w * z), y1 = Math.round(a.y + cj.h * z);
+      const cor = { color: 0x0b0f0e, alpha: 0.92 };
+      g.rect(0, 0, w, y0).fill(cor).rect(0, y1, w, h - y1).fill(cor).rect(0, y0, x0, y1 - y0).fill(cor).rect(x1, y0, w - x1, y1 - y0).fill(cor);
+      g.rect(x0 + 0.5, y0 + 0.5, x1 - x0, y1 - y0).stroke({ width: 1, color: COR_TELA_JOGO, alpha: 0.4 });
+      return;
+    }
     // Quadro da tela do jogador (resolução base) na posição que a câmera do jogo teria
     const cj = this.cameraJogo();
     const a = this.camadaParaTela(cj.x, cj.y, '');
@@ -544,12 +546,6 @@ export class Viewport {
   private sobreAlca(sx: number, sy: number): Canto | null {
     const sel = this.estado.objetoSelecionado();
     return sel ? this.cantoEm(this.retanguloTela(sel), sx, sy) : null;
-  }
-
-  private sobreAlcaColisao(sx: number, sy: number): Canto | null {
-    const id = this.estado.colisaoSelecionada;
-    const c = id ? this.estado.colisao(id) : undefined;
-    return c ? this.cantoEm(this.retanguloColisaoTela(c), sx, sy) : null;
   }
 
   private sobreMarcadorInicio(sx: number, sy: number) {
@@ -629,64 +625,17 @@ export class Viewport {
     this.app.canvas.style.cursor = pressionado ? 'grab' : '';
   }
 
-  // ---------- Modo Colisão e início do jogador ----------
+  // ---------- Início do jogador (arrastar a bandeira) ----------
 
-  private pointerDownColisao(sx: number, sy: number) {
-    const id = this.estado.colisaoSelecionada;
-    const sel = id ? this.estado.colisao(id) : undefined;
-    const canto = this.sobreAlcaColisao(sx, sy);
-    if (sel && canto) {
-      const ancoraX = canto === 'no' || canto === 'so' ? sel.x + sel.w : sel.x;
-      const ancoraY = canto === 'no' || canto === 'ne' ? sel.y + sel.h : sel.y;
-      this.arraste = { tipo: 'colEscala', id: sel.id, canto, ancoraX, ancoraY, mexeu: false };
-      return;
-    }
-    const w = this.telaParaCamada(sx, sy, '');
-    const alvo = colisaoEm(this.estado.fase, w.x, w.y);
-    if (alvo) {
-      this.estado.selecionarColisao(alvo.id);
-      this.arraste = { tipo: 'colMover', id: alvo.id, dx: w.x - alvo.x, dy: w.y - alvo.y, mexeu: false };
-      return;
-    }
-    this.estado.selecionarColisao(null);
-    const p0 = this.mundoEncaixado(sx, sy);
-    this.arraste = { tipo: 'colDesenhar', x0: p0.x, y0: p0.y, x1: p0.x, y1: p0.y };
-  }
-
-  private pointerMoveColisao(a: Extract<Arraste, { tipo: 'colDesenhar' | 'colMover' | 'colEscala' | 'inicio' }>, sx: number, sy: number) {
-    const w = this.mundoEncaixado(sx, sy);
-    if (a.tipo === 'colDesenhar') {
-      a.x1 = w.x; a.y1 = w.y;
-      this.chaveCamera = '';
-      return;
-    }
+  private moverInicio(a: Extract<Arraste, { tipo: 'inicio' }>, sx: number, sy: number) {
     if (!a.mexeu) { this.estado.checkpoint(); a.mexeu = true; }
-    if (a.tipo === 'inicio') {
-      const livre = this.telaParaCamada(sx, sy, '');
-      let nx = livre.x - a.dx, ny = livre.y - a.dy;
-      if (this.estado.encaixar) {
-        const g = this.estado.fase.tamanhoGrade;
-        nx = Math.round(nx / g) * g; ny = Math.round(ny / g) * g;
-      }
-      this.estado.fase.spawnJogador = [Math.round(nx), Math.round(ny)];
-    } else {
-      const c = this.estado.colisao(a.id);
-      if (!c) return;
-      if (a.tipo === 'colMover') {
-        const livre = this.telaParaCamada(sx, sy, '');
-        let nx = livre.x - a.dx, ny = livre.y - a.dy;
-        if (this.estado.encaixar) {
-          const g = this.estado.fase.tamanhoGrade;
-          nx = Math.round(nx / g) * g; ny = Math.round(ny / g) * g;
-        }
-        c.x = Math.round(nx); c.y = Math.round(ny);
-      } else {
-        const r = this.normalizarRet(a.ancoraX, a.ancoraY, w.x, w.y);
-        c.x = r.x; c.y = r.y; c.w = Math.max(2, r.w); c.h = Math.max(2, r.h);
-        const p = this.camadaParaTela(c.x + c.w, c.y + c.h, '');
-        this.mostrarLegenda(`${c.w} × ${c.h} px`, p.x, p.y);
-      }
+    const livre = this.telaParaCamada(sx, sy, '');
+    let nx = livre.x - a.dx, ny = livre.y - a.dy;
+    if (this.estado.encaixar) {
+      const g = this.estado.fase.tamanhoGrade;
+      nx = Math.round(nx / g) * g; ny = Math.round(ny / g) * g;
     }
+    this.estado.fase.spawnJogador = [Math.round(nx), Math.round(ny)];
     this.estado.marcarAlterado();
   }
 
@@ -695,15 +644,21 @@ export class Viewport {
     cv.addEventListener('contextmenu', (e) => e.preventDefault());
 
     cv.addEventListener('pointerdown', (e) => {
+      if (this.estado.testando) return;
       cv.setPointerCapture(e.pointerId);
       const p = this.posMouse(e);
       const cam = this.estado.camera;
-      if (e.button === 1 || (e.button === 0 && this.espacoPressionado)) {
+      this.aoPairar(null, 0, 0);
+      if (e.button === 1 || (e.button === 0 && (this.espacoPressionado || this.estado.modo === 'mao'))) {
         this.arraste = { tipo: 'pan', sx: p.x, sy: p.y, cx: cam.x, cy: cam.y };
         cv.style.cursor = 'grabbing';
         return;
       }
       if (e.button === 2 && this.carimbo) { this.cancelarCarimbo(); return; }
+      if (this.estado.modo === 'colisao' && !this.carimbo) {
+        this.ferrColisao.pointerDown(p.x, p.y, e.button, e.altKey);
+        return;
+      }
       if (e.button !== 0) return;
       if (this.carimbo) {
         const caminho = this.carimbo.caminho;
@@ -719,7 +674,6 @@ export class Viewport {
         this.estado.avisar(`Início do jogador em x ${w.x}, y ${w.y} (posição dos pés).`);
         return;
       }
-      if (this.estado.modo === 'colisao') { this.pointerDownColisao(p.x, p.y); return; }
       if (this.sobreMarcadorInicio(p.x, p.y)) {
         const w = this.telaParaCamada(p.x, p.y, '');
         const [ix, iy] = this.estado.fase.spawnJogador;
@@ -746,37 +700,57 @@ export class Viewport {
       }
     });
 
+    cv.addEventListener('dblclick', (e) => {
+      if (this.estado.testando || this.estado.modo !== 'colisao') return;
+      const p = this.posMouse(e);
+      this.ferrColisao.duploClique(p.x, p.y);
+    });
+
     cv.addEventListener('pointermove', (e) => {
       const p = this.posMouse(e);
       const cam = this.estado.camera;
       this.mouseMundo = { x: Math.floor(p.x / cam.zoom + cam.x), y: Math.floor(p.y / cam.zoom + cam.y) };
       this.mouseTela = p;
       this.estado.emit('camera');
+      if (this.estado.testando) return;
       const a = this.arraste;
       if (this.carimbo && !a) { this.atualizarFantasma(); return; }
-      const cursorCanto = (c: Canto | null) => (c ? (c === 'se' || c === 'no' ? 'nwse-resize' : 'nesw-resize') : null);
-      if (!a) {
-        if (this.espacoPressionado) { cv.style.cursor = 'grab'; return; }
-        if (this.estado.modo === 'colisao') {
-          this.hover = null;
-          const w = this.telaParaCamada(p.x, p.y, '');
-          cv.style.cursor = cursorCanto(this.sobreAlcaColisao(p.x, p.y)) ?? (colisaoEm(this.estado.fase, w.x, w.y) ? 'move' : 'crosshair');
-          return;
-        }
-        if (this.estado.modo === 'inicio') { cv.style.cursor = 'crosshair'; return; }
-        this.hover = this.objetoEm(p.x, p.y)?.id ?? null;
-        cv.style.cursor = cursorCanto(this.sobreAlca(p.x, p.y)) ?? (this.sobreMarcadorInicio(p.x, p.y) || this.hover ? 'move' : '');
-        return;
-      }
-      if (a.tipo === 'pan') {
+      if (a?.tipo === 'pan') {
         cam.x = a.cx - (p.x - a.sx) / cam.zoom;
         cam.y = a.cy - (p.y - a.sy) / cam.zoom;
         return;
       }
-      if (a.tipo === 'colDesenhar' || a.tipo === 'colMover' || a.tipo === 'colEscala' || a.tipo === 'inicio') {
-        this.pointerMoveColisao(a, p.x, p.y);
+      if (this.estado.modo === 'colisao') {
+        this.ferrColisao.pointerMove(p.x, p.y, e.shiftKey);
+        this.hover = null;
+        if (!this.ferrColisao.ocupado) {
+          cv.style.cursor = this.espacoPressionado ? 'grab' : this.ferrColisao.cursor(p.x, p.y);
+          const info = this.ferrColisao.legendaEm(p.x, p.y);
+          this.aoPairar(info, e.clientX, e.clientY);
+        } else this.aoPairar(null, 0, 0);
         return;
       }
+      const cursorCanto = (c: Canto | null) => (c ? (c === 'se' || c === 'no' ? 'nwse-resize' : 'nesw-resize') : null);
+      if (!a) {
+        if (this.espacoPressionado || this.estado.modo === 'mao') { cv.style.cursor = 'grab'; this.aoPairar(null, 0, 0); return; }
+        if (this.estado.modo === 'inicio') { cv.style.cursor = 'crosshair'; this.aoPairar(null, 0, 0); return; }
+        this.hover = this.objetoEm(p.x, p.y)?.id ?? null;
+        const naBandeira = this.sobreMarcadorInicio(p.x, p.y);
+        cv.style.cursor = cursorCanto(this.sobreAlca(p.x, p.y)) ?? (naBandeira || this.hover ? 'move' : '');
+        if (naBandeira) {
+          this.aoPairar({ titulo: 'Início do jogador', texto: 'Onde ficam os pés da personagem quando a fase começa. Arraste para mover, ou use a ferramenta Início (I) e clique no lugar.' }, e.clientX, e.clientY);
+        } else if (this.hover) {
+          const o = this.estado.objeto(this.hover)!;
+          const camada = this.estado.camada(o.camada)?.nome ?? o.camada;
+          this.aoPairar({
+            titulo: `${o.nome} · ${o.tipo === 'interativo' ? 'interativo' : 'estático'}`,
+            texto: `Camada ${camada} · ${Math.round(o.w * o.escala)} × ${Math.round(o.h * o.escala)} px${o.efeitos.length ? ' · efeitos: ' + o.efeitos.map((x) => x.tipo).join(', ') : ''}. Clique para selecionar, arraste para mover.`,
+          }, e.clientX, e.clientY);
+        } else this.aoPairar(null, 0, 0);
+        return;
+      }
+      this.aoPairar(null, 0, 0);
+      if (a.tipo === 'inicio') { this.moverInicio(a, p.x, p.y); return; }
       const o = this.estado.objeto(a.id);
       if (!o) return;
       if (!a.mexeu) { this.estado.checkpoint(); a.mexeu = true; }
@@ -805,28 +779,19 @@ export class Viewport {
 
     const soltar = () => {
       const a = this.arraste;
-      if (a?.tipo === 'pan') cv.style.cursor = this.espacoPressionado ? 'grab' : '';
+      if (a?.tipo === 'pan') cv.style.cursor = this.espacoPressionado || this.estado.modo === 'mao' ? 'grab' : '';
       if (a?.tipo === 'escala') {
         this.mostrarLegenda(null);
         const o = this.estado.objeto(a.id);
         if (a.mexeu && o) this.aoEscalar(o);
       }
-      if (a?.tipo === 'colEscala') this.mostrarLegenda(null);
-      if (a?.tipo === 'colDesenhar') {
-        this.mostrarLegenda(null);
-        const r = this.normalizarRet(a.x0, a.y0, a.x1, a.y1);
-        if (r.w >= 2 && r.h >= 2) {
-          const nova: Colisao = { id: novoIdColisao(this.estado.fase), ...r, ...this.tipoDaNova() };
-          this.estado.alterar((f) => { f.colisoes.push(nova); });
-          this.estado.selecionarColisao(nova.id);
-        }
-      }
+      if (!a && this.estado.modo === 'colisao') this.ferrColisao.pointerUp();
       this.arraste = null;
       this.chaveCamera = '';
     };
     cv.addEventListener('pointerup', soltar);
     cv.addEventListener('pointercancel', soltar);
-    cv.addEventListener('pointerleave', () => { this.hover = null; this.mouseTela = null; this.fantasma.visible = false; });
+    cv.addEventListener('pointerleave', () => { this.hover = null; this.mouseTela = null; this.fantasma.visible = false; this.aoPairar(null, 0, 0); });
 
     cv.addEventListener('wheel', (e) => {
       e.preventDefault();

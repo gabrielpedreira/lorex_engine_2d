@@ -19,6 +19,8 @@ export interface Ferramenta {
 export interface ConfigProjeto {
   /** Pastas da caixa de ferramentas. */
   ferramentas?: Ferramenta[];
+  /** Ajustes do jogador usados no ▶ Testar (tamanho, velocidade, pulo, gravidade). */
+  jogador?: import('../core/fisica').ConfigJogador;
   /** Última escala usada para cada imagem (caminho relativo à raiz) — o carimbo reaproveita. */
   escalas?: Record<string, number>;
   /** Cópias otimizadas (reduzidas) de cada imagem original: origem → asset em jogo/ e tamanho. */
@@ -41,6 +43,8 @@ export interface Plataforma {
   /** Avisa que a interface está pronta (fecha a splash e mostra o editor). */
   pronto(): void;
   recentes(): Promise<InfoProjeto[]>;
+  /** Avisa quando algo em jogo/ muda fora do editor (ex.: o Claude editou uma fase). */
+  aoMudarProjeto(fn: (m: { tipo: 'fase' | 'config' | 'assets'; nome: string }) => void): void;
   abrirCaminho(caminho: string): Promise<InfoProjeto | null>;
   lerConfigProjeto(): Promise<ConfigProjeto | null>;
   salvarConfigProjeto(c: ConfigProjeto): Promise<void>;

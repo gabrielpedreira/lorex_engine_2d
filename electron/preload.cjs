@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('lorex', {
   versao: () => ipcRenderer.invoke('app:versao'),
   progresso: (texto) => ipcRenderer.send('app:progresso', texto),
   pronto: () => ipcRenderer.send('app:pronto'),
+  aoMudarProjeto: (fn) => { ipcRenderer.on('projeto:mudou', (_e, dados) => fn(dados)); },
 
   abrirProjeto: () => ipcRenderer.invoke('projeto:abrir'),
   abrirCaminho: (caminho) => ipcRenderer.invoke('projeto:abrirCaminho', caminho),

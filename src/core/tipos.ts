@@ -4,14 +4,12 @@ import type { Efeito } from './efeitos';
 /** Forma de colisão desenhada no cenário (espaço do mundo, parallax 1). */
 export interface Colisao {
   id: string;
-  /** solido = chão/parede; atravessavel = plataforma que se atravessa por baixo; rampa = triângulo */
-  tipo: 'solido' | 'atravessavel' | 'rampa';
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  /** Só para rampa: de que lado ela sobe. */
-  sobe?: 'direita' | 'esquerda';
+  /** solido = chão/parede/teto; atravessavel = só as bordas de cima seguram (sobe-se por baixo) */
+  comportamento: 'solido' | 'atravessavel';
+  /** Como foi criada (rótulo). bloco/rampa/poligono são fechadas; linha é aberta (inclui mão livre). */
+  forma: 'bloco' | 'rampa' | 'poligono' | 'linha';
+  /** Vértices em pixels do mundo. */
+  pontos: [number, number][];
 }
 
 export interface Camada {

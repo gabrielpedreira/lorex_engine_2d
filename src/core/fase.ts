@@ -112,18 +112,34 @@ export function nomeArquivoFase(nome: string): string {
   return (slug || 'fase') + '.json';
 }
 
+/** Lê colisões; converte o formato antigo (tipo/x/y/w/h/sobe) para pontos. */
 function normalizarColisoes(lista: unknown): Colisao[] {
   if (!Array.isArray(lista)) return [];
-  return lista.filter((c) => c && typeof c === 'object').map((c, i) => {
-    const b = c as Partial<Colisao>;
-    const tipo = b.tipo === 'atravessavel' || b.tipo === 'rampa' ? b.tipo : 'solido';
-    return {
-      id: String(b.id ?? `col_${String(i + 1).padStart(3, '0')}`), tipo,
-      x: Math.round(Number(b.x) || 0), y: Math.round(Number(b.y) || 0),
-      w: Math.max(1, Math.round(Number(b.w) || 1)), h: Math.max(1, Math.round(Number(b.h) || 1)),
-      ...(tipo === 'rampa' ? { sobe: b.sobe === 'esquerda' ? 'esquerda' as const : 'direita' as const } : {}),
-    };
+  const saida: Colisao[] = [];
+  lista.forEach((bruto, i) => {
+    if (!bruto || typeof bruto !== 'object') return;
+    const b = bruto as Record<string, unknown>;
+    const id = String(b.id ?? `col_${String(i + 1).padStart(3, '0')}`);
+    if (Array.isArray(b.pontos)) {
+      const pontos = (b.pontos as unknown[]).filter((p): p is [number, number] => Array.isArray(p) && p.length === 2)
+        .map(([x, y]) => [Math.round(Number(x) || 0), Math.round(Number(y) || 0)] as [number, number]);
+      const forma = (['bloco', 'rampa', 'poligono', 'linha'] as const).find((f) => f === b.forma) ?? 'poligono';
+      if (pontos.length >= (forma === 'linha' ? 2 : 3)) {
+        saida.push({ id, forma, comportamento: b.comportamento === 'atravessavel' ? 'atravessavel' : 'solido', pontos });
+      }
+      return;
+    }
+    // Formato antigo (etapa 2): retângulo ou rampa
+    const x = Math.round(Number(b.x) || 0), y = Math.round(Number(b.y) || 0);
+    const w = Math.max(1, Math.round(Number(b.w) || 1)), h = Math.max(1, Math.round(Number(b.h) || 1));
+    if (b.tipo === 'rampa') {
+      const pontos: [number, number][] = b.sobe === 'esquerda' ? [[x, y], [x + w, y + h], [x, y + h]] : [[x + w, y], [x + w, y + h], [x, y + h]];
+      saida.push({ id, forma: 'rampa', comportamento: 'solido', pontos });
+    } else {
+      saida.push({ id, forma: 'bloco', comportamento: b.tipo === 'atravessavel' ? 'atravessavel' : 'solido', pontos: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]] });
+    }
   });
+  return saida;
 }
 
 export function novoIdColisao(fase: Fase): string {
