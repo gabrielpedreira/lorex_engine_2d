@@ -162,6 +162,21 @@ as imagens dela (incluindo subpastas) viram miniaturas. Clicar numa miniatura ar
 "fantasma" segue o mouse na camada ativa (vermelho se a camada estiver travada ou oculta), e cada clique no cenário
 cria um objeto centrado no cursor (com encaixe na grade se ativo), com `tipo = tipoPadrao` da ferramenta.
 
+Um clique coloca um objeto, desarma o carimbo e seleciona o objeto novo; `Shift`+clique mantém o carimbo.
+
+### 4.14 Tamanho, escala lembrada e otimização
+
+- O objeto guarda `origem` (a imagem original, relativa à raiz) além de `asset` (o arquivo em `jogo/`).
+- `projeto.json → escalas[origem]`: a última escala usada para cada imagem, **relativa ao original**. O carimbo e o
+  arrastar da biblioteca reaproveitam. Sem escala lembrada, imagens maiores que a tela do jogo entram reduzidas
+  para ~60% da altura da tela.
+- **Otimizar** (Electron): `nativeImage.resize({ quality: 'best' })` a partir do original em alta resolução gera
+  `jogo/assets/<categoria>/<nome>_<L>x<A>.png`. Os objetos da fase com a mesma imagem e o mesmo tamanho passam a
+  usar a cópia com escala 1. `projeto.json → otimizados[origem]` faz o carimbo seguinte já usar a cópia leve.
+- **Limpeza:** depois de otimizar (com a fase salva), ou pelo botão "Limpar cópias sem uso" na Biblioteca, as
+  imagens de `jogo/assets` que nenhuma fase usa vão para a **Lixeira** (`shell.trashItem`). Se alguma fase estiver
+  ilegível, nada é apagado.
+
 **Formato das imagens:** PNG é o formato certo para pixel art (sem perda e com transparência). A otimização que
 importa é outra: (1) desenhar os assets na escala de pixel do jogo, sem PNGs gigantes reduzidos no editor;
 (2) no build final, juntar as imagens em **atlas de texturas** (módulo 15).

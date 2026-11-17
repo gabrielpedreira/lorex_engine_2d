@@ -43,6 +43,12 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
   ferramenta com as miniaturas das imagens. Clique numa miniatura e depois no cenário para **carimbar** o elemento
   na camada ativa (com prévia fantasma; continua carimbando até `Esc` ou botão direito). Cada ferramenta define se
   os objetos são **estáticos** ou **interativos**.
+- **Tamanho livre**: de muito grande a muito pequeno, pelas 4 alças (proporcional; `Shift` = valores redondos), por
+  `[` / `]`, `Alt`+roda, ou digitando %, largura ou altura em px. Imagens maiores que a tela entram reduzidas, e
+  a engine **lembra o tamanho** usado para cada imagem.
+- **Otimizar imagem**: se a imagem aparece bem menor do que é, a engine gera em `jogo/assets` uma cópia
+  reduzida exatamente no tamanho usado (o original de apoio fica intacto) e manda para a Lixeira as cópias grandes
+  que ficaram sem uso.
 - **Biblioteca**: lista as imagens do projeto em "Em uso no jogo" (`jogo/assets`) e no material de apoio (resto
   da pasta). Ao colocar um asset de apoio numa fase, ele é **copiado** para `jogo/assets/<categoria>/`.
 - **Cenário**: zoom em níveis inteiros (pixel art nítida), grade de 16 px, quadro amarelo mostrando a **tela do
@@ -66,7 +72,9 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 | Mover 1 px (8 px) | setas (Shift + setas) |
 | Grade / encaixar / prévia de parallax | `G` / `E` / `P` |
 | Mostrar/ocultar caixa de ferramentas | `T` |
-| Parar o carimbo | `Esc` ou botão direito |
+| Carimbar e continuar | `Shift` + clique |
+| Cancelar o carimbo | `Esc` ou botão direito |
+| Diminuir / aumentar o objeto | `[` / `]` (Shift: 1%) ou `Alt` + roda |
 
 ## Stack
 

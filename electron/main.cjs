@@ -1,5 +1,5 @@
 // Processo principal do Electron: splash, janela do editor, acesso a arquivos do projeto e protocolo projeto://
-const { app, BrowserWindow, ipcMain, dialog, protocol, net } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, nativeImage, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -156,6 +156,57 @@ function registrarIpc() {
     await fsp.mkdir(path.dirname(destino), { recursive: true });
     if (!fs.existsSync(destino)) await fsp.copyFile(origem, destino);
     return relJogo;
+  });
+
+  // Gera em jogo/assets uma cópia reduzida da imagem no tamanho em que ela é usada (o original não é alterado).
+  // fonteRaiz: caminho relativo à raiz (de preferência o original de apoio, em alta resolução).
+  ipcMain.handle('assets:otimizar', async (_e, fonteRaiz, largura, altura) => {
+    const origem = resolverDentroDoProjeto(fonteRaiz);
+    const img = nativeImage.createFromPath(origem);
+    if (img.isEmpty()) throw new Error('Não consegui ler a imagem: ' + fonteRaiz);
+    const w = Math.max(1, Math.round(largura)), h = Math.max(1, Math.round(altura));
+    const reduzida = img.resize({ width: w, height: h, quality: 'best' });
+    const partes = fonteRaiz.split('/');
+    const categoria = fonteRaiz.startsWith('jogo/assets/') && partes.length > 3 ? partes[2]
+      : partes.length > 1 && !fonteRaiz.startsWith('jogo/') ? normalizarCategoria(partes[0]) : 'geral';
+    const base = path.parse(partes[partes.length - 1]).name.replace(/_\d+x\d+$/, '');
+    const relJogo = `assets/${categoria}/${base}_${w}x${h}.png`;
+    const destino = resolverDentroDoProjeto('jogo/' + relJogo);
+    await fsp.mkdir(path.dirname(destino), { recursive: true });
+    await fsp.writeFile(destino, reduzida.toPNG());
+    const antes = fs.statSync(origem).size, depois = fs.statSync(destino).size;
+    return { asset: relJogo, w, h, bytesAntes: antes, bytesDepois: depois, pixelsAntes: img.getSize().width * img.getSize().height };
+  });
+
+  // Manda para a Lixeira os arquivos de jogo/assets que nenhuma fase usa.
+  // emUsoAgora: assets da fase aberta (pode ter alterações ainda não salvas).
+  ipcMain.handle('assets:limparNaoUsados', async (_e, emUsoAgora) => {
+    if (!raizProjeto) return [];
+    const usados = new Set(emUsoAgora ?? []);
+    const dirFases = path.join(raizProjeto, 'jogo', 'fases');
+    for (const n of await fsp.readdir(dirFases).catch(() => [])) {
+      if (!n.toLowerCase().endsWith('.json')) continue;
+      try {
+        const f = JSON.parse(await fsp.readFile(path.join(dirFases, n), 'utf-8'));
+        for (const o of f.objetos ?? []) if (o.asset) usados.add(o.asset);
+      } catch { /* fase ilegível: por segurança, não apaga nada */ return []; }
+    }
+    const arquivos = [];
+    const percorrer = async (dir, rel) => {
+      for (const e of await fsp.readdir(dir, { withFileTypes: true }).catch(() => [])) {
+        const r = rel + '/' + e.name;
+        if (e.isDirectory()) await percorrer(path.join(dir, e.name), r);
+        else if (EXTENSOES_IMAGEM.has(path.extname(e.name).toLowerCase())) arquivos.push(r);
+      }
+    };
+    await percorrer(path.join(raizProjeto, 'jogo', 'assets'), 'assets');
+    const removidos = [];
+    for (const r of arquivos) {
+      if (usados.has(r)) continue;
+      const abs = resolverDentroDoProjeto('jogo/' + r);
+      try { await shell.trashItem(abs); removidos.push(r); } catch { /* sem Lixeira: mantém o arquivo */ }
+    }
+    return removidos;
   });
 
   ipcMain.handle('fases:listar', async () => {

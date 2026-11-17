@@ -3,13 +3,13 @@ import './estilo.css';
 import { criarFase, nomeArquivoFase, nomeDoArquivo, normalizarFase, novoIdObjeto, type OpcoesFase } from './core/fase';
 import type { ObjetoFase } from './core/tipos';
 import { Estado } from './editor/estado';
-import { Viewport } from './editor/viewport';
+import { Viewport, formatarPct } from './editor/viewport';
 import { PlataformaElectron, temElectron } from './plataforma/electron';
 import { PlataformaNavegador } from './plataforma/navegador';
 import type { Plataforma } from './plataforma/plataforma';
 import { Biblioteca } from './ui/biblioteca';
 import { CaixaFerramentas } from './ui/ferramentas';
-import type { Ferramenta } from './plataforma/plataforma';
+import type { ConfigProjeto, Ferramenta } from './plataforma/plataforma';
 import type { TipoObjeto } from './core/tipos';
 import { PainelCamadas } from './ui/camadas';
 import { el, perguntar } from './ui/dom';
@@ -94,11 +94,27 @@ function moverSelecionado(dx: number, dy: number) {
   estado.alterar(() => { o.x += dx; o.y += dy; });
 }
 
-new PainelPropriedades(painelProps, estado, { duplicar: duplicarSelecionado, excluir: excluirSelecionado, ordem: mudarOrdem });
+new PainelPropriedades(painelProps, estado, {
+  duplicar: duplicarSelecionado,
+  excluir: excluirSelecionado,
+  ordem: mudarOrdem,
+  escalar: (f) => viewport.escalarSelecionado(f),
+  otimizar: plat.tipo === 'electron' ? () => void otimizarSelecionado() : null,
+  aoEscalar: (o) => viewport.aoEscalar(o),
+});
 new PainelCamadas(painelCamadas, estado);
 
-/** Coloca um asset na camada ativa. (sx, sy) = posição na tela; sem posição = centro da visão. */
-async function adicionarAsset(caminhoRaiz: string, sx?: number, sy?: number, tipo: TipoObjeto = 'estatico') {
+// ---------- Configuração do projeto em memória (ferramentas, escalas lembradas, cópias otimizadas) ----------
+let config: ConfigProjeto = { ...CONFIG_PADRAO };
+let timerConfig = 0;
+function salvarConfigDepois() {
+  clearTimeout(timerConfig);
+  timerConfig = window.setTimeout(() => void plat.salvarConfigProjeto(config), 400);
+}
+
+/** Coloca um asset na camada ativa. (sx, sy) = posição na tela; sem posição = centro da visão.
+ *  escala: 0/undefined = automática (a última usada para esta imagem, ou reduzida para caber na tela). */
+async function adicionarAsset(caminhoRaiz: string, sx?: number, sy?: number, tipo: TipoObjeto = 'estatico', escala?: number) {
   const camada = estado.camada(estado.camadaAtiva);
   if (!camada) return;
   if (camada.travada || !camada.visivel) {
@@ -106,26 +122,42 @@ async function adicionarAsset(caminhoRaiz: string, sx?: number, sy?: number, tip
     return;
   }
   try {
-    const asset = await plat.garantirEmUso(caminhoRaiz);
-    const tex = await viewport.textura(asset);
+    // Tamanho original (pela imagem de origem) e escala desejada
+    const original = await viewport.texturaRaiz(caminhoRaiz);
+    let esc = escala || config.escalas?.[caminhoRaiz] || viewport.escalaInicial(original.width, original.height);
+    const reduzidaAuto = !escala && !config.escalas?.[caminhoRaiz] && esc < 1;
+
+    // Se já existe uma cópia otimizada exatamente nesse tamanho, usa ela (leve) em vez do original
+    let asset: string, w: number, h: number;
+    const otim = config.otimizados?.[caminhoRaiz];
+    if (otim && otim.w === Math.round(original.width * esc) && otim.h === Math.round(original.height * esc)) {
+      asset = otim.asset; w = otim.w; h = otim.h; esc = 1;
+    } else {
+      asset = await plat.garantirEmUso(caminhoRaiz);
+      w = original.width; h = original.height;
+    }
+    await viewport.textura(asset);
+
     const tela = viewport.tamanhoTela();
-    const pos = viewport.posicaoColocacao(sx ?? tela.w / 2, sy ?? tela.h / 2, tex.width, tex.height, camada.id);
+    const pos = viewport.posicaoColocacao(sx ?? tela.w / 2, sy ?? tela.h / 2, w * esc, h * esc, camada.id);
     const obj: ObjetoFase = {
       id: novoIdObjeto(estado.fase),
       tipo,
       nome: nomeDoArquivo(caminhoRaiz),
       asset,
+      origem: caminhoRaiz,
       camada: camada.id,
       x: pos.x,
       y: pos.y,
-      w: tex.width, h: tex.height,
-      escala: 1, rotacao: 0, espelharX: false, espelharY: false, opacidade: 1, visivel: true,
+      w, h,
+      escala: esc, rotacao: 0, espelharX: false, espelharY: false, opacidade: 1, visivel: true,
       efeitos: [], comportamentos: [], conexoes: {}, script: null,
     };
     estado.alterar((f) => { f.objetos.push(obj); });
     estado.selecionar(obj.id);
-    estado.avisar(`"${obj.nome}" (${tipo === 'interativo' ? 'interativo' : 'estático'}) adicionado em ${camada.nome}`);
-    if (!caminhoRaiz.startsWith('jogo/') && plat.tipo === 'electron') {
+    estado.avisar(`"${obj.nome}" (${tipo === 'interativo' ? 'interativo' : 'estático'}) adicionado em ${camada.nome}`
+      + (reduzidaAuto ? `: a imagem era maior que a tela do jogo e entrou com ${formatarPct(esc)}. Ajuste pelas alças.` : ''));
+    if (!asset.startsWith('../') && plat.tipo === 'electron') {
       await biblioteca.recarregar();
       ferramentas.definir(ferramentasAtuais, biblioteca.caminhos);
     }
@@ -135,22 +167,82 @@ async function adicionarAsset(caminhoRaiz: string, sx?: number, sy?: number, tip
 }
 viewport.aoSoltarAsset = (c, sx, sy) => { void adicionarAsset(c, sx, sy); };
 biblioteca.aoAdicionar = (c) => { void adicionarAsset(c); };
+if (plat.tipo === 'electron') {
+  biblioteca.aoLimpar = async () => {
+    const r = await perguntar('Limpar cópias sem uso', 'As imagens de jogo/assets que nenhuma fase usa vão para a Lixeira (dá para recuperar de lá). Os originais do material de apoio não são tocados.', ['Cancelar', 'Limpar']);
+    if (r !== 1) return;
+    const removidos = await plat.limparNaoUsados(estado.fase.objetos.map((x) => x.asset));
+    estado.avisar(removidos.length ? `${removidos.length} cópia(s) sem uso foram para a Lixeira.` : 'Nenhuma cópia sem uso.');
+    await biblioteca.recarregar();
+    ferramentas.definir(ferramentasAtuais, biblioteca.caminhos);
+  };
+}
+
+/** Lembra o tamanho escolhido para a imagem (relativo ao original): o próximo carimbo dela já entra assim. */
+viewport.aoEscalar = (o) => {
+  if (!o.origem) return;
+  const base = viewport.tamanhoOriginal(o.origem);
+  config.escalas = { ...(config.escalas ?? {}), [o.origem]: base ? (o.w * o.escala) / base.w : o.escala };
+  salvarConfigDepois();
+};
 
 // ---------- Caixa de ferramentas ----------
 let ferramentasAtuais: Ferramenta[] = [];
 let ferramentaArmada: Ferramenta | null = null;
 ferramentas.aoArmar = (caminho, f) => {
   ferramentaArmada = f;
-  viewport.armarCarimbo(caminho);
-  if (caminho) estado.avisar(`Carimbo: ${nomeDoArquivo(caminho)}. Clique no cenário para colocar em "${estado.camada(estado.camadaAtiva)?.nome}". Esc ou botão direito para parar.`);
+  viewport.armarCarimbo(caminho, caminho ? config.escalas?.[caminho] ?? 0 : 0);
+  if (caminho) estado.avisar(`Carimbo: ${nomeDoArquivo(caminho)}. Clique no cenário para colocar em "${estado.camada(estado.camadaAtiva)?.nome}" (Shift+clique coloca e continua). Esc para cancelar.`);
 };
-viewport.aoCarimbar = (c, sx, sy) => { void adicionarAsset(c, sx, sy, ferramentaArmada?.tipoPadrao ?? 'estatico'); };
-viewport.aoCancelarCarimbo = () => { ferramentaArmada = null; ferramentas.desarmar(); estado.avisar('Carimbo desligado'); };
-ferramentas.aoMudar = async (lista) => {
+viewport.aoCarimbar = (c, sx, sy, escala) => { void adicionarAsset(c, sx, sy, ferramentaArmada?.tipoPadrao ?? 'estatico', escala); };
+viewport.aoCancelarCarimbo = (porColocacao) => {
+  if (!porColocacao) ferramentaArmada = null;
+  ferramentas.desarmar();
+  if (!porColocacao) estado.avisar('Carimbo cancelado');
+};
+ferramentas.aoMudar = (lista) => {
   ferramentasAtuais = lista;
-  const cfg = (await plat.lerConfigProjeto()) ?? { ...CONFIG_PADRAO };
-  await plat.salvarConfigProjeto({ ...cfg, ferramentas: lista });
+  config.ferramentas = lista;
+  salvarConfigDepois();
 };
+
+// ---------- Otimizar imagem (cópia reduzida no tamanho usado) ----------
+async function otimizarSelecionado() {
+  const o = estado.objetoSelecionado();
+  if (!o) return;
+  const fonte = o.origem ?? 'jogo/' + o.asset;
+  const original = await viewport.texturaRaiz(fonte);
+  const w = Math.round(o.w * o.escala), h = Math.round(o.h * o.escala);
+  if (w >= original.width) { estado.avisar('Esta imagem já está no tamanho original (ou maior): não há o que reduzir.'); return; }
+  estado.avisar('Otimizando…');
+  try {
+    const r = await plat.otimizarAsset(fonte, w, h);
+    if (!r) { estado.avisar('Otimizar só está disponível no aplicativo (Electron).'); return; }
+    await viewport.textura(r.asset);
+    // Troca todos os objetos da fase que usam a mesma imagem no mesmo tamanho
+    let n = 0;
+    estado.alterar((f) => {
+      for (const x of f.objetos) {
+        if (x.asset === o.asset && Math.round(x.w * x.escala) === w && Math.round(x.h * x.escala) === h) {
+          x.asset = r.asset; x.w = r.w; x.h = r.h; x.escala = 1; x.origem = x.origem ?? fonte; n++;
+        }
+      }
+    });
+    config.otimizados = { ...(config.otimizados ?? {}), [fonte]: { asset: r.asset, w: r.w, h: r.h } };
+    config.escalas = { ...(config.escalas ?? {}), [fonte]: w / original.width };
+    salvarConfigDepois();
+    const mbAntes = (r.pixelsAntes * 4) / 1e6, mbDepois = (r.w * r.h * 4) / 1e6;
+    // Salva a fase (para as outras fases verem o novo arquivo) e tira de jogo/assets a cópia grande que ficou sem uso
+    const salvou = estado.arquivoFase ? await salvar() : false;
+    const removidos = salvou ? await plat.limparNaoUsados(estado.fase.objetos.map((x) => x.asset)) : [];
+    estado.avisar(`Otimizado: ${r.w}×${r.h} px (${n} objeto(s)). Memória de vídeo: ${mbAntes.toFixed(1)} MB → ${mbDepois < 0.1 ? mbDepois.toFixed(3) : mbDepois.toFixed(1)} MB.`
+      + (removidos.length ? ` ${removidos.length} cópia(s) sem uso foram para a Lixeira.` : ''));
+    await biblioteca.recarregar();
+    ferramentas.definir(ferramentasAtuais, biblioteca.caminhos);
+  } catch (err) {
+    estado.avisar(`Erro ao otimizar: ${String(err)}`);
+  }
+}
 
 // ---------- Arquivo: novo, abrir, salvar ----------
 async function podeDescartar(): Promise<boolean> {
@@ -327,6 +419,8 @@ window.addEventListener('keydown', (e) => {
     case 'Delete': case 'Backspace': excluirSelecionado(); break;
     case 'Escape': if (viewport.carimboAtivo) viewport.cancelarCarimbo(); else estado.selecionar(null); break;
     case 'Home': viewport.enquadrar(); break;
+    case '[': viewport.escalarSelecionado(e.shiftKey ? 1 / 1.01 : 1 / 1.1); break;
+    case ']': viewport.escalarSelecionado(e.shiftKey ? 1.01 : 1.1); break;
     case '+': case '=': viewport.passoZoom(1); break;
     case '-': viewport.passoZoom(-1); break;
     case 'ArrowLeft': e.preventDefault(); moverSelecionado(e.shiftKey ? -8 : -1, 0); break;
@@ -357,7 +451,8 @@ async function carregarProjeto(nome: string) {
   nomeProjeto.textContent = nome;
   plat.progresso('Lendo a biblioteca de assets…');
   await biblioteca.recarregar();
-  ferramentasAtuais = (await plat.lerConfigProjeto())?.ferramentas ?? [];
+  config = { ...CONFIG_PADRAO, ...((await plat.lerConfigProjeto()) ?? {}) };
+  ferramentasAtuais = config.ferramentas ?? [];
   viewport.cancelarCarimbo();
   ferramentas.definir(ferramentasAtuais, biblioteca.caminhos);
 }

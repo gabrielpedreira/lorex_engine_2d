@@ -21,6 +21,8 @@ export interface ObjetoFase {
   nome: string;
   /** Caminho relativo a jogo/ (ex.: "assets/itens/chave.png"). */
   asset: string;
+  /** Imagem original de onde o objeto veio (relativo à raiz do projeto), usada para otimizar com qualidade. */
+  origem?: string;
   camada: string;
   /** Canto superior esquerdo, em pixels, no espaço da camada. */
   x: number;

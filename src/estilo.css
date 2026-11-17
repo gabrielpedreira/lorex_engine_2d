@@ -275,3 +275,21 @@ button.largo { width: 100%; justify-content: center; padding: 8px 12px; }
 .item-titulo { display: flex; align-items: center; gap: 8px; color: var(--texto) !important; font-size: 13px !important; }
 .selo { font-style: normal; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--borda); color: var(--texto-2); }
 .selo.area { color: var(--laranja); border-color: rgba(248, 151, 21, 0.45); }
+
+/* ---------- Tamanho do objeto ---------- */
+.secao-tamanho { display: flex; flex-direction: column; gap: 8px; }
+.atalhos-tamanho { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.atalhos-tamanho button { border-color: var(--borda); justify-content: center; padding: 4px 0; font-variant-numeric: tabular-nums; }
+.aviso-otimizar {
+  display: flex; flex-direction: column; gap: 6px; padding: 10px; border-radius: 6px;
+  border: 1px solid rgba(248, 151, 21, 0.45); background: rgba(248, 151, 21, 0.08); font-size: 12px; line-height: 1.4;
+}
+.aviso-otimizar strong { color: var(--laranja); }
+.aviso-otimizar span { color: var(--texto-2); }
+.legenda-tamanho {
+  position: absolute; pointer-events: none; z-index: 5; padding: 3px 7px; border-radius: 4px;
+  background: var(--noite); border: 1px solid var(--acento); color: var(--texto); font-size: 11px;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+
+.bib-acao { padding: 0 4px 10px; }

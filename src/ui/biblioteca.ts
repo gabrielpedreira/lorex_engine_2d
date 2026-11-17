@@ -9,6 +9,9 @@ export class Biblioteca {
   private lista: HTMLElement;
   private abertos = new Set<string>(['Em uso']);
 
+  /** Botão "Limpar sem uso" no grupo Em uso (null = não mostrar). */
+  aoLimpar: (() => void) | null = null;
+
   /** Duplo clique: adicionar no centro da visão, na camada ativa. */
   aoAdicionar: (caminhoRaiz: string) => void = () => {};
 
@@ -61,6 +64,11 @@ export class Biblioteca {
       if (!itens.length) grade.append(el('div', { class: 'vazio' }, 'Nada em uso ainda. Ao colocar um asset numa fase, ele é copiado para cá.'));
       for (const caminho of itens) grade.append(this.item(caminho));
       det.append(grade);
+      if (nome === 'Em uso' && itens.length && this.aoLimpar) {
+        const b = el('button', { type: 'button', class: 'secundario largo', title: 'Manda para a Lixeira as imagens de jogo/assets que nenhuma fase usa' }, 'Limpar cópias sem uso');
+        b.addEventListener('click', () => this.aoLimpar?.());
+        det.append(el('div', { class: 'bib-acao' }, b));
+      }
       this.lista.append(det);
     }
   }

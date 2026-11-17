@@ -51,6 +51,9 @@ export class PlataformaNavegador implements Plataforma {
     return c.startsWith('jogo/') ? c.slice(5) : '../' + c;
   }
 
+  async otimizarAsset() { return null; }
+  async limparNaoUsados() { return []; }
+
   async listarFases() {
     const m = await this.carregarManifesto();
     return [...new Set([...m.fases, ...Object.keys(this.salvas())])].sort();

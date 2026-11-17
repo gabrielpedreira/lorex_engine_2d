@@ -8,6 +8,19 @@ import type { Estado } from './estado';
 // Pixel art: nunca suavizar ao ampliar
 TextureStyle.defaultOptions.scaleMode = 'nearest';
 
+/** Arredonda a escala: livre (0,1%) ou "redonda" (25% acima de 100%, 5% abaixo). */
+export function arredondarEscala(v: number, redonda: boolean) {
+  const min = 0.01;
+  if (!redonda) return Math.max(min, Math.round(v * 1000) / 1000);
+  const passo = v >= 1 ? 0.25 : 0.05;
+  return Math.max(redonda ? 0.05 : min, Math.round(v / passo) * passo);
+}
+
+export function formatarPct(escala: number) {
+  const p = escala * 100;
+  return `${p >= 10 ? Math.round(p) : p.toFixed(1).replace('.', ',')}%`;
+}
+
 export const NIVEIS_ZOOM = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 12, 16];
 const TAM_ALCA = 8;
 const COR_SELECAO = 0xa7dd3e; // lima da logo
@@ -16,7 +29,10 @@ const COR_TELA_JOGO = 0xf89715; // laranja da logo
 type Arraste =
   | { tipo: 'pan'; sx: number; sy: number; cx: number; cy: number }
   | { tipo: 'mover'; id: string; dx: number; dy: number; mexeu: boolean }
-  | { tipo: 'escala'; id: string; mexeu: boolean };
+  | { tipo: 'escala'; id: string; mexeu: boolean; canto: Canto; ancoraX: number; ancoraY: number };
+
+/** Cantos do retângulo de seleção (alças de redimensionar). */
+type Canto = 'no' | 'ne' | 'so' | 'se';
 
 export class Viewport {
   readonly app = new Application();
@@ -26,7 +42,7 @@ export class Viewport {
   private overlay = new Graphics();
   private fantasma = new Sprite(Texture.EMPTY);
   /** Carimbo armado pela caixa de ferramentas (caminho relativo à raiz do projeto). */
-  private carimbo: { caminho: string; tex: Texture | null } | null = null;
+  private carimbo: { caminho: string; tex: Texture | null; escala: number } | null = null;
   private mouseTela: { x: number; y: number } | null = null;
   private conteineres = new Map<string, Container>();
   private sprites = new Map<string, Sprite>();
@@ -39,9 +55,11 @@ export class Viewport {
   mouseMundo = { x: 0, y: 0 };
 
   /** Chamado ao clicar no cenário com o carimbo armado. */
-  aoCarimbar: (caminhoRaiz: string, sx: number, sy: number) => void = () => {};
-  /** Chamado quando o carimbo é cancelado no cenário (Esc ou botão direito). */
-  aoCancelarCarimbo: () => void = () => {};
+  aoCarimbar: (caminhoRaiz: string, sx: number, sy: number, escala: number) => void = () => {};
+  /** Chamado quando o carimbo é desligado no cenário (após colocar, Esc ou botão direito). */
+  aoCancelarCarimbo: (porColocacao: boolean) => void = () => {};
+  /** Chamado ao terminar de redimensionar um objeto pelas alças. */
+  aoEscalar: (o: ObjetoFase) => void = () => {};
 
   /** Chamado quando um asset da biblioteca é solto no cenário. */
   aoSoltarAsset: (caminhoRaiz: string, sx: number, sy: number) => void = () => {};
@@ -124,20 +142,32 @@ export class Viewport {
 
   get carimboAtivo() { return !!this.carimbo; }
 
-  armarCarimbo(caminhoRaiz: string | null) {
+  /** Arma o carimbo. escala = tamanho com que o objeto vai entrar (0 = automático: lembrado ou cabendo na tela). */
+  armarCarimbo(caminhoRaiz: string | null, escala = 0) {
     if (!caminhoRaiz) { this.carimbo = null; this.fantasma.visible = false; this.app.canvas.style.cursor = ''; return; }
-    const c = { caminho: caminhoRaiz, tex: null as Texture | null };
+    const c = { caminho: caminhoRaiz, tex: null as Texture | null, escala };
     this.carimbo = c;
     this.app.canvas.style.cursor = 'crosshair';
-    Assets.load<Texture>({ src: this.plat.urlRaiz(caminhoRaiz), parser: 'texture' })
-      .then((t) => { t.source.scaleMode = 'nearest'; c.tex = t; if (this.carimbo === c) this.atualizarFantasma(); })
+    this.texturaRaiz(caminhoRaiz)
+      .then((t) => {
+        c.tex = t;
+        if (!c.escala) c.escala = this.escalaInicial(t.width, t.height);
+        if (this.carimbo === c) this.atualizarFantasma();
+      })
       .catch(() => this.estado.avisar(`Não consegui carregar: ${caminhoRaiz}`));
   }
 
-  cancelarCarimbo() {
+  cancelarCarimbo(porColocacao = false) {
     if (!this.carimbo) return;
     this.armarCarimbo(null);
-    this.aoCancelarCarimbo();
+    this.aoCancelarCarimbo(porColocacao);
+  }
+
+  /** Imagens maiores que a tela do jogo entram reduzidas para caber em ~60% da altura da tela. */
+  escalaInicial(w: number, h: number) {
+    const [rw, rh] = this.estado.fase.resolucaoBase;
+    if (w <= rw && h <= rh) return 1;
+    return arredondarEscala(Math.min((rh * 0.6) / h, (rw * 0.9) / w), false);
   }
 
   /** Canto superior esquerdo (no espaço da camada) para um objeto w×h centrado no ponto da tela, com encaixe. */
@@ -155,16 +185,35 @@ export class Viewport {
     const c = this.carimbo;
     const camada = this.estado.camada(this.estado.camadaAtiva);
     if (!c || !c.tex || !this.mouseTela || !camada) { this.fantasma.visible = false; return; }
-    const pos = this.posicaoColocacao(this.mouseTela.x, this.mouseTela.y, c.tex.width, c.tex.height, camada.id);
+    const esc = c.escala || 1;
+    const pos = this.posicaoColocacao(this.mouseTela.x, this.mouseTela.y, c.tex.width * esc, c.tex.height * esc, camada.id);
     const t = this.camadaParaTela(pos.x, pos.y, camada.id);
     this.fantasma.texture = c.tex;
     this.fantasma.position.set(Math.round(t.x), Math.round(t.y));
-    this.fantasma.scale.set(this.estado.camera.zoom);
+    this.fantasma.scale.set(this.estado.camera.zoom * esc);
     this.fantasma.tint = camada.travada || !camada.visivel ? 0xff6060 : 0xffffff;
     this.fantasma.visible = true;
   }
 
   // ---------- Texturas ----------
+
+  private texturasRaiz = new Map<string, Texture>();
+
+  /** Textura de um arquivo pelo caminho relativo à raiz do projeto (ex.: o original de apoio). */
+  async texturaRaiz(caminhoRaiz: string): Promise<Texture> {
+    const cache = this.texturasRaiz.get(caminhoRaiz);
+    if (cache) return cache;
+    const tex = await Assets.load<Texture>({ src: this.plat.urlRaiz(caminhoRaiz), parser: 'texture' });
+    tex.source.scaleMode = 'nearest';
+    this.texturasRaiz.set(caminhoRaiz, tex);
+    return tex;
+  }
+
+  /** Tamanho da imagem original, se já carregada. */
+  tamanhoOriginal(caminhoRaiz: string) {
+    const t = this.texturasRaiz.get(caminhoRaiz);
+    return t ? { w: t.width, h: t.height } : undefined;
+  }
 
   async textura(asset: string): Promise<Texture> {
     const cache = this.texturas.get(asset);
@@ -317,9 +366,10 @@ export class Viewport {
       const r = this.retanguloTela(sel);
       g.rect(Math.round(r.x) + 0.5, Math.round(r.y) + 0.5, Math.round(r.w), Math.round(r.h))
         .stroke({ width: 1, color: COR_SELECAO });
-      const ax = r.x + r.w - TAM_ALCA / 2;
-      const ay = r.y + r.h - TAM_ALCA / 2;
-      g.rect(ax, ay, TAM_ALCA, TAM_ALCA).fill({ color: 0xffffff }).stroke({ width: 1, color: COR_SELECAO });
+      for (const [cx, cy] of [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]]) {
+        g.rect(Math.round(cx - TAM_ALCA / 2), Math.round(cy - TAM_ALCA / 2), TAM_ALCA, TAM_ALCA)
+          .fill({ color: 0xffffff }).stroke({ width: 1, color: COR_SELECAO });
+      }
     }
   }
 
@@ -341,16 +391,49 @@ export class Viewport {
     return undefined;
   }
 
-  private sobreAlca(sx: number, sy: number) {
+  /** Canto (alça) sob o ponto, se houver objeto selecionado. */
+  private sobreAlca(sx: number, sy: number): Canto | null {
     const sel = this.estado.objetoSelecionado();
-    if (!sel) return false;
+    if (!sel) return null;
     const r = this.retanguloTela(sel);
-    return Math.abs(sx - (r.x + r.w)) <= TAM_ALCA && Math.abs(sy - (r.y + r.h)) <= TAM_ALCA;
+    const perto = (ax: number, ay: number) => Math.abs(sx - ax) <= TAM_ALCA && Math.abs(sy - ay) <= TAM_ALCA;
+    if (perto(r.x + r.w, r.y + r.h)) return 'se';
+    if (perto(r.x, r.y)) return 'no';
+    if (perto(r.x + r.w, r.y)) return 'ne';
+    if (perto(r.x, r.y + r.h)) return 'so';
+    return null;
+  }
+
+  /** Legenda flutuante com o tamanho durante o redimensionamento. */
+  private legenda: HTMLDivElement | null = null;
+  private mostrarLegenda(texto: string | null, sx = 0, sy = 0) {
+    if (!texto) { this.legenda?.remove(); this.legenda = null; return; }
+    if (!this.legenda) {
+      this.legenda = document.createElement('div');
+      this.legenda.className = 'legenda-tamanho';
+      this.el.append(this.legenda);
+    }
+    this.legenda.textContent = texto;
+    this.legenda.style.left = `${Math.round(sx + 14)}px`;
+    this.legenda.style.top = `${Math.round(sy + 14)}px`;
   }
 
   private posMouse(e: MouseEvent) {
     const r = this.app.canvas.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  /** Multiplica a escala do selecionado mantendo o centro no lugar. */
+  escalarSelecionado(fator: number) {
+    const o = this.estado.objetoSelecionado();
+    if (!o) return;
+    this.estado.alterar(() => {
+      const cx = o.x + (o.w * o.escala) / 2, cy = o.y + (o.h * o.escala) / 2;
+      o.escala = arredondarEscala(o.escala * fator, false);
+      o.x = Math.round(cx - (o.w * o.escala) / 2);
+      o.y = Math.round(cy - (o.h * o.escala) / 2);
+    });
+    this.aoEscalar(o);
   }
 
   zoomEm(sx: number, sy: number, novoZoom: number) {
@@ -407,10 +490,21 @@ export class Viewport {
       }
       if (e.button === 2 && this.carimbo) { this.cancelarCarimbo(); return; }
       if (e.button !== 0) return;
-      if (this.carimbo) { this.aoCarimbar(this.carimbo.caminho, p.x, p.y); return; }
+      if (this.carimbo) {
+        const caminho = this.carimbo.caminho;
+        const escala = this.carimbo.escala;
+        if (!e.shiftKey) this.cancelarCarimbo(true); // um clique = um objeto (Shift mantém o carimbo)
+        this.aoCarimbar(caminho, p.x, p.y, escala);
+        return;
+      }
       const sel = this.estado.objetoSelecionado();
-      if (sel && this.sobreAlca(p.x, p.y)) {
-        this.arraste = { tipo: 'escala', id: sel.id, mexeu: false };
+      const canto = sel ? this.sobreAlca(p.x, p.y) : null;
+      if (sel && canto) {
+        // A âncora é o canto oposto, que fica parado
+        const w = sel.w * sel.escala, h = sel.h * sel.escala;
+        const ancoraX = canto === 'no' || canto === 'so' ? sel.x + w : sel.x;
+        const ancoraY = canto === 'no' || canto === 'ne' ? sel.y + h : sel.y;
+        this.arraste = { tipo: 'escala', id: sel.id, mexeu: false, canto, ancoraX, ancoraY };
         return;
       }
       const alvo = this.objetoEm(p.x, p.y);
@@ -433,7 +527,8 @@ export class Viewport {
       if (this.carimbo && !a) { this.atualizarFantasma(); return; }
       if (!a) {
         this.hover = this.objetoEm(p.x, p.y)?.id ?? null;
-        cv.style.cursor = this.espacoPressionado ? 'grab' : this.sobreAlca(p.x, p.y) ? 'nwse-resize' : this.hover ? 'move' : '';
+        const canto = this.sobreAlca(p.x, p.y);
+        cv.style.cursor = this.espacoPressionado ? 'grab' : canto ? (canto === 'se' || canto === 'no' ? 'nwse-resize' : 'nesw-resize') : this.hover ? 'move' : '';
         return;
       }
       if (a.tipo === 'pan') {
@@ -456,16 +551,25 @@ export class Viewport {
         o.x = Math.round(nx);
         o.y = Math.round(ny);
       } else {
-        // Redimensiona mantendo a proporção. Passos de 0,25 (Shift = livre).
-        const bruta = Math.max((lp.x - o.x) / o.w, (lp.y - o.y) / o.h);
-        const passo = e.shiftKey ? 0.01 : 0.25;
-        o.escala = Math.max(passo, Math.round(bruta / passo) * passo);
+        // Redimensiona livremente mantendo a proporção; Shift = valores redondos.
+        const bruta = Math.max(Math.abs(lp.x - a.ancoraX) / o.w, Math.abs(lp.y - a.ancoraY) / o.h);
+        o.escala = arredondarEscala(bruta, e.shiftKey);
+        const w = o.w * o.escala, h = o.h * o.escala;
+        o.x = Math.round(a.canto === 'no' || a.canto === 'so' ? a.ancoraX - w : a.ancoraX);
+        o.y = Math.round(a.canto === 'no' || a.canto === 'ne' ? a.ancoraY - h : a.ancoraY);
+        this.mostrarLegenda(`${Math.round(w)} × ${Math.round(h)} px · ${formatarPct(o.escala)}`, p.x, p.y);
       }
       this.estado.marcarAlterado();
     });
 
     const soltar = () => {
-      if (this.arraste?.tipo === 'pan') cv.style.cursor = this.espacoPressionado ? 'grab' : '';
+      const a = this.arraste;
+      if (a?.tipo === 'pan') cv.style.cursor = this.espacoPressionado ? 'grab' : '';
+      if (a?.tipo === 'escala') {
+        this.mostrarLegenda(null);
+        const o = this.estado.objeto(a.id);
+        if (a.mexeu && o) this.aoEscalar(o);
+      }
       this.arraste = null;
     };
     cv.addEventListener('pointerup', soltar);
@@ -475,6 +579,12 @@ export class Viewport {
     cv.addEventListener('wheel', (e) => {
       e.preventDefault();
       const p = this.posMouse(e);
+      const sel = this.estado.objetoSelecionado();
+      if (e.altKey && sel) {
+        // Alt + roda = aumentar/diminuir o objeto selecionado (10% por passo)
+        this.escalarSelecionado(e.deltaY < 0 ? 1.1 : 1 / 1.1);
+        return;
+      }
       if (e.ctrlKey || !e.shiftKey) this.passoZoom(e.deltaY < 0 ? 1 : -1, p.x, p.y);
       else {
         // Shift + roda = rolar na horizontal

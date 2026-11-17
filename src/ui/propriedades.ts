@@ -7,6 +7,12 @@ export interface AcoesObjeto {
   duplicar(): void;
   excluir(): void;
   ordem(direcao: 'frente' | 'tras'): void;
+  /** Multiplica o tamanho do selecionado. */
+  escalar(fator: number): void;
+  /** Gera cópia reduzida da imagem no tamanho atual (null = indisponível, ex.: navegador). */
+  otimizar: (() => void) | null;
+  /** Avisar que o tamanho mudou (para lembrar a escala). */
+  aoEscalar(o: ObjetoFase): void;
 }
 
 export class PainelPropriedades {
@@ -107,10 +113,8 @@ export class PainelPropriedades {
         el('div', { class: 'linha2' },
           this.num('X', o.x, (v) => { o.x = Math.round(v); }),
           this.num('Y', o.y, (v) => { o.y = Math.round(v); })),
-        el('div', { class: 'linha2' },
-          this.num('Escala', o.escala, (v) => { o.escala = v; }, { passo: 0.25, min: 0.01 }),
-          this.num('Rotação °', o.rotacao, (v) => { o.rotacao = v; }, { passo: 1 })),
-        el('div', { class: 'tamanho-info' }, `Tamanho final: ${Math.round(o.w * o.escala)} × ${Math.round(o.h * o.escala)} px (original ${o.w} × ${o.h})`),
+        this.secaoTamanho(o),
+        this.num('Rotação °', o.rotacao, (v) => { o.rotacao = v; }, { passo: 1 }),
         el('div', { class: 'linha2' },
           this.check('Espelhar ↔', o.espelharX, (v) => { o.espelharX = v; }),
           this.check('Espelhar ↕', o.espelharY, (v) => { o.espelharY = v; })),
@@ -127,6 +131,52 @@ export class PainelPropriedades {
         botao('Excluir', () => this.acoes.excluir(), 'perigo'),
       ),
     );
+  }
+
+  /** Tamanho: em %, largura ou altura em px (proporcional), atalhos e otimização. */
+  private secaoTamanho(o: ObjetoFase) {
+    const aplicarMantendoCentro = (novaEscala: number) => {
+      const cx = o.x + (o.w * o.escala) / 2, cy = o.y + (o.h * o.escala) / 2;
+      o.escala = Math.max(0.01, Math.round(novaEscala * 1000) / 1000);
+      o.x = Math.round(cx - (o.w * o.escala) / 2);
+      o.y = Math.round(cy - (o.h * o.escala) / 2);
+    };
+    const depois = () => this.acoes.aoEscalar(o);
+    const pct = this.num('Tamanho %', o.escala * 100, (v) => { aplicarMantendoCentro(v / 100); depois(); }, { passo: 5, min: 1 });
+    const larg = this.num('Largura px', Math.round(o.w * o.escala), (v) => { aplicarMantendoCentro(v / o.w); depois(); }, { min: 1 });
+    const alt = this.num('Altura px', Math.round(o.h * o.escala), (v) => { aplicarMantendoCentro(v / o.h); depois(); }, { min: 1 });
+    const atalhos = el('div', { class: 'atalhos-tamanho' });
+    for (const [rotulo, fator] of [['−10%', 1 / 1.1], ['+10%', 1.1], ['½', 0.5], ['×2', 2]] as const) {
+      const b = el('button', { type: 'button', title: `Multiplicar o tamanho por ${fator.toFixed(2)}` }, rotulo);
+      b.addEventListener('click', () => { this.acoes.escalar(fator); this.render(true); });
+      atalhos.append(b);
+    }
+    const original = el('button', { type: 'button', title: 'Voltar ao tamanho da imagem (100%)' }, '100%');
+    original.addEventListener('click', () => { this.estado.alterar(() => aplicarMantendoCentro(1)); depois(); this.render(true); });
+    atalhos.append(original);
+
+    const pixelsTela = Math.round(o.w * o.escala) * Math.round(o.h * o.escala);
+    const desperdicio = o.escala < 0.75 && o.w * o.h > pixelsTela * 2;
+    const blocos: HTMLElement[] = [
+      pct,
+      el('div', { class: 'linha2' }, larg, alt),
+      atalhos,
+      el('div', { class: 'tamanho-info' }, `Imagem: ${o.w} × ${o.h} px · ${((o.w * o.h * 4) / 1e6).toFixed(1).replace('.', ',')} MB na memória de vídeo`),
+    ];
+    if (desperdicio) {
+      const aviso = el('div', { class: 'aviso-otimizar' },
+        el('strong', {}, 'Imagem maior do que o necessário'),
+        el('span', {}, `Ela aparece com ${Math.round(o.w * o.escala)} × ${Math.round(o.h * o.escala)} px, mas carrega ${o.w} × ${o.h}. Otimize para gerar uma cópia leve neste tamanho (o original fica intacto).`));
+      if (this.acoes.otimizar) {
+        const b = el('button', { type: 'button', class: 'primario largo' }, 'Otimizar para este tamanho');
+        b.addEventListener('click', () => this.acoes.otimizar?.());
+        aviso.append(b);
+      } else {
+        aviso.append(el('span', { class: 'dica-campo' }, 'Disponível no aplicativo (npm run dev).'));
+      }
+      blocos.push(aviso);
+    }
+    return el('div', { class: 'secao-tamanho' }, ...blocos);
   }
 
   private tipoCena(valor: 'fase' | 'area', aplicar: (v: 'fase' | 'area') => void) {

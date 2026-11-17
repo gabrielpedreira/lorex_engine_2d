@@ -76,6 +76,7 @@ function normalizarObjeto(o: Partial<ObjetoFase>, camadaPadrao: string): ObjetoF
     tipo: o.tipo === 'interativo' ? 'interativo' : 'estatico',
     nome: String(o.nome ?? o.id ?? 'objeto'),
     asset: String(o.asset ?? ''),
+    ...(o.origem ? { origem: String(o.origem) } : {}),
     camada: String(o.camada ?? camadaPadrao),
     x: Number(o.x ?? 0), y: Number(o.y ?? 0),
     w: Number(o.w ?? 16), h: Number(o.h ?? 16),

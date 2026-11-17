@@ -1,4 +1,4 @@
-import { codificarCaminho, type ConfigProjeto, type InfoProjeto, type Plataforma } from './plataforma';
+import { codificarCaminho, type ConfigProjeto, type InfoProjeto, type Plataforma, type ResultadoOtimizacao } from './plataforma';
 
 interface ApiLorex {
   versao(): Promise<string>;
@@ -12,6 +12,8 @@ interface ApiLorex {
   projetoAtual(): Promise<InfoProjeto | null>;
   listarAssets(): Promise<string[]>;
   garantirEmUso(relRaiz: string): Promise<string>;
+  otimizarAsset(fonteRaiz: string, largura: number, altura: number): Promise<ResultadoOtimizacao>;
+  limparNaoUsados(emUsoAgora: string[]): Promise<string[]>;
   listarFases(): Promise<string[]>;
   lerFase(nome: string): Promise<string>;
   salvarFase(nome: string, conteudo: string): Promise<boolean>;
@@ -40,6 +42,8 @@ export class PlataformaElectron implements Plataforma {
   projetoAtual() { return this.api.projetoAtual(); }
   listarAssets() { return this.api.listarAssets(); }
   garantirEmUso(c: string) { return this.api.garantirEmUso(c); }
+  otimizarAsset(f: string, w: number, h: number) { return this.api.otimizarAsset(f, w, h); }
+  limparNaoUsados(u: string[]) { return this.api.limparNaoUsados(u); }
   listarFases() { return this.api.listarFases(); }
   lerFase(n: string) { return this.api.lerFase(n); }
   async salvarFase(n: string, c: string) { await this.api.salvarFase(n, c); }

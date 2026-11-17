@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('lorex', {
 
   listarAssets: () => ipcRenderer.invoke('assets:listar'),
   garantirEmUso: (relRaiz) => ipcRenderer.invoke('assets:garantirEmUso', relRaiz),
+  limparNaoUsados: (emUsoAgora) => ipcRenderer.invoke('assets:limparNaoUsados', emUsoAgora),
+  otimizarAsset: (fonteRaiz, largura, altura) => ipcRenderer.invoke('assets:otimizar', fonteRaiz, largura, altura),
   listarFases: () => ipcRenderer.invoke('fases:listar'),
   lerFase: (nome) => ipcRenderer.invoke('fases:ler', nome),
   salvarFase: (nome, conteudo) => ipcRenderer.invoke('fases:salvar', nome, conteudo),

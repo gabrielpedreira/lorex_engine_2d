@@ -19,6 +19,10 @@ export interface Ferramenta {
 export interface ConfigProjeto {
   /** Pastas da caixa de ferramentas. */
   ferramentas?: Ferramenta[];
+  /** Última escala usada para cada imagem (caminho relativo à raiz) — o carimbo reaproveita. */
+  escalas?: Record<string, number>;
+  /** Cópias otimizadas (reduzidas) de cada imagem original: origem → asset em jogo/ e tamanho. */
+  otimizados?: Record<string, { asset: string; w: number; h: number }>;
   /** Resolução do jogo em pixels de arte (o "formato de pixels"). */
   resolucaoBase: [number, number];
   /** Tamanho da grade/tile em pixels. */
@@ -26,6 +30,8 @@ export interface ConfigProjeto {
 }
 
 export const CONFIG_PADRAO: ConfigProjeto = { resolucaoBase: [640, 360], tamanhoGrade: 16 };
+
+export interface ResultadoOtimizacao { asset: string; w: number; h: number; bytesAntes: number; bytesDepois: number; pixelsAntes: number }
 
 export interface Plataforma {
   readonly tipo: 'electron' | 'navegador';
@@ -46,6 +52,10 @@ export interface Plataforma {
   listarAssets(): Promise<string[]>;
   /** Garante que o asset esteja em jogo/assets e devolve o caminho relativo a jogo/. */
   garantirEmUso(caminhoRaiz: string): Promise<string>;
+  /** Manda para a Lixeira os arquivos de jogo/assets sem uso em nenhuma fase. Retorna os removidos. */
+  limparNaoUsados(emUsoAgora: string[]): Promise<string[]>;
+  /** Gera cópia reduzida em jogo/assets (só Electron). null = indisponível. */
+  otimizarAsset(fonteRaiz: string, largura: number, altura: number): Promise<ResultadoOtimizacao | null>;
   listarFases(): Promise<string[]>;
   lerFase(nome: string): Promise<string>;
   salvarFase(nome: string, conteudo: string): Promise<void>;
