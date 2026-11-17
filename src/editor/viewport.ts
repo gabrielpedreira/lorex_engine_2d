@@ -394,7 +394,97 @@ export class Viewport {
 
   // ---------- Quadro a quadro ----------
 
+  // ---------- Barras de rolagem ----------
+  private rolagem: { h: HTMLElement; v: HTMLElement; hPolegar: HTMLElement; vPolegar: HTMLElement; chave: string } | null = null;
+
+  /** Faixa navegável num eixo (mundo): a fase inteira mais meia tela de folga em cada lado. */
+  private faixa(eixo: 0 | 1) {
+    const { w, h } = this.tamanhoTela();
+    const z = this.estado.camera.zoom;
+    const vista = (eixo === 0 ? w : h) / z;
+    const tam = this.estado.fase.tamanho[eixo];
+    const folga = vista / 2;
+    return { min: -folga, max: Math.max(tam + folga, -folga + vista), vista };
+  }
+
+  private criarRolagem() {
+    const criar = (eixo: 0 | 1) => {
+      const barra = document.createElement('div');
+      barra.className = 'barra-rolagem ' + (eixo === 0 ? 'horizontal' : 'vertical');
+      const polegar = document.createElement('div');
+      polegar.className = 'polegar';
+      barra.append(polegar);
+      barra.dataset.legTitulo = eixo === 0 ? 'Rolar na horizontal' : 'Rolar na vertical';
+      barra.dataset.legTexto = 'Arraste a barra ou clique no trilho. Também: Espaço + arrastar, botão do meio, Shift + roda (horizontal).';
+      const prop = eixo === 0 ? 'x' : 'y';
+      // Clicar no trilho: pula uma tela naquela direção
+      barra.addEventListener('pointerdown', (e) => {
+        if (e.target !== barra) return;
+        const r = polegar.getBoundingClientRect();
+        const antes = eixo === 0 ? e.clientX < r.left : e.clientY < r.top;
+        const f = this.faixa(eixo);
+        this.estado.camera[prop] += (antes ? -1 : 1) * f.vista * 0.9;
+        this.prenderCamera();
+        this.estado.emit('camera');
+      });
+      // Arrastar o polegar
+      polegar.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        polegar.setPointerCapture(e.pointerId);
+        const inicio = eixo === 0 ? e.clientX : e.clientY;
+        const camInicio = this.estado.camera[prop];
+        const f = this.faixa(eixo);
+        const trilho = eixo === 0 ? barra.clientWidth : barra.clientHeight;
+        const mover = (ev: PointerEvent) => {
+          const d = (eixo === 0 ? ev.clientX : ev.clientY) - inicio;
+          this.estado.camera[prop] = camInicio + (d / trilho) * (f.max - f.min);
+          this.prenderCamera();
+          this.estado.emit('camera');
+        };
+        const soltar = () => { polegar.removeEventListener('pointermove', mover); polegar.removeEventListener('pointerup', soltar); polegar.classList.remove('arrastando'); };
+        polegar.classList.add('arrastando');
+        polegar.addEventListener('pointermove', mover);
+        polegar.addEventListener('pointerup', soltar);
+      });
+      this.el.append(barra);
+      return { barra, polegar };
+    };
+    const h = criar(0), v = criar(1);
+    this.rolagem = { h: h.barra, v: v.barra, hPolegar: h.polegar, vPolegar: v.polegar, chave: '' };
+  }
+
+  /** Mantém a visão dentro da faixa navegável. */
+  private prenderCamera() {
+    const c = this.estado.camera;
+    for (const [eixo, prop] of [[0, 'x'], [1, 'y']] as const) {
+      const f = this.faixa(eixo);
+      c[prop] = Math.min(Math.max(c[prop], f.min), Math.max(f.min, f.max - f.vista));
+    }
+  }
+
+  private atualizarRolagem() {
+    if (!this.rolagem) this.criarRolagem();
+    const r = this.rolagem!;
+    const { w, h } = this.tamanhoTela();
+    const { x, y, zoom } = this.estado.camera;
+    const chave = `${x},${y},${zoom},${w},${h},${this.estado.fase.tamanho},${this.estado.testando}`;
+    if (chave === r.chave) return;
+    r.chave = chave;
+    const ocultar = this.estado.testando;
+    for (const [eixo, barra, polegar, pos] of [[0, r.h, r.hPolegar, x], [1, r.v, r.vPolegar, y]] as const) {
+      const f = this.faixa(eixo);
+      const total = f.max - f.min;
+      const frac = Math.min(1, f.vista / total);
+      // Tudo à vista: a barra some
+      barra.hidden = ocultar || frac >= 0.999;
+      const ini = Math.min(Math.max((pos - f.min) / total, 0), 1 - frac);
+      if (eixo === 0) { polegar.style.left = `${ini * 100}%`; polegar.style.width = `${Math.max(frac * 100, 4)}%`; }
+      else { polegar.style.top = `${ini * 100}%`; polegar.style.height = `${Math.max(frac * 100, 4)}%`; }
+    }
+  }
+
   private quadro() {
+    this.atualizarRolagem();
     this.animarEfeitos();
     const { x, y, zoom } = this.estado.camera;
     for (const c of this.estado.fase.camadas) {

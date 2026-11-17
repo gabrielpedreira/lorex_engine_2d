@@ -75,6 +75,14 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
   desenhos com espaços), lê o FPS do nome (`_8fps`), mostra a prévia animada com chão, cruz dos pés e caixa de
   colisão, e detecta pés e caixa sozinho. Estados sem animação usam um substituto (ex.: Caindo → Pulando → Parado).
   Salvo em `jogo/personagens/<nome>.json`; "Usar no ▶ Testar" troca o retângulo provisório pelo personagem animado.
+- **Animações extras (ações)**: além das básicas, cada personagem pode ter animações com nome livre (Tiro,
+  Recarga, Ataque…), criadas em "+ Nova animação". O código as toca pela chave (`tocar("tiro")`). Uma ação pode
+  **travar o movimento** e ter uma **variante ao andar** (Tiro → Tiro andando). Personagens são do tipo **Jogador**
+  ou **NPC** (inimigos/aliados, cujas ações a IA/código chama).
+- **Controles** (`B`): define as teclas de cada ação (andar, pular, interagir e as ações do personagem), com
+  **tecla**, **combinação** (Shift + J) ou **sequência** (↓ › → › J). Base pronta: setas/A D andam, Espaço/W/↑ pulam,
+  E interage, J/X atiram, R recarrega. Mostra conflitos, tem área para experimentar e salva em `jogo/projeto.json`.
+- **Barras de rolagem** no cenário para navegar com zoom (arrastar ou clicar no trilho).
 - **Trabalho a quatro mãos:** se uma fase é alterada fora do editor (por outra ferramenta ou pelo assistente), o
   editor recarrega sozinho ou, havendo alterações não salvas, pergunta antes.
 - **Início do jogador** (ferramenta `I`): bandeira na posição dos pés da personagem, arrastável.
@@ -104,8 +112,8 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 | Forma de colisão | `1` bloco · `2` rampa ◢ · `3` rampa ◣ · `4` polígono · `5` linha · `6` mão livre |
 | Sólido ↔ atravessável (modo Colisão) | `X` |
 | Polígono/linha: terminar · desfazer ponto · cancelar | `Enter` ou duplo clique · `Backspace` · `Esc` |
-| Personagens | `K` |
-| ▶ Testar / voltar | `F5` / `Esc` (no teste: `E` interage, `R` reinicia) |
+| Personagens / Controles | `K` / `B` |
+| ▶ Testar / voltar | `F5` / `Esc` (no teste: teclas da ferramenta Controles; `F6` reinicia) |
 | Mostrar colisões / prévia de efeitos | `Shift+C` / `Shift+E` |
 | Mostrar/ocultar caixa de ferramentas | `T` |
 | Carimbar e continuar | `Shift` + clique |

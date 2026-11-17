@@ -1,6 +1,7 @@
 // ▶ Testar: joga a fase dentro do editor, com o jogador correndo e pulando sobre as colisões desenhadas.
 import { Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
-import { ancoraPes, animacaoPara, estadoDoJogador, quadroEm, retanguloQuadro, type EstadoAnim, type Personagem } from '../core/personagem';
+import { Animador, ancoraPes, estadoDoJogador, extras, retanguloQuadro, type Personagem } from '../core/personagem';
+import { EntradaJogo, TECLAS_RESERVADAS, controlesPadrao, normalizarCodigo, textoAtalho, type Controles } from '../core/controles';
 import { Jogador, JOGADOR_PADRAO, montarSegmentos, type ConfigJogador, type Entrada, type Segmento } from '../core/fisica';
 import { MundoInterativo, type ResultadoInteracao } from '../core/comportamentos';
 import { el } from '../ui/dom';
@@ -13,7 +14,7 @@ const PASSO = 1 / 120; // física em passo fixo (estável em qualquer taxa de qu
 export class ModoTeste {
   private jogador: Jogador | null = null;
   private segs: Segmento[] = [];
-  private teclas = new Set<string>();
+  private entradaJogo = new EntradaJogo(controlesPadrao());
   private puloApertado = false;
   private acumulado = 0;
   private cameraAntes = { x: 0, y: 0, zoom: 1 };
@@ -33,26 +34,29 @@ export class ModoTeste {
   private inventarioLevado: Map<string, number> | null = null;
 
   /** Personagem animado (null = retângulo provisório). */
-  private pers: { dados: Personagem; quadros: Map<EstadoAnim, Texture[]> } | null = null;
+  private pers: { dados: Personagem; quadros: Map<string, Texture[]>; animador: Animador } | null = null;
   private spritePers = new Sprite(Texture.EMPTY);
-  private estadoAnim: EstadoAnim = 'parado';
-  private tempoAnim = 0;
   private aterrissouHa = 9;
+  private elAcao: HTMLElement | null = null;
   private estavaNoChao = false;
 
   /** Prepara o personagem animado do teste. carregar = textura de uma folha (caminho relativo a jogo/). */
   async definirPersonagem(dados: Personagem | null, carregar: (folha: string) => Promise<Texture>) {
     if (!dados || !dados.animacoes.parado) { this.pers = null; return; }
-    const quadros = new Map<EstadoAnim, Texture[]>();
-    for (const [estado, anim] of Object.entries(dados.animacoes) as [EstadoAnim, NonNullable<Personagem['animacoes'][EstadoAnim]>][]) {
+    const quadros = new Map<string, Texture[]>();
+    for (const [estado, anim] of Object.entries(dados.animacoes)) {
       const base = await carregar(anim.folha);
       quadros.set(estado, Array.from({ length: anim.quadros }, (_, i) => {
         const r = retanguloQuadro(anim, base.width, i);
         return new Texture({ source: base.source, frame: new Rectangle(r.x, r.y, Math.min(r.w, base.width - r.x), Math.min(r.h, base.height - r.y)) });
       }));
     }
-    this.pers = { dados, quadros };
+    this.pers = { dados, quadros, animador: new Animador(dados) };
   }
+
+  /** Teclas de cada ação (ferramenta Controles; salvas no projeto). */
+  set controles(c: Controles) { this.entradaJogo.controles = c; if (this.ativo) this.montarHud(); }
+  get controles() { return this.entradaJogo.controles; }
 
   /** Saída para outra fase/área: o editor abre o destino e recomeça o teste lá. */
   aoIrPara: (destino: string) => void = () => {};
@@ -86,7 +90,7 @@ export class ModoTeste {
     this.segs = montarSegmentos(e.fase.colisoes);
     this.reiniciarJogador();
     this.reiniciarMundo();
-    this.teclas.clear();
+    this.entradaJogo.limpar();
 
     // Zoom para a tela do jogo caber inteira (inteiro, para a pixel art ficar nítida)
     const { w, h } = this.viewport.tamanhoTela();
@@ -193,7 +197,8 @@ export class ModoTeste {
     const cfg = { ...this.config };
     if (this.pers) { cfg.largura = this.pers.dados.caixa.largura; cfg.altura = this.pers.dados.caixa.altura; }
     this.jogador = new Jogador(cfg, sx, sy);
-    this.estadoAnim = 'parado'; this.tempoAnim = 0; this.aterrissouHa = 9;
+    this.aterrissouHa = 9;
+    this.pers?.animador.parar();
   }
 
   /** O jogador é desenhado dentro da camada "Objetos" (atrás do primeiro plano, na frente do cenário). */
@@ -209,31 +214,40 @@ export class ModoTeste {
     if (document.querySelector('.modal-fundo')) return;
     const alvo = ev.target as HTMLElement | null;
     if (alvo && this.hud.contains(alvo) && alvo.tagName === 'INPUT') return; // ajustando um controle do HUD
-    const k = ev.key.toLowerCase();
-    if (k === 'escape' || ev.key === 'F5') { ev.preventDefault(); this.parar(); return; }
-    if (this.mensagemAberta && (k === 'e' || k === 'enter' || k === ' ')) {
+    if (ev.key === 'Escape' || ev.key === 'F5') { ev.preventDefault(); this.parar(); return; }
+    if (ev.key === 'F6') { ev.preventDefault(); this.reiniciarJogador(); this.reiniciarMundo(); this.posicionarCamera(true); this.toast('Fase reiniciada'); return; }
+    if (ev.code === 'KeyC' && ev.shiftKey && !this.usada('KeyC')) { this.estado.mostrarColisoes = !this.estado.mostrarColisoes; this.estado.emit('opcoes'); return; }
+    if (this.mensagemAberta && (ev.key === 'Enter' || this.ehDaAcao(ev.code, 'interagir'))) {
       ev.preventDefault();
       this.mensagemAberta = false; this.elMensagem.hidden = true;
       return;
     }
-    if (k === 'e' && !ev.repeat) { this.interagirApertado = true; return; }
-    if (k === 'r') { this.reiniciarJogador(); this.reiniciarMundo(); this.posicionarCamera(true); this.toast('Fase reiniciada'); return; }
-    if (k === 'c' && ev.shiftKey) { this.estado.mostrarColisoes = !this.estado.mostrarColisoes; this.estado.emit('opcoes'); return; }
-    if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' '].includes(k)) ev.preventDefault();
-    if (!this.teclas.has(k) && [' ', 'w', 'arrowup', 'z'].includes(k)) this.puloApertado = true;
-    this.teclas.add(k);
+    if (TECLAS_RESERVADAS.has(ev.code)) return;
+    // Nada de rolar a página, digitar ou acionar atalhos do editor enquanto joga
+    ev.preventDefault();
     ev.stopPropagation();
+    this.entradaJogo.apertar(ev.code, performance.now() / 1000);
   };
 
-  private soltarTecla = (ev: KeyboardEvent) => { this.teclas.delete(ev.key.toLowerCase()); };
-  private perderFoco = () => { this.teclas.clear(); };
+  /** A tecla faz parte de algum atalho dos controles? */
+  private usada(code: string) {
+    return Object.values(this.controles.acoes).some((l) => l.some((a) => a.teclas.includes(normalizarCodigo(code))));
+  }
+  private ehDaAcao(code: string, acao: string) {
+    return (this.controles.acoes[acao] ?? []).some((a) => a.teclas.includes(normalizarCodigo(code)));
+  }
+
+  private soltarTecla = (ev: KeyboardEvent) => { this.entradaJogo.soltar(ev.code); };
+  private perderFoco = () => { this.entradaJogo.limpar(); };
 
   private entrada(): Entrada {
-    const t = this.teclas;
+    const e = this.entradaJogo;
+    const esquerda = e.segurando('esquerda'), direita = e.segurando('direita');
+    const trava = this.pers?.animador.travaMovimento(esquerda !== direita) ?? false;
     return {
-      esquerda: t.has('arrowleft') || t.has('a'),
-      direita: t.has('arrowright') || t.has('d'),
-      pulo: t.has(' ') || t.has('w') || t.has('arrowup') || t.has('z'),
+      esquerda: esquerda && !trava,
+      direita: direita && !trava,
+      pulo: e.segurando('pular'),
       puloApertado: this.puloApertado,
     };
   }
@@ -248,6 +262,16 @@ export class ModoTeste {
     const m = this.mundo;
     if (!j || !m) return;
     if (this.mensagemAberta) { this.desenharJogador(0); return; } // jogo pausado lendo a mensagem
+    const ent = this.entradaJogo;
+    ent.atualizar(performance.now() / 1000);
+    if (ent.apertou('pular')) this.puloApertado = true;
+    if (ent.apertou('interagir')) this.interagirApertado = true;
+    // Ações do personagem (animações extras): tiro, recarga…
+    if (this.pers) {
+      for (const [chave, anim] of extras(this.pers.dados)) {
+        if (ent.apertou(chave) && this.pers.animador.tocar(chave, anim.repetir)) this.mostrarAcao(anim.nome ?? chave);
+      }
+    }
     const [fw, fh] = this.estado.fase.tamanho;
     this.acumulado = Math.min(this.acumulado + ms / 1000, 0.25);
     while (this.acumulado >= PASSO) {
@@ -317,13 +341,16 @@ export class ModoTeste {
       if (j.noChao && !this.estavaNoChao) this.aterrissouHa = 0; else this.aterrissouHa += dt;
       this.estavaNoChao = j.noChao;
       const p = this.pers.dados;
+      const animador = this.pers.animador;
       const estado = estadoDoJogador(j, p.animacoes.aterrissando ? this.aterrissouHa : 9);
-      if (estado !== this.estadoAnim) { this.estadoAnim = estado; this.tempoAnim = 0; } else this.tempoAnim += dt;
-      const r = animacaoPara(p, estado);
-      const frames = r ? this.pers.quadros.get(r.estado) : undefined;
+      const acao = animador.acaoAtual;
+      const andando = j.noChao && Math.abs(j.vx) > 12;
+      const r = animador.atualizar(dt, estado, andando, acao ? this.entradaJogo.segurando(acao) : false);
+      if (acao && !animador.acaoAtual) this.mostrarAcao(null);
+      const frames = r ? this.pers.quadros.get(r.chave) : undefined;
       if (r && frames?.length) {
         const sp = this.spritePers;
-        sp.texture = frames[quadroEm(r.anim, this.tempoAnim)];
+        sp.texture = frames[Math.min(r.quadro, frames.length - 1)];
         const anc = ancoraPes(p);
         sp.anchor.set(anc.ax, anc.ay);
         const esc = p.escala * r.anim.escala;
@@ -347,13 +374,37 @@ export class ModoTeste {
     g.rect(x, y + h - 3, w, 3).fill({ color: 0x083933, alpha: 0.6 });
   }
 
+  /** Mostra no HUD a ação tocando (ajuda a conferir os botões). */
+  private mostrarAcao(nome: string | null) {
+    if (!this.elAcao) return;
+    this.elAcao.textContent = nome ? `Ação: ${nome}` : '';
+    this.elAcao.hidden = !nome;
+  }
+
+  private textoDica() {
+    const partes = [
+      `${this.teclasDe('esquerda')} / ${this.teclasDe('direita')} andar`,
+      `${this.teclasDe('pular')} pular`,
+      `${this.teclasDe('interagir')} interagir`,
+      ...(this.pers ? extras(this.pers.dados).filter(([k]) => this.controles.acoes[k]?.length).map(([k, a]) => `${this.teclasDe(k)} ${(a.nome ?? k).toLowerCase()}`) : []),
+      'F6 reinicia · Esc volta',
+    ];
+    return partes.join(' · ');
+  }
+
+  /** "← → ou A D" etc., a partir dos controles atuais. */
+  private teclasDe(acao: string) {
+    const l = this.controles.acoes[acao] ?? [];
+    return l.length ? l.map(textoAtalho).join(' ou ') : 'sem tecla';
+  }
+
   // ---------- HUD ----------
   private montarHud() {
     const parar = el('button', { type: 'button', class: 'primario' }, 'Voltar ao editor');
     dica(parar, 'Voltar ao editor', 'Para o teste e volta para onde você estava.', 'Esc');
     parar.addEventListener('click', () => this.parar());
     const reiniciar = el('button', { type: 'button', class: 'secundario' }, 'Reiniciar');
-    dica(reiniciar, 'Reiniciar', 'Volta o jogador para a bandeira de início.', 'R');
+    dica(reiniciar, 'Reiniciar', 'Volta o jogador para a bandeira de início.', 'F6');
     reiniciar.addEventListener('click', () => { this.reiniciarJogador(); this.reiniciarMundo(); this.posicionarCamera(true); });
 
     const ajustes = el('details', { class: 'hud-ajustes' }, el('summary', {}, 'Ajustes do jogador'));
@@ -383,7 +434,8 @@ export class ModoTeste {
     this.hud.replaceChildren(
       el('div', { class: 'hud-topo' },
         el('span', { class: 'hud-titulo' }, '▶ Testando'),
-        el('span', { class: 'hud-dica' }, '← → ou A D andar · Espaço, W ou ↑ pular · E interagir · R reinicia · Shift+C colisões · Esc volta'),
+        el('span', { class: 'hud-dica' }, this.textoDica()),
+        this.elAcao = el('span', { class: 'hud-acao' }),
         reiniciar, parar),
       ajustes,
     );

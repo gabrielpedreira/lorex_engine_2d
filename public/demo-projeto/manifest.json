@@ -25,7 +25,9 @@
     "personagens/heroi_andando_10fps.png",
     "personagens/heroi_caindo_1fps.png",
     "personagens/heroi_parado_6fps.png",
-    "personagens/heroi_pulando_1fps.png"
+    "personagens/heroi_pulando_1fps.png",
+    "personagens/heroi_soco_12fps.png",
+    "jogo/assets/personagens/heroi/heroi_soco_12fps.png"
   ],
   "fases": [
     "demonstracao.json"
@@ -55,7 +57,90 @@
       "alturaPulo": 58,
       "gravidade": 900
     },
-    "personagemTeste": "heroi.json"
+    "personagemTeste": "heroi.json",
+    "controles": {
+      "janelaSequencia": 0.4,
+      "acoes": {
+        "esquerda": [
+          {
+            "tipo": "tecla",
+            "teclas": [
+              "ArrowLeft"
+            ]
+          },
+          {
+            "tipo": "tecla",
+            "teclas": [
+              "KeyA"
+            ]
+          }
+        ],
+        "direita": [
+          {
+            "tipo": "tecla",
+            "teclas": [
+              "ArrowRight"
+            ]
+          },
+          {
+            "tipo": "tecla",
+            "teclas": [
+              "KeyD"
+            ]
+          }
+        ],
+        "pular": [
+          {
+            "tipo": "tecla",
+            "teclas": [
+              "Space"
+            ]
+          },
+          {
+            "tipo": "tecla",
+            "teclas": [
+              "KeyW"
+            ]
+          },
+          {
+            "tipo": "tecla",
+            "teclas": [
+              "ArrowUp"
+            ]
+          }
+        ],
+        "interagir": [
+          {
+            "tipo": "tecla",
+            "teclas": [
+              "KeyE"
+            ]
+          }
+        ],
+        "soco": [
+          {
+            "tipo": "tecla",
+            "teclas": [
+              "KeyJ"
+            ]
+          },
+          {
+            "tipo": "tecla",
+            "teclas": [
+              "KeyX"
+            ]
+          },
+          {
+            "tipo": "sequencia",
+            "teclas": [
+              "ArrowDown",
+              "ArrowRight",
+              "KeyJ"
+            ]
+          }
+        ]
+      }
+    }
   },
   "personagens": [
     "heroi.json"

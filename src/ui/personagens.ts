@@ -1,9 +1,10 @@
 // Editor de Personagens: monta um personagem animado a partir de spritesheets (parado, andando, pulando…),
 // marca os pés e a caixa de colisão, e escolhe qual personagem o ▶ Testar usa.
 import {
-  ESTADOS, ancoraPes, animacaoPara, normalizarPersonagem, palpiteEstado, palpiteFolha, personagemNovo, quadroEm, retanguloQuadro,
-  type Animacao, type EstadoAnim, type Personagem,
+  ESTADOS, TIPOS_PERSONAGEM, ancoraPes, animacaoPara, chaveAnimacao, ehBasica, extras, normalizarPersonagem, palpiteEstado, palpiteFolha,
+  personagemNovo, quadroEm, retanguloQuadro, type Animacao, type Personagem,
 } from '../core/personagem';
+import { controlesPadrao, textoAtalho, type Controles } from '../core/controles';
 import { nomeArquivoFase, nomeDoArquivo } from '../core/fase';
 import type { Plataforma } from '../plataforma/plataforma';
 import { urlAsset } from '../plataforma/plataforma';
@@ -59,7 +60,11 @@ export class EditorPersonagens {
   private p: Personagem = personagemNovo('Personagem');
   private arquivo: string | null = null;
   private sujo = false;
-  private estadoSel: EstadoAnim = 'parado';
+  private estadoSel = 'parado';
+  /** Animação extra recém-criada, ainda sem folha (aparece na lista como "vazia"). */
+  private extraPendente: { chave: string; nome: string } | null = null;
+  /** Teclas atuais (só para mostrar ao lado das ações). */
+  controles: Controles = controlesPadrao();
   private imagens = new Map<string, ImageBitmap>();
   private tocando = true;
   private quadroManual = 0;
@@ -75,6 +80,25 @@ export class EditorPersonagens {
   aoAvisar: (msg: string) => void = () => {};
   /** O personagem usado no ▶ Testar mudou. */
   aoDefinirTeste: (arquivo: string) => void = () => {};
+  /** Abrir a ferramenta Controles (para dar teclas às ações). */
+  aoAbrirControles: () => void = () => {};
+  /** Uma animação extra mudou de chave (o editor leva as teclas junto). */
+  aoRenomearAcao: (antiga: string, nova: string) => void = () => {};
+
+  /** Teclas mudaram na ferramenta Controles: atualiza o que aparece ao lado das ações. */
+  atualizarControles(c: Controles) {
+    this.controles = c;
+    if (this.aberta) void this.render();
+  }
+
+  /** Personagem aberto agora (mesmo não salvo). */
+  get personagemAtual(): Personagem { return structuredClone(this.p); }
+
+  /** Nome mostrado de uma animação (básica ou extra). */
+  private nomeAnim(chave: string) {
+    return ESTADOS.find((e) => e.id === chave)?.nome ?? this.p.animacoes[chave]?.nome
+      ?? (this.extraPendente?.chave === chave ? this.extraPendente.nome : chave);
+  }
 
   constructor(private plat: Plataforma) {
     this.raiz = el('div', { class: 'tela-personagens', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Personagens' });
@@ -123,6 +147,7 @@ export class EditorPersonagens {
       this.arquivo = arquivo;
       this.sujo = false;
       this.estadoSel = 'parado';
+      this.extraPendente = null;
       await this.carregarImagens();
     } catch (err) {
       this.aoAvisar(`Não consegui abrir o personagem ${arquivo}: ${String(err)}`);
@@ -185,7 +210,7 @@ export class EditorPersonagens {
     novo.addEventListener('click', async () => {
       const nome = await pedirTexto('Novo personagem', 'Nome do personagem', 'Lorena');
       if (!nome) return;
-      this.p = personagemNovo(nome); this.arquivo = null; this.sujo = true; this.estadoSel = 'parado';
+      this.p = personagemNovo(nome); this.arquivo = null; this.sujo = true; this.estadoSel = 'parado'; this.extraPendente = null;
       await this.render();
     });
     const salvar = el('button', { type: 'button', class: 'primario' }, 'Salvar');
@@ -194,7 +219,8 @@ export class EditorPersonagens {
     const ehTeste = !!this.arquivo && this.arquivo === this.personagemTeste;
     const teste = el('button', { type: 'button', class: 'secundario' + (ehTeste ? ' ligado' : '') }, ehTeste ? '✓ Jogador do ▶ Testar' : 'Usar no ▶ Testar');
     dica(teste, 'Usar no ▶ Testar', 'Este personagem passa a ser o jogador quando você testa a fase (F5), no lugar do retângulo provisório.');
-    teste.disabled = !this.arquivo;
+    teste.disabled = !this.arquivo || this.p.tipo === 'npc';
+    if (this.p.tipo === 'npc') dica(teste, 'Usar no ▶ Testar', 'Só personagens do tipo Jogador. NPCs vão para as fases com o módulo de inimigos/IA, e o código toca as animações deles por nome.');
     teste.addEventListener('click', () => { this.usarNoTeste(); void this.render(); });
     const fechar = el('button', { type: 'button', class: 'secundario' }, 'Fechar');
     dica(fechar, 'Fechar', 'Volta ao editor de fases.', 'Esc');
@@ -213,20 +239,75 @@ export class EditorPersonagens {
       el('div', { class: 'pers-colunas' }, this.colunaEstados(), this.colunaPrevia(), this.colunaConfig())));
   }
 
+  private botaoAnim(chave: string, nome: string, info: string, texto: string, ok: boolean, obrigatorio = false) {
+    const b = el('button', { type: 'button', class: 'pers-estado' + (chave === this.estadoSel ? ' ativo' : '') + (ok ? ' ok' : '') },
+      el('strong', {}, nome + (obrigatorio ? ' *' : '')), el('span', {}, info));
+    dica(b, nome, texto);
+    b.addEventListener('click', () => { this.estadoSel = chave; this.quadroManual = 0; this.inicioAnim = performance.now(); void this.render(); });
+    return b;
+  }
+
+  private infoAnim(a: Animacao) { return `${a.quadros} quadros · ${a.fps} fps${a.repetir ? '' : ' · uma vez'}`; }
+
   private colunaEstados() {
-    const col = el('section', { class: 'pers-col' }, el('h3', {}, 'Animações'));
+    const col = el('section', { class: 'pers-col' }, el('h3', {}, 'Básicas'));
     for (const e of ESTADOS) {
       const a = this.p.animacoes[e.id];
       const sub = !a ? animacaoPara(this.p, e.id) : null;
-      const info = a ? `${a.quadros} quadros · ${a.fps} fps${a.repetir ? '' : ' · uma vez'}` : sub ? `usa ${ESTADOS.find((x) => x.id === sub.estado)?.nome}` : 'vazia';
-      const b = el('button', { type: 'button', class: 'pers-estado' + (e.id === this.estadoSel ? ' ativo' : '') + (a ? ' ok' : '') },
-        el('strong', {}, e.nome + (e.obrigatorio ? ' *' : '')), el('span', {}, info));
-      dica(b, e.nome, e.texto);
-      b.addEventListener('click', () => { this.estadoSel = e.id; this.quadroManual = 0; this.inicioAnim = performance.now(); void this.render(); });
-      col.append(b);
+      const info = a ? this.infoAnim(a) : sub ? `usa ${this.nomeAnim(sub.estado)}` : 'vazia';
+      col.append(this.botaoAnim(e.id, e.nome, info, e.texto + ' A física escolhe sozinha quando tocar.', !!a, e.obrigatorio));
     }
     col.append(el('p', { class: 'dica-campo' }, '* obrigatória. As que faltarem usam outra no lugar (indicado ao lado).'));
+
+    const tituloExtras = el('h3', {}, 'Extras (ações)');
+    dica(tituloExtras, 'Animações extras', 'Animações com nome livre (tiro, recarga, ataque, abrir porta…). O código toca pela chave: tocar("tiro"). Para o jogador, cada uma pode ter teclas na ferramenta Controles.');
+    col.append(tituloExtras);
+    const variantes = new Map(extras(this.p).filter(([, a]) => a.aoAndar).map(([k, a]) => [a.aoAndar!, a.nome ?? k]));
+    for (const [k, a] of extras(this.p)) {
+      if (variantes.has(k)) { col.append(this.botaoAnim(k, a.nome ?? k, `${this.infoAnim(a)} · ao andar com ${variantes.get(k)}`, `Chave no código: "${k}". Toca no lugar de "${variantes.get(k)}" quando o personagem está andando.`, true)); continue; }
+      const teclas = this.p.tipo === 'jogador' ? (this.controles.acoes[k] ?? []).map(textoAtalho).join(' / ') : '';
+      col.append(this.botaoAnim(k, a.nome ?? k, `${this.infoAnim(a)}${teclas ? ` · ${teclas}` : ''}`, `Chave no código: "${k}".`, true));
+    }
+    if (this.extraPendente && !this.p.animacoes[this.extraPendente.chave]) {
+      col.append(this.botaoAnim(this.extraPendente.chave, this.extraPendente.nome, 'vazia: escolha a folha', 'Escolha a folha no painel à direita.', false));
+    }
+    const nova = el('button', { type: 'button', class: 'secundario largo' }, '+ Nova animação');
+    dica(nova, 'Nova animação extra', 'Dê um nome (ex.: Tiro, Recarga, Ataque 1) e escolha a folha. Ela vira uma ação do personagem.');
+    nova.addEventListener('click', () => void this.novaExtra());
+    col.append(nova);
     return col;
+  }
+
+  private async novaExtra() {
+    const nome = await pedirTexto('Nova animação', 'Nome da animação (o código usa a versão sem acentos e espaços)', 'Tiro');
+    if (!nome?.trim()) return;
+    const chave = chaveAnimacao(nome);
+    if (!chave) { this.aoAvisar('Use letras ou números no nome.'); return; }
+    if (ehBasica(chave)) { this.aoAvisar(`"${nome}" já é uma animação básica; escolha outro nome.`); return; }
+    if (this.p.animacoes[chave]) { this.aoAvisar(`Já existe uma animação com a chave "${chave}".`); this.estadoSel = chave; await this.render(); return; }
+    this.extraPendente = { chave, nome: nome.trim() };
+    this.estadoSel = chave;
+    await this.render();
+    (this.raiz.querySelector('#pp-folha') as HTMLInputElement | null)?.focus();
+  }
+
+  private async renomearExtra(antiga: string) {
+    const a = this.p.animacoes[antiga];
+    if (!a) return;
+    const nome = await pedirTexto('Renomear animação', 'Novo nome', a.nome ?? antiga);
+    if (!nome?.trim()) return;
+    const chave = chaveAnimacao(nome);
+    if (!chave || ehBasica(chave) || (chave !== antiga && this.p.animacoes[chave])) { this.aoAvisar(`Não dá para usar "${nome}": a chave "${chave}" já existe ou é básica.`); return; }
+    a.nome = nome.trim();
+    if (chave !== antiga) {
+      // Mantém a ordem e atualiza quem aponta para ela (aoAndar)
+      this.p.animacoes = Object.fromEntries(Object.entries(this.p.animacoes).map(([k, v]) => [k === antiga ? chave : k, v]));
+      for (const v of Object.values(this.p.animacoes)) if (v.aoAndar === antiga) v.aoAndar = chave;
+      this.aoRenomearAcao(antiga, chave);
+      this.estadoSel = chave;
+      this.aoAvisar(`Chave mudou de "${antiga}" para "${chave}". As teclas foram junto; código que usa "${antiga}" precisa ser atualizado.`);
+    }
+    this.mudou();
   }
 
   private colunaPrevia() {
@@ -259,8 +340,9 @@ export class EditorPersonagens {
 
   private colunaConfig() {
     const col = el('section', { class: 'pers-col pers-config' });
-    const nomeEstado = ESTADOS.find((e) => e.id === this.estadoSel)!.nome;
+    const nomeEstado = this.nomeAnim(this.estadoSel);
     const a = this.p.animacoes[this.estadoSel];
+    const extra = !ehBasica(this.estadoSel);
 
     // Folha (spritesheet) desta animação
     const imagens = this.assets.filter((x) => /\.(png|jpe?g)$/i.test(x));
@@ -270,7 +352,9 @@ export class EditorPersonagens {
     const labFolha = el('label', { for: 'pp-folha' }, 'Folha (spritesheet)');
     dica(labFolha, 'Folha', 'A imagem com todos os quadros lado a lado. Ao escolher, a engine adivinha o tamanho do quadro (quadrado) e o FPS pelo nome (ex.: _8fps).');
 
-    col.append(el('h3', {}, `Animação: ${nomeEstado}`), el('div', { class: 'campo largo' }, labFolha, folha, lista));
+    col.append(el('h3', {}, `Animação: ${nomeEstado}`));
+    if (extra) col.append(el('p', { class: 'dica-campo' }, 'No código: ', el('code', {}, `tocar("${this.estadoSel}")`)));
+    col.append(el('div', { class: 'campo largo' }, labFolha, folha, lista));
 
     if (a) {
       const img = this.imagens.get(a.folha);
@@ -279,7 +363,13 @@ export class EditorPersonagens {
       repetir.checked = a.repetir;
       repetir.addEventListener('change', () => { a.repetir = repetir.checked; this.mudou(); });
       const remover = el('button', { type: 'button', class: 'perigo' }, 'Remover animação');
-      remover.addEventListener('click', () => { delete this.p.animacoes[this.estadoSel]; this.mudou(); });
+      remover.addEventListener('click', () => {
+        const k = this.estadoSel;
+        delete this.p.animacoes[k];
+        for (const v of Object.values(this.p.animacoes)) if (v.aoAndar === k) delete v.aoAndar;
+        if (!ehBasica(k)) this.estadoSel = 'parado';
+        this.mudou();
+      });
       col.append(
         el('div', { class: 'linha2' },
           this.num('Largura do quadro', a.larguraQuadro, (v) => { a.larguraQuadro = Math.max(1, Math.round(v)); }, 'Largura de cada quadro na folha, em px.'),
@@ -290,6 +380,7 @@ export class EditorPersonagens {
         el('div', { class: 'linha2' },
           this.num('Escala da animação', a.escala, (v) => { a.escala = Math.max(0.01, v); }, 'Só para esta animação: use 0,25 se a folha foi desenhada 4× maior que as outras.', 0.05, 0.01),
           el('label', { class: 'check' }, repetir, 'Repetir')),
+        ...(extra ? this.configAcao(this.estadoSel, a) : []),
         el('div', { class: 'secao acoes' }, remover));
     }
 
@@ -302,9 +393,16 @@ export class EditorPersonagens {
     const detectar = el('button', { type: 'button', class: 'secundario largo' }, 'Detectar pés e caixa automaticamente');
     dica(detectar, 'Detectar automaticamente', 'Analisa os pixels da animação Parado: os pés ficam no centro de baixo do desenho, e a caixa de colisão cobre o corpo.');
     detectar.addEventListener('click', () => void this.detectar());
+    const tipo = el('select', { id: 'pp-tipo' }, ...TIPOS_PERSONAGEM.map((t) => el('option', { value: t.id }, t.nome)));
+    tipo.value = this.p.tipo;
+    tipo.addEventListener('change', () => { this.p.tipo = tipo.value === 'npc' ? 'npc' : 'jogador'; this.mudou(); });
+    const labTipo = el('label', { for: 'pp-tipo' }, 'Tipo');
+    dica(labTipo, 'Tipo', TIPOS_PERSONAGEM.map((t) => `${t.nome}: ${t.texto}`).join(' '));
     col.append(
       el('h3', {}, 'Personagem'),
-      el('div', { class: 'campo largo' }, el('label', { for: 'pp-nome' }, 'Nome'), nome),
+      el('div', { class: 'linha2' },
+        el('div', { class: 'campo largo' }, el('label', { for: 'pp-nome' }, 'Nome'), nome),
+        el('div', { class: 'campo largo' }, labTipo, tipo)),
       el('div', { class: 'linha2' },
         this.num('Escala', this.p.escala, (v) => { this.p.escala = Math.max(0.05, v); }, 'Tamanho do desenho no jogo (1 = tamanho real da folha). A caixa de colisão já é medida nesta escala.', 0.05, 0.05),
         el('label', { class: 'check', title: 'Desenho original olha para a direita' }, olha, 'Olha para a direita')),
@@ -316,6 +414,41 @@ export class EditorPersonagens {
         this.num('Caixa altura', this.p.caixa.altura, (v) => { this.p.caixa.altura = Math.max(2, Math.round(v)); }, 'Altura do corpo para colisão.', 1, 2)),
       detectar);
     return col;
+  }
+
+  /** Campos das animações extras: nome, travar movimento, variante ao andar e teclas. */
+  private configAcao(chave: string, a: Animacao): HTMLElement[] {
+    const r: HTMLElement[] = [el('h3', {}, 'Ação')];
+    const renomear = el('button', { type: 'button', class: 'secundario' }, 'Renomear');
+    dica(renomear, 'Renomear', 'Muda o nome e a chave usada no código. As teclas da ação vão junto.');
+    renomear.addEventListener('click', () => void this.renomearExtra(chave));
+    r.push(el('div', { class: 'linha2' }, el('span', { class: 'dica-campo' }, `Nome: ${a.nome ?? chave} · chave "${chave}"`), renomear));
+
+    const trava = el('input', { type: 'checkbox' });
+    trava.checked = !!a.travaMovimento;
+    trava.addEventListener('change', () => { a.travaMovimento = trava.checked; this.mudou(); });
+    const labTrava = el('label', { class: 'check' }, trava, 'Trava o movimento enquanto toca');
+    dica(labTrava, 'Travar o movimento', 'O personagem para de andar enquanto a animação toca (ex.: recarga, tiro parado). A gravidade continua.');
+    r.push(labTrava);
+
+    const outras = extras(this.p).filter(([k]) => k !== chave);
+    const andar = el('select', { id: 'pp-aoandar' }, el('option', { value: '' }, '(a mesma)'), ...outras.map(([k, x]) => el('option', { value: k }, x.nome ?? k)));
+    andar.value = a.aoAndar ?? '';
+    andar.addEventListener('change', () => { if (andar.value) a.aoAndar = andar.value; else delete a.aoAndar; this.mudou(); });
+    const labAndar = el('label', { for: 'pp-aoandar' }, 'Andando, usar');
+    dica(labAndar, 'Variante ao andar', 'Se o personagem estiver andando, toca esta outra animação no lugar, sem travar o movimento (ex.: Tiro → Tiro andando).');
+    r.push(el('div', { class: 'campo largo' }, labAndar, andar));
+
+    if (this.p.tipo === 'jogador') {
+      const teclas = (this.controles.acoes[chave] ?? []).map(textoAtalho).join(' / ');
+      const definir = el('button', { type: 'button', class: 'secundario' }, 'Definir teclas…');
+      dica(definir, 'Definir teclas', 'Abre a ferramenta Controles para escolher a tecla, combinação ou sequência desta ação.', 'B');
+      definir.addEventListener('click', () => this.aoAbrirControles());
+      r.push(el('div', { class: 'linha2' }, el('span', { class: 'dica-campo' }, teclas ? `Teclas: ${teclas}` : 'Sem tecla ainda'), definir));
+    } else {
+      r.push(el('p', { class: 'dica-campo' }, 'NPC: a IA ou o código toca esta animação pela chave.'));
+    }
+    return r;
   }
 
   private async escolherFolha(caminho: string) {
@@ -332,12 +465,23 @@ export class EditorPersonagens {
       if (pelosEspacos && (!quadradoExato || pelosEspacos.quadros > g.quadros)) {
         g.quadros = pelosEspacos.quadros; g.larguraQuadro = pelosEspacos.larguraQuadro; g.exato = true;
       }
-      this.p.animacoes[this.estadoSel] = { folha, origem: caminho, larguraQuadro: g.larguraQuadro, alturaQuadro: g.alturaQuadro, quadros: g.quadros, fps: g.fps, repetir: !['aterrissando', 'dano', 'morte'].includes(this.estadoSel), escala: 1 };
+      const extra = !ehBasica(this.estadoSel);
+      const antes = this.p.animacoes[this.estadoSel];
+      this.p.animacoes[this.estadoSel] = {
+        folha, origem: caminho, larguraQuadro: g.larguraQuadro, alturaQuadro: g.alturaQuadro, quadros: g.quadros, fps: g.fps,
+        repetir: !extra && !['aterrissando', 'dano', 'morte'].includes(this.estadoSel), escala: 1,
+        ...(extra ? {
+          nome: antes?.nome ?? (this.extraPendente?.chave === this.estadoSel ? this.extraPendente.nome : this.estadoSel),
+          travaMovimento: antes?.travaMovimento ?? true,
+          ...(antes?.aoAndar ? { aoAndar: antes.aoAndar } : {}),
+        } : {}),
+      };
+      if (this.extraPendente?.chave === this.estadoSel) this.extraPendente = null;
       // Primeira animação: já detecta pés e caixa
       if (this.estadoSel === 'parado' || Object.keys(this.p.animacoes).length === 1) await this.detectar(true);
       const sugestao = palpiteEstado(nomeDoArquivo(caminho));
       this.aoAvisar(`Folha carregada: ${g.quadros} quadros de ${g.larguraQuadro}×${g.alturaQuadro} px a ${g.fps} fps${g.exato ? '' : ' (confira a largura do quadro)'}.`
-        + (sugestao && sugestao !== this.estadoSel ? ` Pelo nome, parece ser "${ESTADOS.find((e) => e.id === sugestao)?.nome}".` : ''));
+        + (sugestao && sugestao !== this.estadoSel ? ` Pelo nome, parece ser "${ESTADOS.find((e) => e.id === sugestao)?.nome ?? sugestao}".` : ''));
       this.quadroManual = 0; this.inicioAnim = performance.now();
       this.mudou();
     } catch (err) {
@@ -429,7 +573,7 @@ export class EditorPersonagens {
     g.beginPath(); g.moveTo(pesX - 8, pesY); g.lineTo(pesX + 8, pesY); g.moveTo(pesX, pesY - 8); g.lineTo(pesX, pesY + 8); g.stroke();
     g.lineWidth = 1;
     g.fillStyle = '#dbe7e2'; g.font = '12px Segoe UI, sans-serif'; g.textAlign = 'left';
-    g.fillText(`quadro ${i + 1}/${a.quadros}${r.estado !== this.estadoSel ? `  (usando "${ESTADOS.find((e) => e.id === r.estado)?.nome}")` : ''}`, 10, 18);
+    g.fillText(`quadro ${i + 1}/${a.quadros}${r.estado !== this.estadoSel ? `  (usando "${this.nomeAnim(r.estado)}")` : ''}`, 10, 18);
     if (this.marcandoPes) { g.fillStyle = '#f89715'; g.fillText('Clique no ponto dos pés', 10, 36); }
   }
 }

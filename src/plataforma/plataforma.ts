@@ -21,6 +21,8 @@ export interface ConfigProjeto {
   ferramentas?: Ferramenta[];
   /** Personagem animado usado no ▶ Testar (arquivo em jogo/personagens/). Vazio = retângulo provisório. */
   personagemTeste?: string;
+  /** Teclas de cada ação (ferramenta Controles). Vazio = padrão. */
+  controles?: import('../core/controles').Controles;
   /** Ajustes do jogador usados no ▶ Testar (tamanho, velocidade, pulo, gravidade). */
   jogador?: import('../core/fisica').ConfigJogador;
   /** Última escala usada para cada imagem (caminho relativo à raiz) — o carimbo reaproveita. */

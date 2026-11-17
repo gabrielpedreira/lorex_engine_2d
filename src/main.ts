@@ -19,6 +19,8 @@ import { icone, type ICONES } from './ui/icones';
 import { PainelPropriedades } from './ui/propriedades';
 import { ModoTeste } from './editor/testar';
 import { EditorPersonagens } from './ui/personagens';
+import { EditorControles } from './ui/controles';
+import { normalizarControles } from './core/controles';
 import { normalizarPersonagem, type Personagem } from './core/personagem';
 import { JOGADOR_PADRAO } from './core/fisica';
 import { TelaInicio } from './ui/inicio';
@@ -373,7 +375,7 @@ const indicadorSujo = el('span', { class: 'sujo', title: 'Alterações não salv
 const rotuloZoom = el('button', { type: 'button', class: 'bt zoom', title: 'Zoom: clique para voltar a 100%' }, '200%');
 rotuloZoom.addEventListener('click', () => { const { w, h } = viewport.tamanhoTela(); viewport.zoomEm(w / 2, h / 2, 1); });
 const botaoTestar = botaoBarra('play', 'Testar', 'Testar a fase', () => void alternarTeste(), 'testar');
-dica(botaoTestar, 'Testar a fase', 'Jogue a fase agora com um jogador provisório: setas ou A/D andam, Espaço pula, Esc volta ao editor.', 'F5');
+dica(botaoTestar, 'Testar a fase', 'Jogue a fase agora com o personagem do teste e as teclas da ferramenta Controles (B). Esc volta ao editor.', 'F5');
 
 // ---------- ▶ Testar ----------
 const teste = new ModoTeste(viewport, estado, centro);
@@ -391,6 +393,7 @@ teste.aoIrPara = async (destino) => {
   teste.parar();
   if (!(await abrirFase(destino))) { estado.avisar(`Não consegui ir para ${destino}.`); return; }
   teste.config = { ...JOGADOR_PADRAO, ...(config.jogador ?? {}) };
+  teste.controles = normalizarControles(config.controles);
   await prepararPersonagemTeste();
   teste.levarInventario(inv);
   teste.iniciar();
@@ -402,17 +405,21 @@ async function alternarTeste() {
   if (viewport.carimboAtivo) viewport.cancelarCarimbo();
   viewport.ferrColisao.cancelar();
   teste.config = { ...JOGADOR_PADRAO, ...(config.jogador ?? {}) };
+  teste.controles = normalizarControles(config.controles);
   await prepararPersonagemTeste();
   teste.iniciar();
 }
 
+/** Lê o personagem do ▶ Testar (null = retângulo provisório). */
+async function lerPersonagemTeste(avisar = true): Promise<Personagem | null> {
+  if (!config.personagemTeste) return null;
+  try { return normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', config.personagemTeste))); }
+  catch { if (avisar) estado.avisar(`Não achei o personagem ${config.personagemTeste}; testando com o retângulo provisório.`); return null; }
+}
+
 /** Carrega o personagem animado escolhido para o teste (se houver). */
 async function prepararPersonagemTeste() {
-  let dados: Personagem | null = null;
-  if (config.personagemTeste) {
-    try { dados = normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', config.personagemTeste))); }
-    catch { estado.avisar(`Não achei o personagem ${config.personagemTeste}; testando com o retângulo provisório.`); }
-  }
+  const dados = await lerPersonagemTeste();
   try { await teste.definirPersonagem(dados, (folha) => viewport.textura(folha)); }
   catch (err) { estado.avisar(`Não consegui carregar as animações: ${String(err)}`); await teste.definirPersonagem(null, (f) => viewport.textura(f)); }
 }
@@ -423,7 +430,33 @@ editorPersonagens.aoAvisar = (m) => estado.avisar(m);
 editorPersonagens.aoDefinirTeste = (arquivo) => { config.personagemTeste = arquivo; salvarConfigDepois(); };
 async function abrirPersonagens() {
   if (estado.testando) teste.parar();
+  if (editorControles.aberta) editorControles.fechar();
+  editorPersonagens.controles = normalizarControles(config.controles);
   await editorPersonagens.abrir(biblioteca.caminhos, config.personagemTeste ?? '');
+}
+editorPersonagens.aoAbrirControles = () => void abrirControles();
+// Renomear uma animação extra leva junto as teclas dela
+editorPersonagens.aoRenomearAcao = (antiga, nova) => {
+  const c = normalizarControles(config.controles);
+  if (!c.acoes[antiga] || c.acoes[nova]) return;
+  c.acoes[nova] = c.acoes[antiga];
+  delete c.acoes[antiga];
+  config.controles = c;
+  salvarConfigDepois();
+};
+
+// ---------- Controles ----------
+const editorControles = new EditorControles();
+editorControles.aoAvisar = (m) => estado.avisar(m);
+editorControles.aoMudar = (c) => { config.controles = c; salvarConfigDepois(); editorPersonagens.atualizarControles(c); };
+async function abrirControles() {
+  if (estado.testando) teste.parar();
+  if (editorPersonagens.aberta) {
+    // Vindo do editor de Personagens: usa o personagem aberto lá (mesmo não salvo)
+    editorControles.abrir(normalizarControles(config.controles), editorPersonagens.personagemAtual);
+    return;
+  }
+  editorControles.abrir(normalizarControles(config.controles), await lerPersonagemTeste(false));
 }
 
 async function atualizarListaFases() {
@@ -454,9 +487,11 @@ const itensTrilho: (ItemTrilho | 'sep')[] = [
     texto: 'Clique no cenário onde ficam os pés da personagem quando a fase começa. A bandeira verde marca esse lugar.' },
   { id: 'personagens', ico: 'personagem', titulo: 'Personagens', atalho: 'K', acao: () => void abrirPersonagens(),
     texto: 'Monta personagens animados a partir dos spritesheets (parado, andando, pulando, caindo…), marca os pés e a caixa de colisão, e escolhe quem é o jogador no ▶ Testar.' },
+  { id: 'controles', ico: 'controle', titulo: 'Controles', atalho: 'B', acao: () => void abrirControles(),
+    texto: 'Define qual tecla faz cada ação no ▶ Testar: andar, pular, interagir e as ações do personagem (tiro, recarga…). Aceita tecla, combinação (Shift + J) e sequência (↓ › → › J).' },
   'sep',
   { id: 'testar', ico: 'play', titulo: 'Testar a fase', atalho: 'F5', acao: () => void alternarTeste(),
-    texto: 'Jogue a fase agora: setas ou A/D para andar, Espaço, W ou ↑ para pular, R volta ao início, Esc volta ao editor.' },
+    texto: 'Jogue a fase agora com as teclas da ferramenta Controles (padrão: setas ou A/D andam, Espaço pula, E interage, J atira, R recarrega). F6 volta ao início, Esc volta ao editor.' },
 ];
 for (const item of itensTrilho) {
   if (item === 'sep') { trilhoFerr.append(el('div', { class: 'trilho-sep', role: 'separator' })); continue; }
@@ -586,7 +621,7 @@ function digitando(): boolean {
 }
 
 window.addEventListener('keydown', (e) => {
-  if (document.querySelector('.modal-fundo') || inicio.aberta || editorPersonagens.aberta) return;
+  if (document.querySelector('.modal-fundo') || inicio.aberta || editorPersonagens.aberta || editorControles.aberta) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (ctrl && k === 's') { e.preventDefault(); void salvar(); return; }
@@ -625,6 +660,7 @@ window.addEventListener('keydown', (e) => {
       else if (k === 'v') estado.definirModo('selecionar');
       else if (k === 'h') estado.definirModo('mao');
       else if (k === 'k') void abrirPersonagens();
+      else if (k === 'b') void abrirControles();
       else if (k === 'x' && estado.modo === 'colisao') { estado.comportamentoNovo = estado.comportamentoNovo === 'solido' ? 'atravessavel' : 'solido'; atualizarOpcoesColisao(); }
       else if (k === 'c' && e.shiftKey) { estado.mostrarColisoes = !estado.mostrarColisoes; estado.emit('opcoes'); sincronizarAlternadores(); }
       else if (k === 'c') estado.definirModo(estado.modo === 'colisao' ? 'selecionar' : 'colisao');

@@ -262,6 +262,21 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   `projeto.json.personagemTeste` diz qual personagem o ▶ Testar usa; sem ele, o retângulo provisório.
 - O protocolo `projeto://` responde com `Access-Control-Allow-Origin: *` para o canvas 2D ler os pixels (detecção).
 
+### 4.20 Animações extras, Animador e Controles
+
+- **Extras:** `animacoes` aceita chaves livres (`chaveAnimacao("Tiro andando")` → `tiro_andando`, sem acento). Campos
+  só das extras: `nome`, `travaMovimento`, `aoAndar` (variante quando anda). `Personagem.tipo`: `jogador` | `npc`.
+- **Animador** (`core/personagem.ts`, puro): a básica vem do estado (física ou IA) e `tocar(chave, segurar)` põe uma
+  extra por cima; as que não repetem acabam após `quadros/fps`; as que repetem duram enquanto a ação estiver
+  segurada. `travaMovimento(querAndar)` diz se a entrada de andar é zerada. Serve igual para jogador e NPC.
+- **Controles** (`core/controles.ts`, puro): `projeto.json → controles = {acoes: {acao: Atalho[]}, janelaSequencia}`.
+  `Atalho = {tipo: tecla|combinacao|sequencia, teclas: code[]}` com `KeyboardEvent.code` (posição física; Shift/Ctrl/Alt
+  sem lado). `EntradaJogo`: `apertar/soltar` nos eventos, `atualizar(t)` uma vez por quadro, depois
+  `apertou(acao)`/`segurando(acao)`. O atalho mais específico vence e "consome" a tecla (Shift+J não dispara J;
+  ↓ › → › J não dispara J). Ações fixas: esquerda, direita, pular, interagir; as demais são chaves de animações extras.
+- **▶ Testar:** Esc/F5 saem, F6 reinicia (reservadas). O HUD lista as teclas atuais e mostra a ação tocando.
+- **Rolagem do cenário:** barras DOM sobre o canvas; faixa navegável = fase + meia tela de folga em cada lado.
+
 ### 4.18 Legendas e recarregar por fora
 
 - `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas

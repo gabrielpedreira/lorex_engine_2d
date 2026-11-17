@@ -1,5 +1,6 @@
 // Personagens animados: formato dos dados (jogo/personagens/<nome>.json), detecção automática de spritesheets
 // e escolha da animação conforme o estado do jogador. Puro (sem PixiJS e sem DOM).
+// Básicas (parado, andando…) a física escolhe; extras (tiro, recarga, ataque…) são ações tocadas por botão ou código.
 
 /** Estados de animação que o jogo usa. Os que faltarem caem num substituto (ver SUBSTITUTOS). */
 export type EstadoAnim = 'parado' | 'andando' | 'pulando' | 'caindo' | 'aterrissando' | 'dano' | 'morte';
@@ -14,7 +15,7 @@ export const ESTADOS: { id: EstadoAnim; nome: string; texto: string; obrigatorio
   { id: 'morte', nome: 'Morte', texto: 'Ao morrer (toca uma vez). Usado quando houver combate.' },
 ];
 
-const SUBSTITUTOS: Record<EstadoAnim, EstadoAnim[]> = {
+const SUBSTITUTOS: Record<string, string[]> = {
   parado: [],
   andando: ['parado'],
   pulando: ['parado'],
@@ -38,11 +39,25 @@ export interface Animacao {
   repetir: boolean;
   /** Escala só desta animação (ex.: 0,25 para uma folha desenhada 4× maior). */
   escala: number;
+  // ----- Só nas animações extras (ações como tiro, recarga, ataque) -----
+  /** Nome mostrado no editor (o código usa a chave, ex.: "tiro"). */
+  nome?: string;
+  /** Enquanto toca, o personagem não anda (continua caindo normalmente). */
+  travaMovimento?: boolean;
+  /** Se estiver andando quando a ação começar (ou durante), usa esta outra animação (ex.: tiro → tiro_andando). */
+  aoAndar?: string;
 }
+
+export type TipoPersonagem = 'jogador' | 'npc';
+export const TIPOS_PERSONAGEM: { id: TipoPersonagem; nome: string; texto: string }[] = [
+  { id: 'jogador', nome: 'Jogador', texto: 'Controlado pelas teclas (ver ferramenta Controles). Ex.: Lorena, Nicolas.' },
+  { id: 'npc', nome: 'NPC', texto: 'Controlado pelo jogo: inimigos, aliados, figurantes. As animações extras são chamadas pelo código/IA (ex.: ataque).' },
+];
 
 export interface Personagem {
   versao: number;
   nome: string;
+  tipo: TipoPersonagem;
   /** Ponto dos PÉS dentro do quadro (px do quadro): é este ponto que fica na posição do jogador. */
   pes: [number, number];
   /** Caixa de colisão do corpo (px, já na escala do personagem). */
@@ -51,21 +66,42 @@ export interface Personagem {
   escala: number;
   /** O desenho original olha para a direita? (para espelhar certo) */
   olhaDireita: boolean;
-  animacoes: Partial<Record<EstadoAnim, Animacao>>;
+  /**
+   * Animações por chave. As básicas usam as chaves de ESTADOS (parado, andando…) e a física escolhe qual tocar;
+   * as extras têm chave livre (ex.: "tiro", "recarga", "ataque1") e são tocadas por ação/código: tocar("tiro").
+   */
+  animacoes: Record<string, Animacao>;
+}
+
+const IDS_BASICOS = new Set<string>(ESTADOS.map((e) => e.id));
+export const ehBasica = (chave: string) => IDS_BASICOS.has(chave);
+
+/** Chave usada pelo código a partir de um nome ("Tiro andando" → "tiro_andando"). */
+export function chaveAnimacao(nome: string): string {
+  return nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+}
+
+/** Animações extras (ações), na ordem em que estão no arquivo. */
+export function extras(p: Personagem): [string, Animacao][] {
+  return Object.entries(p.animacoes).filter(([k]) => !ehBasica(k));
 }
 
 export function personagemNovo(nome: string): Personagem {
-  return { versao: 1, nome, pes: [64, 128], caixa: { largura: 40, altura: 110 }, escala: 1, olhaDireita: true, animacoes: {} };
+  return { versao: 1, nome, tipo: 'jogador', pes: [64, 128], caixa: { largura: 40, altura: 110 }, escala: 1, olhaDireita: true, animacoes: {} };
 }
 
 export function normalizarPersonagem(d: unknown): Personagem {
   const p = (d ?? {}) as Partial<Personagem>;
   const base = personagemNovo(typeof p.nome === 'string' ? p.nome : 'Personagem');
   const animacoes: Personagem['animacoes'] = {};
-  for (const e of ESTADOS) {
-    const a = p.animacoes?.[e.id];
+  const chaves = Object.keys(p.animacoes ?? {});
+  // Básicas primeiro (na ordem de ESTADOS), depois as extras na ordem do arquivo
+  const ordem = [...ESTADOS.map((e) => e.id as string).filter((k) => chaves.includes(k)), ...chaves.filter((k) => !ehBasica(k))];
+  for (const chave of ordem) {
+    const a = p.animacoes?.[chave];
     if (!a || typeof a.folha !== 'string' || !a.folha) continue;
-    animacoes[e.id] = {
+    if (!ehBasica(chave) && chaveAnimacao(chave) !== chave) continue;
+    animacoes[chave] = {
       folha: a.folha, ...(a.origem ? { origem: String(a.origem) } : {}),
       larguraQuadro: Math.max(1, Math.round(Number(a.larguraQuadro) || 1)),
       alturaQuadro: Math.max(1, Math.round(Number(a.alturaQuadro) || 1)),
@@ -73,10 +109,16 @@ export function normalizarPersonagem(d: unknown): Personagem {
       fps: Math.max(0.5, Number(a.fps) || 8),
       repetir: a.repetir !== false,
       escala: Number(a.escala) > 0 ? Number(a.escala) : 1,
+      ...(!ehBasica(chave) ? {
+        ...(typeof a.nome === 'string' && a.nome.trim() ? { nome: a.nome.trim() } : {}),
+        travaMovimento: a.travaMovimento === true,
+        ...(typeof a.aoAndar === 'string' && a.aoAndar ? { aoAndar: a.aoAndar } : {}),
+      } : {}),
     };
   }
   return {
     ...base, ...p, versao: 1, animacoes,
+    tipo: p.tipo === 'npc' ? 'npc' : 'jogador',
     pes: Array.isArray(p.pes) && p.pes.length === 2 ? [Number(p.pes[0]) || 0, Number(p.pes[1]) || 0] : base.pes,
     caixa: { largura: Math.max(2, Number(p.caixa?.largura) || base.caixa.largura), altura: Math.max(2, Number(p.caixa?.altura) || base.caixa.altura) },
     escala: Number(p.escala) > 0 ? Number(p.escala) : 1,
@@ -85,13 +127,73 @@ export function normalizarPersonagem(d: unknown): Personagem {
 }
 
 /** Animação a usar para um estado (com substitutos quando ela não existe). */
-export function animacaoPara(p: Personagem, estado: EstadoAnim): { estado: EstadoAnim; anim: Animacao } | null {
-  for (const e of [estado, ...SUBSTITUTOS[estado]]) {
+export function animacaoPara(p: Personagem, estado: string): { estado: string; anim: Animacao } | null {
+  for (const e of [estado, ...(SUBSTITUTOS[estado] ?? ['parado'])]) {
     const a = p.animacoes[e];
     if (a) return { estado: e, anim: a };
   }
-  const qualquer = Object.entries(p.animacoes)[0] as [EstadoAnim, Animacao] | undefined;
+  const qualquer = Object.entries(p.animacoes)[0];
   return qualquer ? { estado: qualquer[0], anim: qualquer[1] } : null;
+}
+
+/** Duração (s) de uma animação tocada uma vez. */
+export const duracao = (a: Animacao) => a.quadros / a.fps;
+
+/**
+ * Escolhe a animação de um personagem a cada quadro: a básica vem do estado (física ou IA) e uma ação
+ * (animação extra) pode tocar por cima. Serve para o jogador e para NPCs; o código só chama tocar("nome").
+ */
+export class Animador {
+  private chave = 'parado';
+  private tempo = 0;
+  private acao: { chave: string; segurar: boolean } | null = null;
+  private tempoAcao = 0;
+
+  constructor(public p: Personagem) {}
+
+  /** Toca uma animação extra. segurar = continua enquanto a ação estiver segurada (animações que repetem). */
+  tocar(chave: string, segurar = false): boolean {
+    if (!this.p.animacoes[chave]) return false;
+    if (this.acao?.chave === chave && !segurar) return false; // já tocando: não recomeça a cada aperto
+    this.acao = { chave, segurar };
+    this.tempoAcao = 0;
+    return true;
+  }
+
+  /** Para a ação atual (ex.: soltou o botão de uma ação que repete). */
+  parar() { this.acao = null; }
+
+  /** Ação tocando agora (chave), ou null. */
+  get acaoAtual() { return this.acao?.chave ?? null; }
+
+  /** A ação atual impede de andar? (depende de estar andando: ver aoAndar) */
+  travaMovimento(querAndar: boolean): boolean {
+    const a = this.acao && this.p.animacoes[this.acao.chave];
+    if (!a) return false;
+    if (querAndar && a.aoAndar && this.p.animacoes[a.aoAndar]) return false;
+    return !!a.travaMovimento;
+  }
+
+  /**
+   * Avança o tempo e devolve o que desenhar. estadoBase = estado da física/IA; andando = está se movendo;
+   * segurando = a ação atual continua segurada (para as que repetem).
+   */
+  atualizar(dt: number, estadoBase: string, andando: boolean, segurando = false): { chave: string; anim: Animacao; quadro: number } | null {
+    if (this.acao) {
+      const base = this.p.animacoes[this.acao.chave];
+      const usar = andando && base?.aoAndar && this.p.animacoes[base.aoAndar] ? base.aoAndar : this.acao.chave;
+      const anim = this.p.animacoes[usar];
+      this.tempoAcao += dt;
+      const acabou = !anim || (anim.repetir ? this.acao.segurar && !segurando : this.tempoAcao >= duracao(anim));
+      if (!acabou && anim) return { chave: usar, anim, quadro: quadroEm(anim, this.tempoAcao) };
+      this.acao = null;
+      this.chave = ''; // volta à básica do começo
+    }
+    const r = animacaoPara(this.p, estadoBase);
+    if (!r) return null;
+    if (r.estado !== this.chave) { this.chave = r.estado; this.tempo = 0; } else this.tempo += dt;
+    return { chave: r.estado, anim: r.anim, quadro: quadroEm(r.anim, this.tempo) };
+  }
 }
 
 /** Estado de animação a partir da física do jogador. */
@@ -135,7 +237,7 @@ export function palpiteFolha(nomeArquivo: string, larguraFolha: number, alturaFo
 }
 
 /** Palpite de estado pelo nome do arquivo (idle → parado, andando/walk → andando…). */
-export function palpiteEstado(nomeArquivo: string): EstadoAnim | null {
+export function palpiteEstado(nomeArquivo: string): string | null {
   const n = nomeArquivo.toLowerCase();
   if (/idle|parad/.test(n)) return 'parado';
   if (/andando|caminh|walk|run|corr/.test(n) && !/tiro|carreg/.test(n)) return 'andando';
@@ -143,6 +245,8 @@ export function palpiteEstado(nomeArquivo: string): EstadoAnim | null {
   if (/cai|fall/.test(n)) return 'caindo';
   if (/morte|morr|death/.test(n)) return 'morte';
   if (/dano|hit|hurt/.test(n)) return 'dano';
+  if (/tiro|shoot/.test(n)) return /andando|walk/.test(n) ? 'tiro_andando' : 'tiro';
+  if (/recarg|reload/.test(n)) return 'recarga';
   return null;
 }
 

@@ -51,6 +51,19 @@
       "fps": 1,
       "repetir": true,
       "escala": 1
+    },
+    "soco": {
+      "folha": "assets/personagens/heroi/heroi_soco_12fps.png",
+      "origem": "personagens/heroi_soco_12fps.png",
+      "larguraQuadro": 24,
+      "alturaQuadro": 32,
+      "quadros": 5,
+      "fps": 12,
+      "repetir": false,
+      "escala": 1,
+      "nome": "Soco",
+      "travaMovimento": true
     }
-  }
+  },
+  "tipo": "jogador"
 }

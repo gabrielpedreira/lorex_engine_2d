@@ -110,7 +110,7 @@ export class TelaInicio {
       col.append(el('div', { class: 'cartao-projeto' },
         el('strong', {}, projeto.nome),
         projeto.caminho ? el('span', { class: 'caminho', title: projeto.caminho }, projeto.caminho) : el('span', { class: 'caminho' }, 'Assets genéricos para testar a engine'),
-        el('span', { class: 'caminho' }, this.jogadorTeste ? `Jogador do ▶ Testar: ${this.jogadorTeste.replace(/\.json$/, '')}` : 'Jogador do ▶ Testar: retângulo provisório (monte um personagem em Personagens)'),
+        el('span', { class: 'caminho' }, (this.jogadorTeste ? `Jogador do ▶ Testar: ${this.jogadorTeste.replace(/\.json$/, '')}` : 'Jogador do ▶ Testar: retângulo provisório (monte um personagem em Personagens, K)') + ' · teclas em Controles (B)'),
       ));
     } else {
       col.append(el('p', { class: 'texto-suave' }, 'Abra a pasta do seu jogo. A engine cria as pastas jogo/assets e jogo/fases dentro dela, se ainda não existirem.'));
