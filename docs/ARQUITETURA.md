@@ -228,6 +228,22 @@ no desfazer uma vez por arraste.
 (seguindo o jogador, presa na fase, com suavização), escurece o que fica fora da tela do jogador e desenha o jogador
 provisório (retângulo) dentro da camada Objetos. A Lorena animada entra com o módulo de animação.
 
+### 4.18a Comportamentos e interação (etapa 4a)
+
+`src/core/comportamentos.ts` (puro): `objeto.comportamentos = [Comportamento]` (um por objeto, só em interativos):
+
+| Tipo | Campos | No jogo |
+|---|---|---|
+| coletavel | item, quantidade | some ao encostar e vai para o inventário |
+| porta | requer (item, '' = livre), consome, abertaNoInicio | enquanto fechada, a caixa da imagem vira 4 segmentos sólidos; `E` abre |
+| alavanca | alvo (id), umaVez | `E` alterna a porta-alvo (abre/fecha) ou mostra/esconde o objeto-alvo |
+| saida | destino (arquivo .json) | `E` abre a fase/área de destino e continua o teste lá, levando o inventário |
+| mensagem | texto | `E` mostra o texto e pausa o jogo até fechar |
+
+`MundoInterativo` guarda o estado da partida (inventário, portas, visibilidade) e oferece `coletar()`, `proximo()`
+(objeto ao alcance + texto do botão), `interagir()` e `segmentosPortas()`. No editor: escolher o alvo da alavanca com
+um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as ligações.
+
 ### 4.18 Legendas e recarregar por fora
 
 - `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas

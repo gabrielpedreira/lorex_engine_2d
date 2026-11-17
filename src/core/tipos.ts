@@ -1,5 +1,6 @@
 // Formato de dados de uma fase (salvo como JSON em jogo/fases/). Versão 1.
 import type { Efeito } from './efeitos';
+import type { Comportamento } from './comportamentos';
 
 /** Forma de colisão desenhada no cenário (espaço do mundo, parallax 1). */
 export interface Colisao {
@@ -50,7 +51,8 @@ export interface ObjetoFase {
   opacidade: number;
   visivel: boolean;
   efeitos: Efeito[];
-  comportamentos: unknown[];
+  /** Comportamento do objeto interativo (por enquanto, um só). */
+  comportamentos: Comportamento[];
   conexoes: Record<string, string>;
   script: string | null;
 }

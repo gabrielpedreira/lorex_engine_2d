@@ -1,5 +1,6 @@
 import type { Camada, Colisao, Fase, ObjetoFase, TipoCena } from './tipos';
 import { normalizarEfeitos } from './efeitos';
+import { normalizarComportamentos } from './comportamentos';
 
 export const VERSAO_FASE = 1;
 
@@ -87,7 +88,7 @@ function normalizarObjeto(o: Partial<ObjetoFase>, camadaPadrao: string): ObjetoF
     espelharX: !!o.espelharX, espelharY: !!o.espelharY,
     opacidade: o.opacidade === undefined ? 1 : Number(o.opacidade),
     visivel: o.visivel !== false,
-    efeitos: normalizarEfeitos(o.efeitos), comportamentos: o.comportamentos ?? [],
+    efeitos: normalizarEfeitos(o.efeitos), comportamentos: normalizarComportamentos(o.comportamentos),
     conexoes: o.conexoes ?? {}, script: o.script ?? null,
   };
 }

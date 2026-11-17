@@ -1,6 +1,7 @@
 // ▶ Testar: joga a fase dentro do editor, com o jogador correndo e pulando sobre as colisões desenhadas.
 import { Graphics } from 'pixi.js';
 import { Jogador, JOGADOR_PADRAO, montarSegmentos, type ConfigJogador, type Entrada, type Segmento } from '../core/fisica';
+import { MundoInterativo, type ResultadoInteracao } from '../core/comportamentos';
 import { el } from '../ui/dom';
 import { dica } from '../ui/legenda';
 import type { Estado } from './estado';
@@ -19,6 +20,19 @@ export class ModoTeste {
   private grafico = new Graphics();
   private hud: HTMLElement;
   private camAlvo = { x: 0, y: 0 };
+  private mundo: MundoInterativo | null = null;
+  private interagirApertado = false;
+  private mensagemAberta = false;
+  private elPrompt: HTMLElement;
+  private elInventario: HTMLElement;
+  private elToast: HTMLElement;
+  private elMensagem: HTMLElement;
+  private timerToast = 0;
+  /** Inventário levado para a próxima área ao passar por uma saída. */
+  private inventarioLevado: Map<string, number> | null = null;
+
+  /** Saída para outra fase/área: o editor abre o destino e recomeça o teste lá. */
+  aoIrPara: (destino: string) => void = () => {};
 
   /** Configuração do jogador (lida/salva no projeto). */
   config: ConfigJogador = { ...JOGADOR_PADRAO };
@@ -28,6 +42,11 @@ export class ModoTeste {
   constructor(private viewport: Viewport, private estado: Estado, centro: HTMLElement) {
     this.hud = el('div', { class: 'hud-teste' });
     this.hud.hidden = true;
+    this.elPrompt = el('div', { class: 'teste-prompt' });
+    this.elInventario = el('div', { class: 'teste-inventario' });
+    this.elToast = el('div', { class: 'teste-toast', role: 'status' });
+    this.elMensagem = el('div', { class: 'teste-mensagem', role: 'dialog' });
+    for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem]) { x.hidden = true; centro.append(x); }
     centro.append(this.hud);
   }
 
@@ -43,6 +62,7 @@ export class ModoTeste {
     this.cameraAntes = { ...e.camera };
     this.segs = montarSegmentos(e.fase.colisoes);
     this.reiniciarJogador();
+    this.reiniciarMundo();
     this.teclas.clear();
 
     // Zoom para a tela do jogo caber inteira (inteiro, para a pixel art ficar nítida)
@@ -81,12 +101,68 @@ export class ModoTeste {
     window.removeEventListener('keyup', this.soltarTecla, true);
     window.removeEventListener('blur', this.perderFoco);
     this.hud.hidden = true;
+    for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem]) x.hidden = true;
+    this.mensagemAberta = false;
     this.jogador = null;
+    this.mundo = null;
+    this.viewport.visibilidadeTeste = null;
+    this.viewport.atualizarCena();
     e.emit('camera');
     e.emit('opcoes');
     e.avisar('De volta ao editor.');
     this.aoMudarEstado();
   }
+
+  /** Itens, portas e alavancas voltam ao estado inicial (o inventário vem da área anterior, se houver). */
+  private reiniciarMundo() {
+    this.mundo = new MundoInterativo(this.estado.fase);
+    if (this.inventarioLevado) for (const [k, v] of this.inventarioLevado) this.mundo.inventario.set(k, v);
+    this.inventarioLevado = null;
+    this.aplicarVisibilidade();
+    this.atualizarInventario();
+  }
+
+  private aplicarVisibilidade() {
+    const m = this.mundo;
+    if (!m) return;
+    this.viewport.visibilidadeTeste = new Map(this.estado.fase.objetos.map((o) => [o.id, m.visivel(o.id)]));
+    this.viewport.atualizarCena();
+  }
+
+  private atualizarInventario() {
+    const m = this.mundo;
+    if (!m || !m.inventario.size) { this.elInventario.hidden = true; return; }
+    this.elInventario.replaceChildren(el('strong', {}, 'Inventário'),
+      ...[...m.inventario].map(([item, n]) => el('span', {}, n > 1 ? `${item} ×${n}` : item)));
+    this.elInventario.hidden = false;
+  }
+
+  private toast(texto: string) {
+    this.elToast.textContent = texto;
+    this.elToast.hidden = false;
+    clearTimeout(this.timerToast);
+    this.timerToast = window.setTimeout(() => { this.elToast.hidden = true; }, 2600);
+  }
+
+  private tratar(r: ResultadoInteracao) {
+    if (r.aviso) this.toast(r.aviso);
+    if (r.mensagem) {
+      this.mensagemAberta = true;
+      this.elMensagem.replaceChildren(el('p', {}, r.mensagem), el('span', { class: 'teste-fechar' }, 'E ou Enter para fechar'));
+      this.elMensagem.hidden = false;
+    }
+    if (r.irPara) {
+      this.inventarioLevado = this.mundo ? new Map(this.mundo.inventario) : null;
+      const destino = r.irPara;
+      setTimeout(() => this.aoIrPara(destino));
+    }
+    this.aplicarVisibilidade();
+    this.atualizarInventario();
+  }
+
+  /** Inventário que deve seguir para a próxima área (usado pelo editor ao trocar de fase). */
+  levarInventario(inv: Map<string, number> | null) { this.inventarioLevado = inv; }
+  get inventarioParaLevar() { return this.inventarioLevado; }
 
   private reiniciarJogador() {
     const [sx, sy] = this.estado.fase.spawnJogador;
@@ -107,7 +183,13 @@ export class ModoTeste {
     if (alvo && this.hud.contains(alvo) && alvo.tagName === 'INPUT') return; // ajustando um controle do HUD
     const k = ev.key.toLowerCase();
     if (k === 'escape' || ev.key === 'F5') { ev.preventDefault(); this.parar(); return; }
-    if (k === 'r') { this.reiniciarJogador(); this.posicionarCamera(true); return; }
+    if (this.mensagemAberta && (k === 'e' || k === 'enter' || k === ' ')) {
+      ev.preventDefault();
+      this.mensagemAberta = false; this.elMensagem.hidden = true;
+      return;
+    }
+    if (k === 'e' && !ev.repeat) { this.interagirApertado = true; return; }
+    if (k === 'r') { this.reiniciarJogador(); this.reiniciarMundo(); this.posicionarCamera(true); this.toast('Fase reiniciada'); return; }
     if (k === 'c' && ev.shiftKey) { this.estado.mostrarColisoes = !this.estado.mostrarColisoes; this.estado.emit('opcoes'); return; }
     if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' '].includes(k)) ev.preventDefault();
     if (!this.teclas.has(k) && [' ', 'w', 'arrowup', 'z'].includes(k)) this.puloApertado = true;
@@ -128,13 +210,21 @@ export class ModoTeste {
     };
   }
 
+  private caixaJogador() {
+    const j = this.jogador!;
+    return { x: j.x - j.cfg.largura / 2, y: j.y - j.cfg.altura, w: j.cfg.largura, h: j.cfg.altura };
+  }
+
   private quadro(ms: number) {
     const j = this.jogador;
-    if (!j) return;
+    const m = this.mundo;
+    if (!j || !m) return;
+    if (this.mensagemAberta) { this.desenharJogador(); return; } // jogo pausado lendo a mensagem
     const [fw, fh] = this.estado.fase.tamanho;
     this.acumulado = Math.min(this.acumulado + ms / 1000, 0.25);
     while (this.acumulado >= PASSO) {
-      const vivo = j.passo(PASSO, this.entrada(), this.segs, fw, fh);
+      const segs = m.segmentosPortas().length ? this.segs.concat(m.segmentosPortas()) : this.segs;
+      const vivo = j.passo(PASSO, this.entrada(), segs, fw, fh);
       this.puloApertado = false;
       this.acumulado -= PASSO;
       if (!vivo) {
@@ -144,8 +234,28 @@ export class ModoTeste {
         return;
       }
     }
+    // Coletáveis tocados
+    const pegos = m.coletar(this.caixaJogador());
+    if (pegos.length) { this.toast(pegos.join(' · ')); this.aplicarVisibilidade(); this.atualizarInventario(); }
+    // Objeto interagível por perto (tecla E)
+    const prox = m.proximo(this.caixaJogador());
+    if (this.interagirApertado) {
+      this.interagirApertado = false;
+      if (prox) this.tratar(m.interagir(prox.o));
+    }
     this.posicionarCamera(false, ms / 1000);
     this.desenharJogador();
+    this.mostrarPrompt(prox);
+  }
+
+  private mostrarPrompt(prox: { o: { x: number; y: number; w: number; escala: number; camada: string }; acao: string } | null) {
+    if (!prox || this.mensagemAberta) { this.elPrompt.hidden = true; return; }
+    const o = prox.o;
+    const p = this.viewport.camadaParaTela(o.x + (o.w * o.escala) / 2, o.y, o.camada);
+    this.elPrompt.replaceChildren(el('kbd', {}, 'E'), el('span', {}, prox.acao));
+    this.elPrompt.style.left = `${Math.round(p.x)}px`;
+    this.elPrompt.style.top = `${Math.round(p.y - 10)}px`;
+    this.elPrompt.hidden = false;
   }
 
   /** Câmera do jogo seguindo o jogador (presa dentro da fase), com suavização. */
@@ -190,7 +300,7 @@ export class ModoTeste {
     parar.addEventListener('click', () => this.parar());
     const reiniciar = el('button', { type: 'button', class: 'secundario' }, 'Reiniciar');
     dica(reiniciar, 'Reiniciar', 'Volta o jogador para a bandeira de início.', 'R');
-    reiniciar.addEventListener('click', () => { this.reiniciarJogador(); this.posicionarCamera(true); });
+    reiniciar.addEventListener('click', () => { this.reiniciarJogador(); this.reiniciarMundo(); this.posicionarCamera(true); });
 
     const ajustes = el('details', { class: 'hud-ajustes' }, el('summary', {}, 'Ajustes do jogador'));
     const campo = (rotulo: string, chave: keyof ConfigJogador, min: number, max: number, passo: number, un: string, texto: string) => {
@@ -217,7 +327,7 @@ export class ModoTeste {
     this.hud.replaceChildren(
       el('div', { class: 'hud-topo' },
         el('span', { class: 'hud-titulo' }, '▶ Testando'),
-        el('span', { class: 'hud-dica' }, '← → ou A D andar · Espaço, W ou ↑ pular · R reinicia · Shift+C colisões · Esc volta'),
+        el('span', { class: 'hud-dica' }, '← → ou A D andar · Espaço, W ou ↑ pular · E interagir · R reinicia · Shift+C colisões · Esc volta'),
         reiniciar, parar),
       ajustes,
     );

@@ -4,6 +4,7 @@ import type { Colisao, ObjetoFase } from '../core/tipos';
 import { NOMES_FORMA, caixa, reescalar } from '../editor/colisoes';
 import { dica } from './legenda';
 import { EFEITOS_PADRAO, type Efeito, type TipoEfeito } from '../core/efeitos';
+import { NOMES_COMPORTAMENTO, comportamentoPadrao, type Comportamento, type TipoComportamento } from '../core/comportamentos';
 import { el } from './dom';
 
 export interface AcoesObjeto {
@@ -16,6 +17,10 @@ export interface AcoesObjeto {
   otimizar: (() => void) | null;
   /** Avisar que o tamanho mudou (para lembrar a escala). */
   aoEscalar(o: ObjetoFase): void;
+  /** Fases e áreas do projeto (para o destino das saídas). */
+  listarFases(): Promise<string[]>;
+  /** Entra no modo "clique no objeto alvo" e devolve o id escolhido (null = cancelou). */
+  escolherAlvo(): Promise<string | null>;
 }
 
 export class PainelPropriedades {
@@ -56,6 +61,99 @@ export class PainelPropriedades {
     });
     input.addEventListener('change', () => { registrado = false; });
     return el('div', { class: 'deslizante' }, el('label', { for: id }, rotulo), input, saida);
+  }
+
+  // ---------- Comportamento (objetos interativos) ----------
+  private secaoComportamento(o: ObjetoFase) {
+    const secao = el('div', { class: 'secao' });
+    const titulo = el('h3', {}, 'Comportamento');
+    dica(titulo, 'Comportamento', 'O que o objeto faz no jogo: ser coletado, abrir como porta, acionar outro objeto, levar para outra área ou mostrar uma mensagem. Teste com ▶ Testar (F5).');
+    secao.append(titulo);
+    if (o.tipo !== 'interativo') {
+      const tornar = el('button', { type: 'button', class: 'secundario largo' }, 'Tornar interativo');
+      tornar.addEventListener('click', () => { this.estado.alterar(() => { o.tipo = 'interativo'; }); this.render(true); });
+      secao.append(el('p', { class: 'dica-campo' }, 'Objetos estáticos são só cenário. Para ele fazer algo no jogo, torne-o interativo.'), tornar);
+      return secao;
+    }
+    const atual = o.comportamentos[0] as Comportamento | undefined;
+    const sel = el('select', { id: 'p-comp', 'aria-label': 'Comportamento' }, el('option', { value: '' }, 'Nenhum'),
+      ...(Object.keys(NOMES_COMPORTAMENTO) as TipoComportamento[]).map((t) => el('option', { value: t }, NOMES_COMPORTAMENTO[t].nome)));
+    sel.value = atual?.tipo ?? '';
+    dica(sel, 'Comportamento', atual ? NOMES_COMPORTAMENTO[atual.tipo].texto : 'Escolha o que este objeto faz no jogo.');
+    sel.addEventListener('change', () => {
+      this.estado.alterar(() => { o.comportamentos = sel.value ? [comportamentoPadrao(sel.value as TipoComportamento, o)] : []; });
+      this.render(true);
+    });
+    secao.append(sel);
+    if (!atual) return secao;
+    secao.append(el('p', { class: 'dica-campo' }, NOMES_COMPORTAMENTO[atual.tipo].texto));
+
+    const texto = (rotulo: string, valor: string, aplicar: (v: string) => void, explicacao: string, lista?: string[]) => {
+      const id = 'pc-' + rotulo.replace(/\W+/g, '');
+      const input = el('input', { type: 'text', id, value: valor, ...(lista ? { list: id + '-l' } : {}) });
+      input.addEventListener('change', () => { this.estado.alterar(() => aplicar(input.value.trim())); this.render(true); });
+      const lab = el('label', { for: id }, rotulo);
+      dica(lab, rotulo, explicacao);
+      return el('div', { class: 'campo largo' }, lab, input, lista ? el('datalist', { id: id + '-l' }, ...lista.map((v) => el('option', { value: v }))) : null);
+    };
+    const marcar = (rotulo: string, valor: boolean, aplicar: (v: boolean) => void, explicacao: string) => {
+      const cb = el('input', { type: 'checkbox' });
+      cb.checked = valor;
+      cb.addEventListener('change', () => { this.estado.alterar(() => aplicar(cb.checked)); });
+      const lab = el('label', { class: 'check' }, cb, rotulo);
+      dica(lab, rotulo, explicacao);
+      return lab;
+    };
+    const itensDaFase = [...new Set(this.estado.fase.objetos.flatMap((x) => (x.comportamentos[0]?.tipo === 'coletavel' ? [(x.comportamentos[0] as { item: string }).item] : [])))];
+
+    switch (atual.tipo) {
+      case 'coletavel':
+        secao.append(
+          texto('Nome do item', atual.item, (v) => { atual.item = v || o.nome; }, 'Como o item aparece no inventário. Portas que pedem este item usam o mesmo nome.'),
+          this.num('Quantidade', atual.quantidade, (v) => { atual.quantidade = Math.max(1, Math.round(v)); }, { min: 1 }));
+        break;
+      case 'porta':
+        secao.append(
+          texto('Precisa do item', atual.requer, (v) => { atual.requer = v; }, 'Nome do item que abre esta porta (deixe vazio para abrir sem item). Os itens coletáveis da fase aparecem na lista.', itensDaFase),
+          marcar('Gasta o item ao abrir', atual.consome, (v) => { atual.consome = v; }, 'Se marcado, o item sai do inventário quando a porta abre.'),
+          marcar('Começa aberta', atual.abertaNoInicio, (v) => { atual.abertaNoInicio = v; }, 'A porta começa aberta (útil quando uma alavanca vai fechá-la).'));
+        break;
+      case 'alavanca': {
+        const alvo = atual.alvo ? this.estado.objeto(atual.alvo) : undefined;
+        const escolher = el('button', { type: 'button', class: 'secundario largo' }, alvo ? `Alvo: ${alvo.nome} (trocar)` : 'Escolher alvo no cenário…');
+        dica(escolher, 'Escolher alvo', 'Depois de clicar aqui, clique no objeto do cenário que esta alavanca vai acionar (uma porta abre/fecha; outro objeto aparece/some). Esc cancela.');
+        escolher.addEventListener('click', async () => {
+          const id = await this.acoes.escolherAlvo();
+          if (id && id !== o.id) this.estado.alterar(() => { atual.alvo = id; });
+          this.render(true);
+        });
+        secao.append(escolher, marcar('Só funciona uma vez', atual.umaVez, (v) => { atual.umaVez = v; }, 'Depois de acionada, a alavanca não funciona de novo.'));
+        if (atual.alvo && !alvo) secao.append(el('p', { class: 'aviso-texto' }, 'O alvo escolhido foi apagado. Escolha outro.'));
+        break;
+      }
+      case 'saida': {
+        const destino = el('select', { id: 'pc-destino' }, el('option', { value: '' }, 'Escolha a fase ou área…'));
+        const lab = el('label', { for: 'pc-destino' }, 'Leva para');
+        dica(lab, 'Destino', 'A fase ou área onde o jogador vai aparecer (na bandeira de início dela).');
+        void this.acoes.listarFases().then((fases) => {
+          for (const f of fases) if (f !== this.estado.arquivoFase) destino.append(el('option', { value: f }, f));
+          destino.value = atual.destino;
+        });
+        destino.addEventListener('change', () => this.estado.alterar(() => { atual.destino = destino.value; }));
+        secao.append(el('div', { class: 'campo largo' }, lab, destino));
+        break;
+      }
+      case 'mensagem': {
+        const area = el('textarea', { id: 'pc-texto', rows: 4, placeholder: 'Ex.: "A porta do laboratório está trancada. Preciso achar o cartão de acesso."' });
+        area.value = atual.texto;
+        area.addEventListener('change', () => this.estado.alterar(() => { atual.texto = area.value; }));
+        const lab = el('label', { for: 'pc-texto' }, 'Texto');
+        dica(lab, 'Texto da mensagem', 'Aparece na tela quando o jogador aperta E perto do objeto.');
+        secao.append(el('div', { class: 'campo largo' }, lab, area));
+        break;
+      }
+    }
+    return secao;
   }
 
   // ---------- Efeitos ----------
@@ -240,6 +338,7 @@ export class PainelPropriedades {
           this.check('Espelhar ↕', o.espelharY, (v) => { o.espelharY = v; })),
         this.num('Opacidade', o.opacidade, (v) => { o.opacidade = v; }, { passo: 0.1, min: 0, max: 1 }),
       ),
+      this.secaoComportamento(o),
       this.secaoEfeitos(o),
       el('div', { class: 'secao acoes' },
         botao('Trazer p/ frente', () => this.acoes.ordem('frente')),

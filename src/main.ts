@@ -114,6 +114,17 @@ new PainelPropriedades(painelProps, estado, {
   escalar: (f) => viewport.escalarSelecionado(f),
   otimizar: plat.tipo === 'electron' ? () => void otimizarSelecionado() : null,
   aoEscalar: (o) => viewport.aoEscalar(o),
+  listarFases: () => plat.listarFases(),
+  escolherAlvo: () => new Promise((resolve) => {
+    if (estado.modo !== 'selecionar') estado.definirModo('selecionar');
+    const origem = estado.selecionado;
+    estado.avisar('Clique no objeto que será o alvo. Esc cancela.');
+    estado.escolhendoAlvo = (id) => {
+      if (origem) estado.selecionar(origem);
+      estado.avisar(id ? `Alvo escolhido: ${estado.objeto(id)?.nome ?? id}` : 'Escolha de alvo cancelada.');
+      resolve(id);
+    };
+  }),
 });
 new PainelCamadas(painelCamadas, estado);
 
@@ -372,6 +383,17 @@ teste.aoMudarEstado = () => {
   atualizarModos();
   if (!estado.testando) viewport.app.canvas.focus();
 };
+// Saída para outra fase/área durante o teste: abre o destino e continua testando lá, levando o inventário
+teste.aoIrPara = async (destino) => {
+  const inv = teste.inventarioParaLevar;
+  teste.parar();
+  if (!(await abrirFase(destino))) { estado.avisar(`Não consegui ir para ${destino}.`); return; }
+  teste.config = { ...JOGADOR_PADRAO, ...(config.jogador ?? {}) };
+  teste.levarInventario(inv);
+  teste.iniciar();
+  estado.avisar(`Chegou em ${estado.fase.nome}.`);
+};
+
 async function alternarTeste() {
   if (estado.testando) { teste.parar(); return; }
   if (viewport.carimboAtivo) viewport.cancelarCarimbo();
@@ -555,7 +577,8 @@ window.addEventListener('keydown', (e) => {
     case ' ': e.preventDefault(); viewport.setEspaco(true); break;
     case 'Delete': case 'Backspace': excluirSelecionado(); break;
     case 'Escape':
-      if (viewport.carimboAtivo) viewport.cancelarCarimbo();
+      if (estado.escolhendoAlvo) { const fn = estado.escolhendoAlvo; estado.escolhendoAlvo = null; fn(null); }
+      else if (viewport.carimboAtivo) viewport.cancelarCarimbo();
       else if (estado.modo !== 'selecionar') estado.definirModo('selecionar');
       else estado.selecionar(null);
       break;

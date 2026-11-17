@@ -25,6 +25,8 @@ export class Estado {
   modo: Modo = 'selecionar';
   formaNova: FormaNova = 'bloco';
   comportamentoNovo: 'solido' | 'atravessavel' = 'solido';
+  /** Modo "clique no objeto alvo" (ex.: alvo de uma alavanca). */
+  escolhendoAlvo: ((id: string | null) => void) | null = null;
   /** Modo ▶ Testar ativo (edição bloqueada). */
   testando = false;
   mostrarColisoes = true;

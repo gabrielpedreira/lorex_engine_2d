@@ -85,6 +85,12 @@ export class Viewport {
   /** Chamado depois de reconstruir a cena (para reinserir o jogador do teste). */
   aposSincronizar: (() => void) | null = null;
 
+  /** Durante o ▶ Testar: visibilidade de cada objeto no jogo (itens pegos e portas abertas somem). */
+  visibilidadeTeste: Map<string, boolean> | null = null;
+
+  /** Reconstrói a cena (ex.: depois que algo mudou no jogo de teste). */
+  atualizarCena() { this.sincronizar(); }
+
   /** Container de uma camada (espaço da camada). */
   conteinerCamada(id: string) { return this.conteineres.get(id); }
 
@@ -355,7 +361,7 @@ export class Viewport {
     sp.position.set(o.x + (o.w * o.escala) / 2, o.y + (o.h * o.escala) / 2 + r.dy);
     sp.angle = o.rotacao;
     sp.alpha = o.opacidade * r.alpha;
-    sp.visible = o.visivel;
+    sp.visible = o.visivel && (this.visibilidadeTeste?.get(o.id) ?? true);
 
     const halo = this.halos.get(o.id);
     if (halo) {
@@ -366,7 +372,7 @@ export class Viewport {
       halo.sp.scale.set(sp.scale.x * cresce, sp.scale.y * cresce);
       halo.sp.angle = sp.angle;
       halo.sp.alpha = Math.min(1, r.brilho) * o.opacidade * r.alpha;
-      halo.sp.visible = o.visivel && r.brilho > 0;
+      halo.sp.visible = sp.visible && r.brilho > 0;
       const forca = Math.max(1, halo.raio * this.estado.camera.zoom * 0.6);
       if (Math.abs(halo.blur.strength - forca) > 0.01) halo.blur.strength = forca;
     }
@@ -494,6 +500,23 @@ export class Viewport {
         const r = this.retanguloTela(o);
         g.rect(r.x, r.y, r.w, r.h).stroke({ width: 1, color: COR_SELECAO, alpha: 0.45 });
       }
+    }
+    // Conexões: alavanca → alvo (forte se uma das pontas estiver selecionada)
+    for (const o of this.estado.fase.objetos) {
+      const c = o.comportamentos[0];
+      if (o.tipo !== 'interativo' || c?.tipo !== 'alavanca' || !c.alvo) continue;
+      const alvo = this.estado.objeto(c.alvo);
+      if (!alvo) continue;
+      const ra = this.retanguloTela(o), rb = this.retanguloTela(alvo);
+      const forte = this.estado.selecionado === o.id || this.estado.selecionado === alvo.id;
+      const ax = ra.x + ra.w / 2, ay = ra.y + ra.h / 2, bx = rb.x + rb.w / 2, by = rb.y + rb.h / 2;
+      const passos = Math.max(1, Math.floor(Math.hypot(bx - ax, by - ay) / 8));
+      for (let i = 0; i < passos; i += 2) {
+        const t0 = i / passos, t1 = Math.min(1, (i + 1) / passos);
+        g.moveTo(ax + (bx - ax) * t0, ay + (by - ay) * t0).lineTo(ax + (bx - ax) * t1, ay + (by - ay) * t1);
+      }
+      g.stroke({ width: forte ? 2 : 1, color: COR_SELECAO, alpha: forte ? 0.95 : 0.35 });
+      g.circle(bx, by, forte ? 4 : 3).fill({ color: COR_SELECAO, alpha: forte ? 1 : 0.5 });
     }
     // Marcador dos objetos interativos (losango lima no canto superior esquerdo)
     for (const o of this.estado.fase.objetos) {
@@ -674,6 +697,13 @@ export class Viewport {
         this.estado.avisar(`Início do jogador em x ${w.x}, y ${w.y} (posição dos pés).`);
         return;
       }
+      if (this.estado.escolhendoAlvo) {
+        const fn = this.estado.escolhendoAlvo;
+        this.estado.escolhendoAlvo = null;
+        cv.style.cursor = '';
+        fn(this.objetoEm(p.x, p.y)?.id ?? null);
+        return;
+      }
       if (this.sobreMarcadorInicio(p.x, p.y)) {
         const w = this.telaParaCamada(p.x, p.y, '');
         const [ix, iy] = this.estado.fase.spawnJogador;
@@ -735,6 +765,7 @@ export class Viewport {
         if (this.espacoPressionado || this.estado.modo === 'mao') { cv.style.cursor = 'grab'; this.aoPairar(null, 0, 0); return; }
         if (this.estado.modo === 'inicio') { cv.style.cursor = 'crosshair'; this.aoPairar(null, 0, 0); return; }
         this.hover = this.objetoEm(p.x, p.y)?.id ?? null;
+        if (this.estado.escolhendoAlvo) { cv.style.cursor = this.hover ? 'pointer' : 'crosshair'; this.aoPairar(null, 0, 0); return; }
         const naBandeira = this.sobreMarcadorInicio(p.x, p.y);
         cv.style.cursor = cursorCanto(this.sobreAlca(p.x, p.y)) ?? (naBandeira || this.hover ? 'move' : '');
         if (naBandeira) {

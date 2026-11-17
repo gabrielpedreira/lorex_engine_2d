@@ -2,6 +2,7 @@
 import { nomeDoArquivo } from '../core/fase';
 import type { Plataforma } from '../plataforma/plataforma';
 import { el } from './dom';
+import { dica } from './legenda';
 
 export class Biblioteca {
   private assets: string[] = [];
@@ -76,9 +77,10 @@ export class Biblioteca {
   private item(caminho: string): HTMLElement {
     const nome = nomeDoArquivo(caminho);
     const img = el('img', { src: this.plat.urlRaiz(caminho), alt: '', loading: 'lazy', draggable: 'false' });
-    const it = el('div', { class: 'bib-item', draggable: 'true', title: caminho, tabindex: 0 },
+    const it = el('div', { class: 'bib-item', draggable: 'true', tabindex: 0, 'data-caminho': caminho },
       el('div', { class: 'bib-miniatura' }, img),
       el('span', {}, nome));
+    dica(it, nome, `${caminho}. Arraste para o cenário ou dê duplo clique para pôr no centro da camada ativa.`);
     it.addEventListener('dragstart', (e) => {
       e.dataTransfer?.setData('application/x-lorex-asset', caminho);
       if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy';

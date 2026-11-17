@@ -10,9 +10,9 @@ escrever código para o comportamento de cada objeto. Tudo testável na hora com
 
 ## Status
 
-🟨 **Construtor de Fases: etapas 1, 2 e 3 prontas** (cenário, camadas, caixa de ferramentas, efeitos,
-colisões desenhadas à mão, início do jogador e **▶ Testar** com física de plataforma). Próximo: etapa 4,
-interação (comportamentos dos objetos interativos, conexões entre áreas, painel de código).
+🟨 **Construtor de Fases: etapas 1–3 e 4a prontas** (cenário, camadas, caixa de ferramentas, efeitos, colisões
+desenhadas à mão, início do jogador, **▶ Testar** com física de plataforma e **comportamentos interativos**).
+Próximo: 4b, painel de código por objeto.
 
 ## Como rodar
 
@@ -62,6 +62,11 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
   sobre as colisões, com pulo de altura variável, *coyote time*, *buffer* de pulo, rampas, degraus e plataformas
   atravessáveis. A câmera segue o jogador, com parallax real e a área fora da tela escurecida. Velocidade, pulo,
   gravidade e tamanho se ajustam ao vivo e ficam salvos no projeto.
+- **Comportamentos** (objetos interativos, painel de propriedades): **coletável** (vai para o inventário),
+  **porta** (sólida enquanto fechada; pode exigir e gastar um item), **alavanca/botão** (aciona outro objeto,
+  escolhido com um clique no cenário; a ligação aparece como linha tracejada), **saída** (leva para outra fase ou área,
+  levando o inventário) e **mensagem/nota** (texto na tela). No ▶ Testar: `E` interage, com aviso "E Abrir/Ler/Entrar"
+  sobre o objeto e inventário no canto.
 - **Trabalho a quatro mãos:** se uma fase é alterada fora do editor (por outra ferramenta ou pelo assistente), o
   editor recarrega sozinho ou, havendo alterações não salvas, pergunta antes.
 - **Início do jogador** (ferramenta `I`): bandeira na posição dos pés da personagem, arrastável.
@@ -91,7 +96,7 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 | Forma de colisão | `1` bloco · `2` rampa ◢ · `3` rampa ◣ · `4` polígono · `5` linha · `6` mão livre |
 | Sólido ↔ atravessável (modo Colisão) | `X` |
 | Polígono/linha: terminar · desfazer ponto · cancelar | `Enter` ou duplo clique · `Backspace` · `Esc` |
-| ▶ Testar / voltar | `F5` / `Esc` (no teste: `R` reinicia) |
+| ▶ Testar / voltar | `F5` / `Esc` (no teste: `E` interage, `R` reinicia) |
 | Mostrar colisões / prévia de efeitos | `Shift+C` / `Shift+E` |
 | Mostrar/ocultar caixa de ferramentas | `T` |
 | Carimbar e continuar | `Shift` + clique |

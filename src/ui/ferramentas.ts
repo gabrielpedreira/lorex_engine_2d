@@ -3,6 +3,7 @@
 import { nomeDoArquivo } from '../core/fase';
 import type { Ferramenta, Plataforma } from '../plataforma/plataforma';
 import { el, escolherPastas, perguntar } from './dom';
+import { dica } from './legenda';
 
 export class CaixaFerramentas {
   private corpo: HTMLElement;
@@ -75,9 +76,10 @@ export class CaixaFerramentas {
       const grade = el('div', { class: 'bib-grade' });
       if (!imagens.length) grade.append(el('div', { class: 'vazio' }, 'Nenhuma imagem .png/.jpg nesta pasta.'));
       for (const caminho of imagens) {
-        const it = el('button', { type: 'button', class: 'ferr-item' + (this.ativo === caminho ? ' ativo' : ''), title: `${nomeDoArquivo(caminho)}: clique e depois clique no cenário` },
+        const it = el('button', { type: 'button', class: 'ferr-item' + (this.ativo === caminho ? ' ativo' : ''), 'data-caminho': caminho },
           el('div', { class: 'bib-miniatura' }, el('img', { src: this.plat.urlRaiz(caminho), alt: '', loading: 'lazy', draggable: 'false' })),
           el('span', {}, nomeDoArquivo(caminho)));
+        dica(it, nomeDoArquivo(caminho), `Clique aqui e depois no cenário para colocar na camada ativa (${f.tipoPadrao === 'interativo' ? 'interativo' : 'estático'}). Shift+clique no cenário coloca e continua.`);
         it.addEventListener('click', () => {
           const armar = this.ativo !== caminho;
           this.desarmar();

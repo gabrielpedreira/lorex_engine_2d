@@ -366,3 +366,32 @@ input[type='range'] { width: 100%; accent-color: var(--acento); }
 .hud-ajustes summary { cursor: pointer; color: var(--texto-2); font-size: 12px; }
 .hud-ajustes[open] summary { margin-bottom: 8px; }
 .hud-ajustes .deslizante { grid-template-columns: 96px 1fr 70px; margin-bottom: 6px; }
+
+/* ---------- Interação no ▶ Testar ---------- */
+.teste-prompt {
+  position: absolute; z-index: 8; transform: translate(-50%, -100%); pointer-events: none;
+  display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 6px;
+  background: rgba(8, 57, 51, 0.95); border: 1px solid var(--acento); color: var(--texto); font-size: 12px; white-space: nowrap;
+}
+.teste-prompt kbd, .teste-fechar { font-family: inherit; }
+.teste-prompt kbd { color: var(--noite); background: var(--acento); border-radius: 4px; padding: 0 6px; font-weight: 700; }
+.teste-prompt[hidden], .teste-inventario[hidden], .teste-toast[hidden], .teste-mensagem[hidden] { display: none; }
+.teste-inventario {
+  position: absolute; right: 10px; top: 54px; z-index: 8; display: flex; flex-direction: column; gap: 2px; min-width: 150px;
+  padding: 8px 10px; border-radius: 8px; background: rgba(15, 21, 19, 0.92); border: 1px solid var(--borda); font-size: 12px;
+}
+.teste-inventario strong { color: var(--acento); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+.teste-toast {
+  position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 8; pointer-events: none;
+  padding: 8px 14px; border-radius: 999px; background: rgba(8, 57, 51, 0.95); border: 1px solid var(--acento-2); font-size: 13px;
+}
+.teste-mensagem {
+  position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 9; width: min(560px, 80%);
+  padding: 16px 18px 12px; border-radius: 10px; background: rgba(12, 17, 16, 0.97); border: 1px solid var(--acento);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.teste-mensagem p { margin: 0 0 10px; font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
+.teste-fechar { display: block; text-align: right; color: var(--texto-2); font-size: 11px; }
+.aviso-texto { margin: 0; color: var(--laranja); font-size: 12px; }
+textarea { font: inherit; color: inherit; background: var(--fundo); border: 1px solid var(--borda); border-radius: 4px; padding: 6px; width: 100%; resize: vertical; }
+textarea:focus { border-color: var(--acento); outline: none; }
