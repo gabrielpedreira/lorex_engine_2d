@@ -326,6 +326,19 @@ function criarEditor() {
   setTimeout(() => { if (janelaEditor && !janelaEditor.isVisible()) fecharSplashEMostrarEditor(); }, 15000);
 }
 
+// Uma janela só: abrir a engine de novo (atalho, duplo clique) traz a janela que já está aberta para a frente
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    const j = janelaEditor && janelaEditor.isVisible() ? janelaEditor : janelaSplash;
+    if (!j || j.isDestroyed()) return;
+    if (j.isMinimized()) j.restore();
+    j.show();
+    j.focus();
+  });
+}
+
 app.whenReady().then(() => {
   protocol.handle('projeto', async (req) => {
     try {

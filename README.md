@@ -24,6 +24,9 @@ npm run dev
 ```
 
 - `npm run dev`: abre o editor (Electron) com recarga automática ao mudar o código.
+- **Atalho na área de trabalho (Windows):** rode uma vez `powershell -ExecutionPolicy Bypass -File scripts\criar-atalho.ps1`.
+  O atalho "Lorex Engine 2D" (com o ícone da engine) abre o editor sem janela de terminal; fechar a janela encerra
+  tudo. Se a engine já estiver aberta, o atalho só traz a janela para a frente. A saída fica em `lorex.log`.
 - `npm run web`: abre só no navegador (http://127.0.0.1:5173) usando o **projeto de demonstração** em
   `public/demo-projeto` (assets genéricos).
 - `npm run build`: verifica os tipos e gera a versão final em `dist/`.
