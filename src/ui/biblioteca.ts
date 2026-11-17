@@ -24,6 +24,8 @@ export class Biblioteca {
     );
   }
 
+  get caminhos(): string[] { return this.assets; }
+
   async recarregar() {
     this.assets = await this.plat.listarAssets();
     this.render();

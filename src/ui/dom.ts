@@ -58,3 +58,32 @@ export function perguntar(titulo: string, texto: string, botoes: string[]): Prom
     setTimeout(() => (acoes.lastElementChild as HTMLElement | null)?.focus());
   });
 }
+
+/** Lista de pastas com caixas de seleção. Retorna as pastas marcadas, ou null se cancelar. */
+export function escolherPastas(titulo: string, texto: string, opcoes: { pasta: string; qtd: number; jaUsada: boolean }[]): Promise<string[] | null> {
+  return new Promise((resolve) => {
+    const lista = el('div', { class: 'lista-pastas' });
+    const marcadas = new Set<string>();
+    if (!opcoes.length) lista.append(el('p', { class: 'texto-suave' }, 'Nenhuma pasta com imagens .png/.jpg encontrada no projeto.'));
+    for (const o of opcoes) {
+      const cb = el('input', { type: 'checkbox' });
+      cb.disabled = o.jaUsada;
+      cb.checked = o.jaUsada;
+      cb.addEventListener('change', () => { if (cb.checked) marcadas.add(o.pasta); else marcadas.delete(o.pasta); });
+      const nivel = o.pasta.split('/').length - 1;
+      lista.append(el('label', { class: 'pasta-opcao' + (o.jaUsada ? ' usada' : ''), style: `padding-left:${8 + nivel * 16}px` },
+        cb, el('span', { class: 'pasta-nome' }, o.pasta.split('/').pop() ?? o.pasta),
+        el('span', { class: 'contador' }, o.jaUsada ? 'já adicionada' : `${o.qtd} imagem(ns)`)));
+    }
+    const ok = el('button', { type: 'button', class: 'primario' }, 'Adicionar');
+    const cancelar = el('button', { type: 'button' }, 'Cancelar');
+    const caixa = el('div', {}, el('h2', {}, titulo), el('p', {}, texto), lista, el('div', { class: 'modal-acoes' }, cancelar, ok));
+    const m = modal(caixa);
+    caixa.parentElement?.classList.add('modal-largo');
+    const fim = (v: string[] | null) => { m.fechar(); document.removeEventListener('keydown', esc, true); resolve(v); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); fim(null); } };
+    document.addEventListener('keydown', esc, true);
+    ok.addEventListener('click', () => fim([...marcadas]));
+    cancelar.addEventListener('click', () => fim(null));
+  });
+}

@@ -1,4 +1,4 @@
-import type { Camada, Fase, ObjetoFase } from './tipos';
+import type { Camada, Fase, ObjetoFase, TipoCena } from './tipos';
 
 export const VERSAO_FASE = 1;
 
@@ -17,6 +17,8 @@ export function camadasPadrao(): Camada[] {
 }
 
 export interface OpcoesFase {
+  tipo?: TipoCena;
+  regiao?: string;
   resolucaoBase?: [number, number];
   tamanhoGrade?: number;
   /** Tamanho da fase medido em telas (resolução base). */
@@ -30,6 +32,8 @@ export function criarFase(nome: string, o: OpcoesFase = {}): Fase {
   return {
     versao: VERSAO_FASE,
     nome,
+    tipo: o.tipo ?? 'fase',
+    regiao: o.regiao ?? '',
     resolucaoBase: [res[0], res[1]],
     tamanhoGrade: o.tamanhoGrade ?? 16,
     tamanho: [res[0] * telas[0], res[1] * telas[1]],
@@ -61,12 +65,15 @@ export function normalizarFase(dados: unknown): Fase {
     objetos,
     colisoes: Array.isArray(d.colisoes) ? d.colisoes : [],
     tamanhoGrade: typeof d.tamanhoGrade === 'number' && d.tamanhoGrade > 0 ? d.tamanhoGrade : 16,
+    tipo: d.tipo === 'area' ? 'area' : 'fase',
+    regiao: typeof d.regiao === 'string' ? d.regiao : '',
   } as Fase;
 }
 
 function normalizarObjeto(o: Partial<ObjetoFase>, camadaPadrao: string): ObjetoFase {
   return {
     id: String(o.id ?? 'obj_sem_id'),
+    tipo: o.tipo === 'interativo' ? 'interativo' : 'estatico',
     nome: String(o.nome ?? o.id ?? 'objeto'),
     asset: String(o.asset ?? ''),
     camada: String(o.camada ?? camadaPadrao),

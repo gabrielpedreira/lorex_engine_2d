@@ -21,5 +21,24 @@
   ],
   "fases": [
     "demonstracao.json"
-  ]
+  ],
+  "config": {
+    "resolucaoBase": [
+      480,
+      270
+    ],
+    "tamanhoGrade": 16,
+    "ferramentas": [
+      {
+        "pasta": "cenario",
+        "nome": "Cenário",
+        "tipoPadrao": "estatico"
+      },
+      {
+        "pasta": "itens",
+        "nome": "Itens",
+        "tipoPadrao": "interativo"
+      }
+    ]
+  }
 }

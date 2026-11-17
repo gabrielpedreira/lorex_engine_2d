@@ -148,6 +148,29 @@ Paleta da logo: verde-noite `#083933`, verde-escuro `#135f4d`, verde `#2ca782`, 
 lima `#a7dd3e` (cor de destaque e seleção), laranja `#f89715` (tela do jogador, avisos, "não salvo").
 Arquivos em `public/marca/` (logos para fundo claro/escuro, ícone `.png`/`.ico`, favicon).
 
+### 4.11 Fases, áreas e regiões
+
+Cada arquivo em `jogo/fases/` é uma **cena**, com `tipo: "fase"` (nível completo) ou `tipo: "area"` (trecho
+conectável) e `regiao` (agrupamento livre, ex.: "Laboratório"). As **conexões entre áreas** (saídas/portas que
+levam a outra área) virão com a ferramenta de interação, e depois um **mapa do mundo** para ver as áreas lado a lado
+(como o modo "world" do LDtk).
+
+### 4.12 Caixa de ferramentas e carimbo
+
+`jogo/projeto.json` guarda `ferramentas: [{ pasta, nome, tipoPadrao }]`. A pasta é relativa à raiz do projeto, e
+as imagens dela (incluindo subpastas) viram miniaturas. Clicar numa miniatura arma o **carimbo**: um sprite
+"fantasma" segue o mouse na camada ativa (vermelho se a camada estiver travada ou oculta), e cada clique no cenário
+cria um objeto centrado no cursor (com encaixe na grade se ativo), com `tipo = tipoPadrao` da ferramenta.
+
+**Formato das imagens:** PNG é o formato certo para pixel art (sem perda e com transparência). A otimização que
+importa é outra: (1) desenhar os assets na escala de pixel do jogo, sem PNGs gigantes reduzidos no editor;
+(2) no build final, juntar as imagens em **atlas de texturas** (módulo 15).
+
+### 4.13 Objeto estático x interativo
+
+`objeto.tipo`: `estatico` (só visual) ou `interativo` (recebe comportamentos na ferramenta de interação). No
+editor, os interativos ganham um losango lima no canto.
+
 ## 5. Estrutura do código
 
 ```
@@ -159,7 +182,7 @@ src/core/                formato de dados da fase (tipos, criação, normalizaç
 src/editor/estado.ts     estado central + eventos + desfazer/refazer (snapshots JSON)
 src/editor/viewport.ts   cenário PixiJS: câmera, camadas, grade, seleção, mouse
 src/plataforma/          acesso a arquivos: Electron (disco) ou navegador (demo)
-src/ui/                  painéis: tela inicial, biblioteca, camadas, propriedades, diálogos, ícones
+src/ui/                  painéis: tela inicial, caixa de ferramentas, biblioteca, camadas, propriedades, diálogos, ícones
 public/demo-projeto/     projeto de demonstração com assets genéricos (para portfólio e testes)
 ```
 

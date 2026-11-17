@@ -196,6 +196,19 @@ function criarEditor() {
       sandbox: true,
     },
   });
+  // Fechar com alterações não salvas: a interface bloqueia (beforeunload) e aqui perguntamos ao usuário
+  janelaEditor.webContents.on('will-prevent-unload', (e) => {
+    const r = dialog.showMessageBoxSync(janelaEditor, {
+      type: 'warning',
+      buttons: ['Sair sem salvar', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+      title: 'Alterações não salvas',
+      message: 'A fase aberta tem alterações não salvas.',
+      detail: 'Se sair agora, essas alterações serão perdidas. Use Ctrl+S para salvar antes de sair.',
+    });
+    if (r === 0) e.preventDefault(); // ignora o bloqueio e fecha
+  });
   if (URL_DEV) janelaEditor.loadURL(URL_DEV);
   else janelaEditor.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   // Se a interface travar ao carregar, não deixa o usuário preso na splash

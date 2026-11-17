@@ -6,8 +6,19 @@ export interface InfoProjeto {
   caminho?: string;
 }
 
+/** Uma ferramenta da caixa de ferramentas = uma pasta do projeto com imagens. */
+export interface Ferramenta {
+  /** Pasta relativa à raiz do projeto (ex.: "elementos de cenario"). */
+  pasta: string;
+  nome: string;
+  /** Tipo dado aos objetos colocados com esta ferramenta. */
+  tipoPadrao: 'estatico' | 'interativo';
+}
+
 /** Configuração do projeto inteiro (jogo/projeto.json). Vale para as fases novas. */
 export interface ConfigProjeto {
+  /** Pastas da caixa de ferramentas. */
+  ferramentas?: Ferramenta[];
   /** Resolução do jogo em pixels de arte (o "formato de pixels"). */
   resolucaoBase: [number, number];
   /** Tamanho da grade/tile em pixels. */

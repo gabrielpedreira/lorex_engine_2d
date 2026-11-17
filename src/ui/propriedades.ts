@@ -57,7 +57,7 @@ export class PainelPropriedades {
     const input = el('input', { type: 'text', id, value: valor });
     input.addEventListener('change', () => {
       const v = input.value.trim();
-      if (v) { this.estado.alterar(() => aplicar(v)); this.atualizarMantendoFoco(id); }
+      if (v || rotulo === 'Região') { this.estado.alterar(() => aplicar(v)); this.atualizarMantendoFoco(id); }
     });
     return el('div', { class: 'campo largo' }, el('label', { for: id }, rotulo), input);
   }
@@ -84,9 +84,21 @@ export class PainelPropriedades {
       return b;
     };
 
+    // Estático x interativo
+    const tipos = el('div', { class: 'segmentado', role: 'radiogroup', 'aria-label': 'Tipo no cenário' });
+    for (const [valor, rotulo] of [['estatico', 'Estático'], ['interativo', 'Interativo']] as const) {
+      const b = el('button', { type: 'button', class: o.tipo === valor ? 'ativo' : '', role: 'radio', 'aria-checked': String(o.tipo === valor) }, rotulo);
+      b.addEventListener('click', () => { if (o.tipo !== valor) { this.estado.alterar(() => { o.tipo = valor; }); this.render(true); } });
+      tipos.append(b);
+    }
+
     this.corpo.append(
       el('div', { class: 'secao' },
         this.texto('Nome', o.nome, (v) => { o.nome = v; }),
+        el('div', { class: 'campo largo' }, el('span', { class: 'rotulo' }, 'Tipo no cenário'), tipos,
+          el('span', { class: 'dica-campo' }, o.tipo === 'interativo'
+            ? 'O jogador pode interagir. Os comportamentos (coletar, abrir, acionar…) chegam com a ferramenta de interação.'
+            : 'Só visual. Não reage ao jogador.')),
         el('div', { class: 'campo largo' }, el('label', { for: 'p-camada' }, 'Camada'), camadaSel),
         el('div', { class: 'asset-info', title: o.asset }, o.asset),
       ),
@@ -117,14 +129,26 @@ export class PainelPropriedades {
     );
   }
 
+  private tipoCena(valor: 'fase' | 'area', aplicar: (v: 'fase' | 'area') => void) {
+    const sel = el('select', { id: 'p-tipo-cena' },
+      el('option', { value: 'fase' }, 'Fase completa'),
+      el('option', { value: 'area' }, 'Área conectável'));
+    sel.value = valor;
+    sel.addEventListener('change', () => { this.estado.alterar(() => aplicar(sel.value as 'fase' | 'area')); this.render(true); });
+    return el('div', { class: 'campo largo' }, el('label', { for: 'p-tipo-cena' }, 'Tipo'), sel);
+  }
+
   private renderFase() {
     const f = this.estado.fase;
     const cor = el('input', { type: 'color', id: 'p-cor', value: f.corFundo });
     cor.addEventListener('change', () => this.estado.alterar(() => { f.corFundo = cor.value; }));
     this.corpo.append(
       el('div', { class: 'secao' },
-        el('h3', {}, 'Fase'),
-        this.texto('Nome da fase', f.nome, (v) => { f.nome = v; }),
+        el('h3', {}, f.tipo === 'area' ? 'Área' : 'Fase'),
+        this.texto(f.tipo === 'area' ? 'Nome da área' : 'Nome da fase', f.nome, (v) => { f.nome = v; }),
+        el('div', { class: 'linha2' },
+          this.tipoCena(f.tipo, (v) => { f.tipo = v; }),
+          this.texto('Região', f.regiao || '', (v) => { f.regiao = v; })),
         el('div', { class: 'linha2' },
           this.num('Largura', f.tamanho[0], (v) => { f.tamanho = [Math.round(v), f.tamanho[1]]; }, { min: 64, passo: 16 }),
           this.num('Altura', f.tamanho[1], (v) => { f.tamanho = [f.tamanho[0], Math.round(v)]; }, { min: 64, passo: 16 })),

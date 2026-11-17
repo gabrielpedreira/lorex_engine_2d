@@ -9,8 +9,15 @@ export interface Camada {
   travada: boolean;
 }
 
+/** Estático = só visual/colisão. Interativo = o jogador pode interagir (comportamentos na ferramenta de interação). */
+export type TipoObjeto = 'estatico' | 'interativo';
+
+/** Fase = nível completo. Área = trecho que se conecta a outras áreas (estilo metroidvania). */
+export type TipoCena = 'fase' | 'area';
+
 export interface ObjetoFase {
   id: string;
+  tipo: TipoObjeto;
   nome: string;
   /** Caminho relativo a jogo/ (ex.: "assets/itens/chave.png"). */
   asset: string;
@@ -37,6 +44,9 @@ export interface ObjetoFase {
 export interface Fase {
   versao: number;
   nome: string;
+  tipo: TipoCena;
+  /** Agrupa áreas e fases (ex.: "Laboratório", "Cidade"). Vazio = sem região. */
+  regiao: string;
   resolucaoBase: [number, number];
   /** Tamanho da grade/tile em pixels. */
   tamanhoGrade: number;

@@ -37,12 +37,18 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
   telas e cor de fundo. A resolução e a grade ficam salvas em `jogo/projeto.json` e valem para as fases novas.
   O ícone da Lorex na barra superior volta para essa tela.
 
+- **Fases e áreas**: além de fases completas, dá para criar **áreas conectáveis** (trechos do mundo que se ligam
+  a outras áreas, estilo metroidvania), agrupadas por **região** na tela inicial.
+- **Caixa de ferramentas** (painel esquerdo, recolhível com `T`): escolha pastas do projeto; cada uma vira uma
+  ferramenta com as miniaturas das imagens. Clique numa miniatura e depois no cenário para **carimbar** o elemento
+  na camada ativa (com prévia fantasma; continua carimbando até `Esc` ou botão direito). Cada ferramenta define se
+  os objetos são **estáticos** ou **interativos**.
 - **Biblioteca**: lista as imagens do projeto em "Em uso no jogo" (`jogo/assets`) e no material de apoio (resto
   da pasta). Ao colocar um asset de apoio numa fase, ele é **copiado** para `jogo/assets/<categoria>/`.
 - **Cenário**: zoom em níveis inteiros (pixel art nítida), grade de 16 px, quadro amarelo mostrando a **tela do
   jogador** (resolução base) e **prévia de parallax** simulando a câmera do jogo.
 - **Camadas**: Fundo 3 (mais distante) → Primeiro plano, com parallax editável, ocultar, travar e renomear.
-- **Objetos**: arrastar da biblioteca ou duplo clique (centro da camada ativa), mover, redimensionar pela alça
+- **Objetos**: estático ou interativo (losango lima no cenário), arrastar da biblioteca ou duplo clique (centro da camada ativa), mover, redimensionar pela alça
   (passos de 0,25; Shift = livre), espelhar, girar, opacidade, ordem, duplicar, excluir.
 - **Fases**: nova, abrir, salvar (`jogo/fases/*.json`), desfazer/refazer.
 
@@ -59,6 +65,8 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 | Espelhar | `F` |
 | Mover 1 px (8 px) | setas (Shift + setas) |
 | Grade / encaixar / prévia de parallax | `G` / `E` / `P` |
+| Mostrar/ocultar caixa de ferramentas | `T` |
+| Parar o carimbo | `Esc` ou botão direito |
 
 ## Stack
 

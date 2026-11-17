@@ -8,6 +8,9 @@ import { PlataformaElectron, temElectron } from './plataforma/electron';
 import { PlataformaNavegador } from './plataforma/navegador';
 import type { Plataforma } from './plataforma/plataforma';
 import { Biblioteca } from './ui/biblioteca';
+import { CaixaFerramentas } from './ui/ferramentas';
+import type { Ferramenta } from './plataforma/plataforma';
+import type { TipoObjeto } from './core/tipos';
 import { PainelCamadas } from './ui/camadas';
 import { el, perguntar } from './ui/dom';
 import { icone, type ICONES } from './ui/icones';
@@ -30,8 +33,33 @@ direita.append(painelProps, painelCamadas);
 const status = el('footer', { class: 'status' });
 app.append(barra, esquerda, centro, direita, status);
 
+// Painel lateral esquerdo: abas Ferramentas / Biblioteca, recolhível
+const abaFerr = el('button', { type: 'button', class: 'aba ativa', role: 'tab', 'aria-selected': 'true' }, 'Ferramentas');
+const abaBib = el('button', { type: 'button', class: 'aba', role: 'tab', 'aria-selected': 'false' }, 'Biblioteca');
+const recolher = el('button', { type: 'button', class: 'aba-recolher', title: 'Ocultar painel (T)', 'aria-label': 'Ocultar painel' }, '«');
+const conteudoFerr = el('div', { class: 'aba-conteudo', role: 'tabpanel' });
+const conteudoBib = el('div', { class: 'aba-conteudo', role: 'tabpanel' });
+conteudoBib.hidden = true;
+const trilho = el('button', { type: 'button', class: 'trilho', title: 'Mostrar caixa de ferramentas (T)', 'aria-label': 'Mostrar caixa de ferramentas' }, el('span', {}, '»'), el('span', { class: 'trilho-texto' }, 'Ferramentas'));
+esquerda.append(el('div', { class: 'abas', role: 'tablist' }, abaFerr, abaBib, recolher), conteudoFerr, conteudoBib, trilho);
+
+function mostrarAba(qual: 'ferr' | 'bib') {
+  conteudoFerr.hidden = qual !== 'ferr'; conteudoBib.hidden = qual !== 'bib';
+  abaFerr.classList.toggle('ativa', qual === 'ferr'); abaBib.classList.toggle('ativa', qual === 'bib');
+  abaFerr.setAttribute('aria-selected', String(qual === 'ferr')); abaBib.setAttribute('aria-selected', String(qual === 'bib'));
+}
+function alternarLateral(mostrar?: boolean) {
+  const oculta = mostrar === undefined ? !app.classList.contains('lateral-oculta') : !mostrar;
+  app.classList.toggle('lateral-oculta', oculta);
+}
+abaFerr.addEventListener('click', () => mostrarAba('ferr'));
+abaBib.addEventListener('click', () => mostrarAba('bib'));
+recolher.addEventListener('click', () => alternarLateral(false));
+trilho.addEventListener('click', () => alternarLateral(true));
+
 const viewport = new Viewport(centro, estado, plat);
-const biblioteca = new Biblioteca(esquerda, plat);
+const ferramentas = new CaixaFerramentas(conteudoFerr, plat);
+const biblioteca = new Biblioteca(conteudoBib, plat);
 
 // ---------- Ações sobre objetos ----------
 function excluirSelecionado() {
@@ -70,7 +98,7 @@ new PainelPropriedades(painelProps, estado, { duplicar: duplicarSelecionado, exc
 new PainelCamadas(painelCamadas, estado);
 
 /** Coloca um asset na camada ativa. (sx, sy) = posição na tela; sem posição = centro da visão. */
-async function adicionarAsset(caminhoRaiz: string, sx?: number, sy?: number) {
+async function adicionarAsset(caminhoRaiz: string, sx?: number, sy?: number, tipo: TipoObjeto = 'estatico') {
   const camada = estado.camada(estado.camadaAtiva);
   if (!camada) return;
   if (camada.travada || !camada.visivel) {
@@ -80,30 +108,49 @@ async function adicionarAsset(caminhoRaiz: string, sx?: number, sy?: number) {
   try {
     const asset = await plat.garantirEmUso(caminhoRaiz);
     const tex = await viewport.textura(asset);
-    const centroCam = sx === undefined || sy === undefined
-      ? viewport.centroNaCamada(camada.id)
-      : viewport.telaParaCamada(sx, sy, camada.id);
+    const tela = viewport.tamanhoTela();
+    const pos = viewport.posicaoColocacao(sx ?? tela.w / 2, sy ?? tela.h / 2, tex.width, tex.height, camada.id);
     const obj: ObjetoFase = {
       id: novoIdObjeto(estado.fase),
+      tipo,
       nome: nomeDoArquivo(caminhoRaiz),
       asset,
       camada: camada.id,
-      x: Math.round(centroCam.x - tex.width / 2),
-      y: Math.round(centroCam.y - tex.height / 2),
+      x: pos.x,
+      y: pos.y,
       w: tex.width, h: tex.height,
       escala: 1, rotacao: 0, espelharX: false, espelharY: false, opacidade: 1, visivel: true,
       efeitos: [], comportamentos: [], conexoes: {}, script: null,
     };
     estado.alterar((f) => { f.objetos.push(obj); });
     estado.selecionar(obj.id);
-    estado.avisar(`"${obj.nome}" adicionado em ${camada.nome}`);
-    if (!caminhoRaiz.startsWith('jogo/') && plat.tipo === 'electron') biblioteca.recarregar();
+    estado.avisar(`"${obj.nome}" (${tipo === 'interativo' ? 'interativo' : 'estático'}) adicionado em ${camada.nome}`);
+    if (!caminhoRaiz.startsWith('jogo/') && plat.tipo === 'electron') {
+      await biblioteca.recarregar();
+      ferramentas.definir(ferramentasAtuais, biblioteca.caminhos);
+    }
   } catch (err) {
     estado.avisar(`Erro ao adicionar asset: ${String(err)}`);
   }
 }
 viewport.aoSoltarAsset = (c, sx, sy) => { void adicionarAsset(c, sx, sy); };
 biblioteca.aoAdicionar = (c) => { void adicionarAsset(c); };
+
+// ---------- Caixa de ferramentas ----------
+let ferramentasAtuais: Ferramenta[] = [];
+let ferramentaArmada: Ferramenta | null = null;
+ferramentas.aoArmar = (caminho, f) => {
+  ferramentaArmada = f;
+  viewport.armarCarimbo(caminho);
+  if (caminho) estado.avisar(`Carimbo: ${nomeDoArquivo(caminho)}. Clique no cenário para colocar em "${estado.camada(estado.camadaAtiva)?.nome}". Esc ou botão direito para parar.`);
+};
+viewport.aoCarimbar = (c, sx, sy) => { void adicionarAsset(c, sx, sy, ferramentaArmada?.tipoPadrao ?? 'estatico'); };
+viewport.aoCancelarCarimbo = () => { ferramentaArmada = null; ferramentas.desarmar(); estado.avisar('Carimbo desligado'); };
+ferramentas.aoMudar = async (lista) => {
+  ferramentasAtuais = lista;
+  const cfg = (await plat.lerConfigProjeto()) ?? { ...CONFIG_PADRAO };
+  await plat.salvarConfigProjeto({ ...cfg, ferramentas: lista });
+};
 
 // ---------- Arquivo: novo, abrir, salvar ----------
 async function podeDescartar(): Promise<boolean> {
@@ -237,7 +284,7 @@ barra.append(
 const stCoord = el('span', {});
 const stCamada = el('span', {});
 const stMsg = el('span', { class: 'msg', role: 'status' });
-const stAtalhos = el('span', { class: 'atalhos' }, 'Roda: zoom · Espaço/botão do meio: mover a visão · Del: excluir · Ctrl+D: duplicar · F: espelhar · Setas: mover 1 px (Shift: 8)');
+const stAtalhos = el('span', { class: 'atalhos' }, 'T: ferramentas · Roda: zoom · Espaço/botão do meio: mover a visão · Del: excluir · Ctrl+D: duplicar · F: espelhar · Setas: mover 1 px (Shift: 8)');
 status.append(stCoord, stCamada, stMsg, stAtalhos);
 let timerMsg = 0;
 
@@ -278,7 +325,7 @@ window.addEventListener('keydown', (e) => {
   switch (e.key) {
     case ' ': e.preventDefault(); viewport.setEspaco(true); break;
     case 'Delete': case 'Backspace': excluirSelecionado(); break;
-    case 'Escape': estado.selecionar(null); break;
+    case 'Escape': if (viewport.carimboAtivo) viewport.cancelarCarimbo(); else estado.selecionar(null); break;
     case 'Home': viewport.enquadrar(); break;
     case '+': case '=': viewport.passoZoom(1); break;
     case '-': viewport.passoZoom(-1); break;
@@ -287,7 +334,8 @@ window.addEventListener('keydown', (e) => {
     case 'ArrowUp': e.preventDefault(); moverSelecionado(0, e.shiftKey ? -8 : -1); break;
     case 'ArrowDown': e.preventDefault(); moverSelecionado(0, e.shiftKey ? 8 : 1); break;
     default:
-      if (k === 'f') { const o = estado.objetoSelecionado(); if (o) estado.alterar(() => { o.espelharX = !o.espelharX; }); }
+      if (k === 't') alternarLateral();
+      else if (k === 'f') { const o = estado.objetoSelecionado(); if (o) estado.alterar(() => { o.espelharX = !o.espelharX; }); }
       else if (k === 'g') { estado.grade = !estado.grade; estado.emit('opcoes'); sincronizarAlternadores(); }
       else if (k === 'e') { estado.encaixar = !estado.encaixar; estado.emit('opcoes'); sincronizarAlternadores(); }
       else if (k === 'p') { estado.previaParallax = !estado.previaParallax; estado.emit('opcoes'); sincronizarAlternadores(); }
@@ -309,6 +357,9 @@ async function carregarProjeto(nome: string) {
   nomeProjeto.textContent = nome;
   plat.progresso('Lendo a biblioteca de assets…');
   await biblioteca.recarregar();
+  ferramentasAtuais = (await plat.lerConfigProjeto())?.ferramentas ?? [];
+  viewport.cancelarCarimbo();
+  ferramentas.definir(ferramentasAtuais, biblioteca.caminhos);
 }
 
 async function iniciar() {

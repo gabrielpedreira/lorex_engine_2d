@@ -2,7 +2,7 @@
 // Fases salvas ficam no armazenamento do navegador. Serve para testar a engine sem o Electron.
 import { codificarCaminho, normalizarCaminho, type ConfigProjeto, type InfoProjeto, type Plataforma } from './plataforma';
 
-interface Manifesto { nome: string; arquivos: string[]; fases: string[] }
+interface Manifesto { nome: string; arquivos: string[]; fases: string[]; config?: ConfigProjeto }
 
 const BASE = './demo-projeto/';
 const CHAVE = 'lorex.demo.fases';
@@ -30,7 +30,11 @@ export class PlataformaNavegador implements Plataforma {
   async recentes() { const p = await this.projetoAtual(); return p ? [p] : []; }
   async abrirCaminho() { return this.projetoAtual(); }
   async lerConfigProjeto(): Promise<ConfigProjeto | null> {
-    try { const t = localStorage.getItem(CHAVE_CONFIG); return t ? JSON.parse(t) : null; } catch { return null; }
+    try {
+      const t = localStorage.getItem(CHAVE_CONFIG);
+      if (t) return JSON.parse(t);
+    } catch { /* armazenamento indisponível */ }
+    return (await this.carregarManifesto()).config ?? null;
   }
   async salvarConfigProjeto(c: ConfigProjeto) {
     try { localStorage.setItem(CHAVE_CONFIG, JSON.stringify(c)); } catch { /* armazenamento indisponível */ }

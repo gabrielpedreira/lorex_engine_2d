@@ -24,6 +24,10 @@ export class Viewport {
   private raizCamadas = new Container();
   private grade = new Graphics();
   private overlay = new Graphics();
+  private fantasma = new Sprite(Texture.EMPTY);
+  /** Carimbo armado pela caixa de ferramentas (caminho relativo à raiz do projeto). */
+  private carimbo: { caminho: string; tex: Texture | null } | null = null;
+  private mouseTela: { x: number; y: number } | null = null;
   private conteineres = new Map<string, Container>();
   private sprites = new Map<string, Sprite>();
   private texturas = new Map<string, Texture>();
@@ -33,6 +37,11 @@ export class Viewport {
   private hover: string | null = null;
   /** Posição do mouse no mundo (parallax 1), para a barra de status. */
   mouseMundo = { x: 0, y: 0 };
+
+  /** Chamado ao clicar no cenário com o carimbo armado. */
+  aoCarimbar: (caminhoRaiz: string, sx: number, sy: number) => void = () => {};
+  /** Chamado quando o carimbo é cancelado no cenário (Esc ou botão direito). */
+  aoCancelarCarimbo: () => void = () => {};
 
   /** Chamado quando um asset da biblioteca é solto no cenário. */
   aoSoltarAsset: (caminhoRaiz: string, sx: number, sy: number) => void = () => {};
@@ -49,7 +58,9 @@ export class Viewport {
       preference: 'webgl',
     });
     this.el.appendChild(this.app.canvas);
-    this.app.stage.addChild(this.fundoFase, this.raizCamadas, this.grade, this.overlay);
+    this.fantasma.alpha = 0.6;
+    this.fantasma.visible = false;
+    this.app.stage.addChild(this.fundoFase, this.raizCamadas, this.grade, this.overlay, this.fantasma);
 
     this.estado.on('fase', () => this.sincronizar());
     this.estado.on('selecao', () => (this.chaveCamera = ''));
@@ -107,6 +118,50 @@ export class Viewport {
   centroNaCamada(camadaId: string) {
     const { w, h } = this.tamanhoTela();
     return this.telaParaCamada(w / 2, h / 2, camadaId);
+  }
+
+  // ---------- Carimbo ----------
+
+  get carimboAtivo() { return !!this.carimbo; }
+
+  armarCarimbo(caminhoRaiz: string | null) {
+    if (!caminhoRaiz) { this.carimbo = null; this.fantasma.visible = false; this.app.canvas.style.cursor = ''; return; }
+    const c = { caminho: caminhoRaiz, tex: null as Texture | null };
+    this.carimbo = c;
+    this.app.canvas.style.cursor = 'crosshair';
+    Assets.load<Texture>({ src: this.plat.urlRaiz(caminhoRaiz), parser: 'texture' })
+      .then((t) => { t.source.scaleMode = 'nearest'; c.tex = t; if (this.carimbo === c) this.atualizarFantasma(); })
+      .catch(() => this.estado.avisar(`Não consegui carregar: ${caminhoRaiz}`));
+  }
+
+  cancelarCarimbo() {
+    if (!this.carimbo) return;
+    this.armarCarimbo(null);
+    this.aoCancelarCarimbo();
+  }
+
+  /** Canto superior esquerdo (no espaço da camada) para um objeto w×h centrado no ponto da tela, com encaixe. */
+  posicaoColocacao(sx: number, sy: number, w: number, h: number, camadaId: string) {
+    const p = this.telaParaCamada(sx, sy, camadaId);
+    let x = p.x - w / 2, y = p.y - h / 2;
+    if (this.estado.encaixar) {
+      const g = this.estado.fase.tamanhoGrade;
+      x = Math.round(x / g) * g; y = Math.round(y / g) * g;
+    }
+    return { x: Math.round(x), y: Math.round(y) };
+  }
+
+  private atualizarFantasma() {
+    const c = this.carimbo;
+    const camada = this.estado.camada(this.estado.camadaAtiva);
+    if (!c || !c.tex || !this.mouseTela || !camada) { this.fantasma.visible = false; return; }
+    const pos = this.posicaoColocacao(this.mouseTela.x, this.mouseTela.y, c.tex.width, c.tex.height, camada.id);
+    const t = this.camadaParaTela(pos.x, pos.y, camada.id);
+    this.fantasma.texture = c.tex;
+    this.fantasma.position.set(Math.round(t.x), Math.round(t.y));
+    this.fantasma.scale.set(this.estado.camera.zoom);
+    this.fantasma.tint = camada.travada || !camada.visivel ? 0xff6060 : 0xffffff;
+    this.fantasma.visible = true;
   }
 
   // ---------- Texturas ----------
@@ -187,7 +242,8 @@ export class Viewport {
       cont.scale.set(zoom);
     }
     const { w, h } = this.tamanhoTela();
-    const chave = `${x},${y},${zoom},${this.estado.previaParallax},${JSON.stringify(this.estado.fase.camadas)},${this.estado.fase.resolucaoBase},${w},${h},${this.estado.grade},${this.hover},${this.estado.selecionado},${JSON.stringify(this.estado.objetoSelecionado() ?? '')},${this.estado.fase.tamanho},${this.estado.fase.corFundo}`;
+    const chave = `${x},${y},${zoom},${this.estado.fase.objetos.length},${this.estado.fase.objetos.reduce((n, o) => n + (o.tipo === 'interativo' ? o.x + o.y * 7 + o.escala * 13 : 0), 0)},${this.estado.previaParallax},${JSON.stringify(this.estado.fase.camadas)},${this.estado.fase.resolucaoBase},${w},${h},${this.estado.grade},${this.hover},${this.estado.selecionado},${JSON.stringify(this.estado.objetoSelecionado() ?? '')},${this.estado.fase.tamanho},${this.estado.fase.corFundo}`;
+    if (this.carimbo) this.atualizarFantasma();
     if (chave === this.chaveCamera) return;
     this.chaveCamera = chave;
     this.desenharFundo();
@@ -248,6 +304,13 @@ export class Viewport {
         const r = this.retanguloTela(o);
         g.rect(r.x, r.y, r.w, r.h).stroke({ width: 1, color: COR_SELECAO, alpha: 0.45 });
       }
+    }
+    // Marcador dos objetos interativos (losango lima no canto superior esquerdo)
+    for (const o of this.estado.fase.objetos) {
+      if (o.tipo !== 'interativo' || !o.visivel || this.estado.camada(o.camada)?.visivel === false) continue;
+      const r = this.retanguloTela(o);
+      const mx = Math.round(r.x), my = Math.round(r.y), t = 4;
+      g.poly([mx, my - t, mx + t, my, mx, my + t, mx - t, my]).fill({ color: COR_SELECAO }).stroke({ width: 1, color: 0x083933 });
     }
     const sel = this.estado.objetoSelecionado();
     if (sel && this.estado.camada(sel.camada)?.visivel !== false) {
@@ -342,7 +405,9 @@ export class Viewport {
         cv.style.cursor = 'grabbing';
         return;
       }
+      if (e.button === 2 && this.carimbo) { this.cancelarCarimbo(); return; }
       if (e.button !== 0) return;
+      if (this.carimbo) { this.aoCarimbar(this.carimbo.caminho, p.x, p.y); return; }
       const sel = this.estado.objetoSelecionado();
       if (sel && this.sobreAlca(p.x, p.y)) {
         this.arraste = { tipo: 'escala', id: sel.id, mexeu: false };
@@ -362,8 +427,10 @@ export class Viewport {
       const p = this.posMouse(e);
       const cam = this.estado.camera;
       this.mouseMundo = { x: Math.floor(p.x / cam.zoom + cam.x), y: Math.floor(p.y / cam.zoom + cam.y) };
+      this.mouseTela = p;
       this.estado.emit('camera');
       const a = this.arraste;
+      if (this.carimbo && !a) { this.atualizarFantasma(); return; }
       if (!a) {
         this.hover = this.objetoEm(p.x, p.y)?.id ?? null;
         cv.style.cursor = this.espacoPressionado ? 'grab' : this.sobreAlca(p.x, p.y) ? 'nwse-resize' : this.hover ? 'move' : '';
@@ -403,7 +470,7 @@ export class Viewport {
     };
     cv.addEventListener('pointerup', soltar);
     cv.addEventListener('pointercancel', soltar);
-    cv.addEventListener('pointerleave', () => { this.hover = null; });
+    cv.addEventListener('pointerleave', () => { this.hover = null; this.mouseTela = null; this.fantasma.visible = false; });
 
     cv.addEventListener('wheel', (e) => {
       e.preventDefault();
