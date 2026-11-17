@@ -129,21 +129,40 @@ câmera que o jogo teria com a visão centralizada no mesmo ponto (resolução b
 cada camada em `câmera_jogo × (1 - parallax)`. O quadro amarelo no cenário é essa câmera. Com a prévia desligada (`P`),
 todas as camadas ficam alinhadas como na posição inicial.
 
+### 4.8 Inicialização
+
+1. O Electron abre a **splash** (`splash.html`, janela sem moldura de 620×400, centralizada) e, escondida, a janela do editor.
+2. A interface manda o progresso real (`lorex.progresso(...)`): preparar cenário → abrir último projeto → ler biblioteca → montar tela inicial.
+3. Ao terminar, `lorex.pronto()` fecha a splash (que fica no mínimo 1,8 s, para não piscar) e mostra o editor maximizado. Se algo travar, o editor aparece sozinho em 15 s.
+4. O editor abre na **tela inicial** (projeto, recentes, fases, nova fase). No modo navegador não há splash.
+
+### 4.9 Configuração do projeto
+
+`jogo/projeto.json`: `{ "resolucaoBase": [640, 360], "tamanhoGrade": 16 }`. Definida na tela inicial ao criar uma
+fase; as fases novas herdam esses valores, e cada fase guarda os seus (`resolucaoBase`, `tamanhoGrade`).
+Padrão: 640×360 (escala ×3 em Full HD), escolhido porque os sprites do Infestação têm frames de 128 px de altura.
+
+### 4.10 Identidade visual
+
+Paleta da logo: verde-noite `#083933`, verde-escuro `#135f4d`, verde `#2ca782`, verde-claro `#65da67`,
+lima `#a7dd3e` (cor de destaque e seleção), laranja `#f89715` (tela do jogador, avisos, "não salvo").
+Arquivos em `public/marca/` (logos para fundo claro/escuro, ícone `.png`/`.ico`, favicon).
+
 ## 5. Estrutura do código
 
 ```
 electron/main.cjs        processo principal: janela, protocolo projeto://, IPC de arquivos (listar, copiar, salvar)
 electron/preload.cjs     ponte segura (window.lorex)
-src/main.ts              monta a tela, barra, atalhos, abrir/salvar
+splash.html + src/splash/ splash de inicialização
+src/main.ts              monta a tela, barra, atalhos, abrir/salvar, fluxo de inicialização
 src/core/                formato de dados da fase (tipos, criação, normalização)
 src/editor/estado.ts     estado central + eventos + desfazer/refazer (snapshots JSON)
 src/editor/viewport.ts   cenário PixiJS: câmera, camadas, grade, seleção, mouse
 src/plataforma/          acesso a arquivos: Electron (disco) ou navegador (demo)
-src/ui/                  painéis: biblioteca, camadas, propriedades, diálogos, ícones
+src/ui/                  painéis: tela inicial, biblioteca, camadas, propriedades, diálogos, ícones
 public/demo-projeto/     projeto de demonstração com assets genéricos (para portfólio e testes)
 ```
 
 ## 6. Questões em aberto
 
-- Resolução base do jogo (480×270? 640×360?), a definir conforme o tamanho dos sprites.
 - Colisão por retângulos/polígonos desenhados (cenários pintados à mão) ou por tiles; provavelmente a primeira.

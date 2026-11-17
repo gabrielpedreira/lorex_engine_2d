@@ -1,6 +1,13 @@
-import { codificarCaminho, type InfoProjeto, type Plataforma } from './plataforma';
+import { codificarCaminho, type ConfigProjeto, type InfoProjeto, type Plataforma } from './plataforma';
 
 interface ApiLorex {
+  versao(): Promise<string>;
+  progresso(texto: string): void;
+  pronto(): void;
+  recentes(): Promise<InfoProjeto[]>;
+  abrirCaminho(caminho: string): Promise<InfoProjeto | null>;
+  lerConfigProjeto(): Promise<ConfigProjeto | null>;
+  salvarConfigProjeto(c: ConfigProjeto): Promise<boolean>;
   abrirProjeto(): Promise<InfoProjeto | null>;
   projetoAtual(): Promise<InfoProjeto | null>;
   listarAssets(): Promise<string[]>;
@@ -22,6 +29,13 @@ export class PlataformaElectron implements Plataforma {
   readonly tipo = 'electron' as const;
   private api = window.lorex!;
 
+  versao() { return this.api.versao(); }
+  progresso(t: string) { this.api.progresso(t); }
+  pronto() { this.api.pronto(); }
+  recentes() { return this.api.recentes(); }
+  abrirCaminho(c: string) { return this.api.abrirCaminho(c); }
+  lerConfigProjeto() { return this.api.lerConfigProjeto(); }
+  async salvarConfigProjeto(c: ConfigProjeto) { await this.api.salvarConfigProjeto(c); }
   abrirProjeto() { return this.api.abrirProjeto(); }
   projetoAtual() { return this.api.projetoAtual(); }
   listarAssets() { return this.api.listarAssets(); }

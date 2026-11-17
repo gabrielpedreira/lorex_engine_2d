@@ -20,7 +20,6 @@ export class Estado {
 
   grade = true;
   encaixar = false;
-  tamanhoGrade = 16;
   previaParallax = true;
 
   mensagem = '';

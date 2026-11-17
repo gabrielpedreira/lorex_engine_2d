@@ -1,6 +1,6 @@
 // Lorex Engine 2D: Construtor de Fases (etapa 1)
 import './estilo.css';
-import { criarFase, nomeArquivoFase, nomeDoArquivo, normalizarFase, novoIdObjeto } from './core/fase';
+import { criarFase, nomeArquivoFase, nomeDoArquivo, normalizarFase, novoIdObjeto, type OpcoesFase } from './core/fase';
 import type { ObjetoFase } from './core/tipos';
 import { Estado } from './editor/estado';
 import { Viewport } from './editor/viewport';
@@ -9,9 +9,11 @@ import { PlataformaNavegador } from './plataforma/navegador';
 import type { Plataforma } from './plataforma/plataforma';
 import { Biblioteca } from './ui/biblioteca';
 import { PainelCamadas } from './ui/camadas';
-import { el, pedirTexto, perguntar } from './ui/dom';
+import { el, perguntar } from './ui/dom';
 import { icone, type ICONES } from './ui/icones';
 import { PainelPropriedades } from './ui/propriedades';
+import { TelaInicio } from './ui/inicio';
+import { CONFIG_PADRAO } from './plataforma/plataforma';
 
 const plat: Plataforma = temElectron() ? new PlataformaElectron() : new PlataformaNavegador();
 const estado = new Estado();
@@ -112,24 +114,30 @@ async function podeDescartar(): Promise<boolean> {
 }
 
 async function novaFase() {
-  if (!(await podeDescartar())) return;
-  const nome = await pedirTexto('Nova fase', 'Nome da fase', 'Fase nova');
-  if (!nome) return;
-  estado.carregarFase(criarFase(nome), null);
-  viewport.enquadrar();
-  await atualizarListaFases();
+  await inicio.mostrar(true);
 }
 
-async function abrirFase(arquivo: string) {
-  if (arquivo === estado.arquivoFase) return;
-  if (!(await podeDescartar())) { atualizarListaFases(); return; }
+async function criarNovaFase(nome: string, opcoes: OpcoesFase): Promise<boolean> {
+  if (!(await podeDescartar())) return false;
+  estado.carregarFase(criarFase(nome, opcoes), null);
+  const ok = await salvar();
+  viewport.enquadrar();
+  return ok;
+}
+
+async function abrirFase(arquivo: string): Promise<boolean> {
+  if (arquivo === estado.arquivoFase) return true;
+  if (!(await podeDescartar())) { void atualizarListaFases(); return false; }
   try {
     const fase = normalizarFase(JSON.parse(await plat.lerFase(arquivo)));
     estado.carregarFase(fase, arquivo);
     viewport.enquadrar();
     estado.avisar(`Fase aberta: ${arquivo}`);
+    await atualizarListaFases();
+    return true;
   } catch (err) {
     estado.avisar(`Não consegui abrir ${arquivo}: ${String(err)}`);
+    return false;
   }
 }
 
@@ -149,11 +157,23 @@ async function salvar(): Promise<boolean> {
   }
 }
 
-async function abrirProjeto() {
-  if (!(await podeDescartar())) return;
-  const p = await plat.abrirProjeto();
-  if (p) await carregarProjeto(p.nome);
+/** Troca de projeto: carrega a biblioteca e começa com uma fase em branco (a tela inicial pede a escolha). */
+async function trocarProjeto(p: { nome: string } | null) {
+  if (!p) return;
+  await carregarProjeto(p.nome);
+  const cfg = (await plat.lerConfigProjeto()) ?? CONFIG_PADRAO;
+  estado.carregarFase(criarFase('Fase 01', { resolucaoBase: cfg.resolucaoBase, tamanhoGrade: cfg.tamanhoGrade }), null);
+  viewport.enquadrar();
+  await atualizarListaFases();
+  await inicio.mostrar(false);
 }
+
+const inicio = new TelaInicio(plat, {
+  abrirPasta: async () => { if (await podeDescartar()) await trocarProjeto(await plat.abrirProjeto()); },
+  abrirRecente: async (c) => { if (await podeDescartar()) await trocarProjeto(await plat.abrirCaminho(c)); },
+  abrirFase: (a) => abrirFase(a),
+  criarFase: (n, o) => criarNovaFase(n, o),
+});
 
 // ---------- Barra superior ----------
 const botaoBarra = (ico: keyof typeof ICONES, texto: string, dica: string, fn: () => void, classe = '') => {
@@ -170,6 +190,9 @@ const alternar = (ico: keyof typeof ICONES, dica: string, ler: () => boolean, fn
 };
 
 const nomeProjeto = el('span', { class: 'nome-projeto' }, '…');
+const botaoMarca = el('button', { type: 'button', class: 'marca', title: 'Tela inicial (projetos e fases)', 'aria-label': 'Tela inicial' },
+  el('img', { src: './marca/icone-256.png', alt: '' }), el('strong', {}, 'Lorex'), el('span', {}, 'Engine 2D'));
+botaoMarca.addEventListener('click', () => void inicio.mostrar(true));
 const seletorFases = el('select', { class: 'seletor-fases', 'aria-label': 'Abrir fase' });
 seletorFases.addEventListener('change', () => { if (seletorFases.value) void abrirFase(seletorFases.value); });
 const indicadorSujo = el('span', { class: 'sujo', title: 'Alterações não salvas' });
@@ -190,12 +213,10 @@ async function atualizarListaFases() {
 }
 
 barra.append(
-  el('div', { class: 'marca' }, el('strong', {}, 'Lorex'), el('span', {}, 'Engine 2D')),
+  botaoMarca,
+  el('div', { class: 'grupo' }, nomeProjeto),
   el('div', { class: 'grupo' },
-    plat.tipo === 'electron' ? botaoBarra('pasta', '', 'Abrir pasta do projeto', () => void abrirProjeto()) : null,
-    nomeProjeto),
-  el('div', { class: 'grupo' },
-    botaoBarra('novo', 'Nova', 'Nova fase (Ctrl+N)', () => void novaFase()),
+    botaoBarra('novo', 'Nova', 'Nova fase (Ctrl+N): abre a tela inicial', () => void novaFase()),
     seletorFases,
     botaoBarra('salvar', 'Salvar', 'Salvar fase (Ctrl+S)', () => void salvar()),
     indicadorSujo),
@@ -204,7 +225,7 @@ barra.append(
     botaoBarra('refazer', '', 'Refazer (Ctrl+Y)', () => estado.refazer())),
   el('div', { class: 'grupo' },
     alternar('grade', 'Mostrar grade (G)', () => estado.grade, () => { estado.grade = !estado.grade; }),
-    alternar('ima', 'Encaixar na grade de 16 px (E)', () => estado.encaixar, () => { estado.encaixar = !estado.encaixar; }),
+    alternar('ima', 'Encaixar na grade (E)', () => estado.encaixar, () => { estado.encaixar = !estado.encaixar; }),
     alternar('camadas', 'Prévia de parallax: desligada = todas as camadas alinhadas (P)', () => estado.previaParallax, () => { estado.previaParallax = !estado.previaParallax; }),
     botaoBarra('enquadrar', '', 'Enquadrar a fase (Home)', () => viewport.enquadrar()),
     rotuloZoom),
@@ -244,7 +265,7 @@ function digitando(): boolean {
 }
 
 window.addEventListener('keydown', (e) => {
-  if (document.querySelector('.modal-fundo')) return;
+  if (document.querySelector('.modal-fundo') || inicio.aberta) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (ctrl && k === 's') { e.preventDefault(); void salvar(); return; }
@@ -286,29 +307,30 @@ function sincronizarAlternadores() {
 // ---------- Início ----------
 async function carregarProjeto(nome: string) {
   nomeProjeto.textContent = nome;
+  plat.progresso('Lendo a biblioteca de assets…');
   await biblioteca.recarregar();
-  const fases = await plat.listarFases();
-  if (fases.length) {
-    estado.arquivoFase = null;
-    await abrirFase(fases[0]);
-  } else {
-    estado.carregarFase(criarFase('Fase 01'), null);
-    viewport.enquadrar();
-  }
-  await atualizarListaFases();
 }
 
 async function iniciar() {
+  plat.progresso('Preparando o cenário…');
   await viewport.iniciar();
+  plat.progresso('Abrindo o último projeto…');
   const p = await plat.projetoAtual();
-  if (p) await carregarProjeto(p.nome);
-  else {
+  if (p) {
+    await carregarProjeto(p.nome);
+    const cfg = (await plat.lerConfigProjeto()) ?? CONFIG_PADRAO;
+    estado.carregarFase(criarFase('Fase 01', { resolucaoBase: cfg.resolucaoBase, tamanhoGrade: cfg.tamanhoGrade }), null);
+  } else {
     nomeProjeto.textContent = 'Nenhum projeto aberto';
-    estado.avisar('Clique no ícone de pasta para abrir a pasta do projeto (ex.: "jogo invasão").');
-    viewport.enquadrar();
   }
-  if (plat.tipo === 'navegador') estado.avisar('Modo navegador: projeto de demonstração. Fases salvas ficam neste navegador.');
+  viewport.enquadrar();
+  await atualizarListaFases();
+  plat.progresso('Montando a tela inicial…');
+  await inicio.mostrar(false);
+  inicio.aoVoltar = () => viewport.enquadrar();
   atualizarStatus();
+  plat.progresso('Pronto');
+  plat.pronto();
 }
 
 void iniciar();

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws: http://127.0.0.1:5173" />
+  <title>Lorex Engine 2D</title>
+  <link rel="icon" href="./marca/favicon.png" />
+</head>
+<body>
+  <main class="splash" aria-busy="true">
+    <canvas class="pixels" aria-hidden="true"></canvas>
+    <div class="conteudo">
+      <div class="barra-topo" aria-hidden="true"></div>
+      <img class="logo" src="./marca/logo-fundo-escuro.png" alt="Lorex Engine" />
+      <p class="subtitulo">Motor e editor 2D para jogos em pixel art</p>
+      <p class="versao">Versão <span id="versao">0.0.0</span></p>
+
+      <div class="carregamento">
+        <p id="status" role="status">Iniciando o motor…</p>
+        <div class="progresso" aria-hidden="true"><div id="progresso-barra"></div></div>
+      </div>
+
+      <div class="creditos">
+        <p>Criado e desenvolvido por <strong>Gabriel Pedreira</strong></p>
+        <p>Construído com Electron, PixiJS e TypeScript</p>
+        <p class="licenca">© <span id="ano">2026</span> Gabriel Pedreira. Todos os direitos reservados.</p>
+      </div>
+    </div>
+  </main>
+  <script type="module" src="/src/splash/splash.ts"></script>
+</body>
+</html>

@@ -10,7 +10,8 @@ TextureStyle.defaultOptions.scaleMode = 'nearest';
 
 export const NIVEIS_ZOOM = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 12, 16];
 const TAM_ALCA = 8;
-const COR_SELECAO = 0x4da3ff;
+const COR_SELECAO = 0xa7dd3e; // lima da logo
+const COR_TELA_JOGO = 0xf89715; // laranja da logo
 
 type Arraste =
   | { tipo: 'pan'; sx: number; sy: number; cx: number; cy: number }
@@ -41,7 +42,7 @@ export class Viewport {
   async iniciar() {
     await this.app.init({
       resizeTo: this.el,
-      background: '#121317',
+      background: '#101513',
       antialias: false,
       autoDensity: true,
       resolution: window.devicePixelRatio || 1,
@@ -201,14 +202,14 @@ export class Viewport {
     this.fundoFase.clear()
       .rect(Math.round(a.x), Math.round(a.y), fw * z, fh * z)
       .fill({ color: this.estado.fase.corFundo })
-      .stroke({ width: 1, color: 0x3a3d46, alignment: 1 });
+      .stroke({ width: 1, color: 0x2b3835, alignment: 1 });
   }
 
   private desenharGrade(w: number, h: number) {
     this.grade.clear();
     if (!this.estado.grade) return;
     const { x, y, zoom } = this.estado.camera;
-    const passo = this.estado.tamanhoGrade;
+    const passo = this.estado.fase.tamanhoGrade;
     if (passo * zoom < 6) return;
     const [fw, fh] = this.estado.fase.tamanho;
     const x0 = Math.max(0, Math.floor(x / passo) * passo);
@@ -240,7 +241,7 @@ export class Viewport {
     const a = this.camadaParaTela(cj.x, cj.y, '');
     const z = this.estado.camera.zoom;
     g.rect(Math.round(a.x) + 0.5, Math.round(a.y) + 0.5, Math.round(cj.w * z), Math.round(cj.h * z))
-      .stroke({ width: 1, color: 0xf2c14e, alpha: 0.5 });
+      .stroke({ width: 1, color: COR_TELA_JOGO, alpha: 0.6 });
     if (this.hover && this.hover !== this.estado.selecionado) {
       const o = this.estado.objeto(this.hover);
       if (o) {
@@ -381,7 +382,7 @@ export class Viewport {
         let nx = lp.x - a.dx;
         let ny = lp.y - a.dy;
         if (this.estado.encaixar) {
-          const g = this.estado.tamanhoGrade;
+          const g = this.estado.fase.tamanhoGrade;
           nx = Math.round(nx / g) * g;
           ny = Math.round(ny / g) * g;
         }

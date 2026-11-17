@@ -1,0 +1,29 @@
+:root { color-scheme: dark; font-family: 'Segoe UI', system-ui, sans-serif; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #083933; user-select: none; }
+
+.splash {
+  position: relative; width: 100vw; height: 100vh; overflow: hidden;
+  background: linear-gradient(135deg, #0b4a40 0%, #083933 55%, #062c27 100%);
+  border: 1px solid #135f4d;
+  -webkit-app-region: drag; /* permite arrastar a janela sem moldura */
+}
+.pixels { position: absolute; top: 0; right: 0; width: 46%; height: 100%; }
+.conteudo { position: relative; height: 100%; padding: 34px 36px 26px; display: flex; flex-direction: column; }
+
+.barra-topo { width: 44px; height: 4px; background: #a7dd3e; border-radius: 2px; margin-bottom: 18px; }
+.logo { width: 300px; height: auto; display: block; }
+.subtitulo { margin: 14px 0 2px; color: #d6eee4; font-size: 14px; }
+.versao { margin: 0; color: #7fb9a5; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.carregamento { margin-top: auto; width: 62%; }
+#status { margin: 0 0 8px; color: #cfe7dd; font-size: 12px; min-height: 16px; }
+.progresso { height: 3px; background: rgba(167, 221, 62, 0.15); border-radius: 2px; overflow: hidden; }
+#progresso-barra { height: 100%; width: 8%; background: #a7dd3e; border-radius: 2px; transition: width 300ms ease; }
+
+.creditos { margin-top: 22px; font-size: 11px; color: #7fb9a5; line-height: 1.55; }
+.creditos p { margin: 0; }
+.creditos strong { color: #d6eee4; font-weight: 600; }
+.licenca { margin-top: 6px !important; color: #5f9887; }
+
+@media (prefers-reduced-motion: reduce) { #progresso-barra { transition: none; } }

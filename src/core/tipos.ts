@@ -38,6 +38,8 @@ export interface Fase {
   versao: number;
   nome: string;
   resolucaoBase: [number, number];
+  /** Tamanho da grade/tile em pixels. */
+  tamanhoGrade: number;
   tamanho: [number, number];
   corFundo: string;
   /** Ordem de desenho: índice 0 = mais distante. */

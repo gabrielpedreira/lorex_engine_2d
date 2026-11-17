@@ -16,17 +16,28 @@ export function camadasPadrao(): Camada[] {
   ];
 }
 
-export function criarFase(nome: string): Fase {
+export interface OpcoesFase {
+  resolucaoBase?: [number, number];
+  tamanhoGrade?: number;
+  /** Tamanho da fase medido em telas (resolução base). */
+  telas?: [number, number];
+  corFundo?: string;
+}
+
+export function criarFase(nome: string, o: OpcoesFase = {}): Fase {
+  const res = o.resolucaoBase ?? [640, 360];
+  const telas = o.telas ?? [4, 1];
   return {
     versao: VERSAO_FASE,
     nome,
-    resolucaoBase: [480, 270],
-    tamanho: [1920, 540],
-    corFundo: '#0e0f13',
+    resolucaoBase: [res[0], res[1]],
+    tamanhoGrade: o.tamanhoGrade ?? 16,
+    tamanho: [res[0] * telas[0], res[1] * telas[1]],
+    corFundo: o.corFundo ?? '#0e0f13',
     camadas: camadasPadrao(),
     objetos: [],
     colisoes: [],
-    spawnJogador: [64, 400],
+    spawnJogador: [64, Math.round(res[1] * telas[1] * 0.7)],
   };
 }
 
@@ -49,6 +60,7 @@ export function normalizarFase(dados: unknown): Fase {
     camadas,
     objetos,
     colisoes: Array.isArray(d.colisoes) ? d.colisoes : [],
+    tamanhoGrade: typeof d.tamanhoGrade === 'number' && d.tamanhoGrade > 0 ? d.tamanhoGrade : 16,
   } as Fase;
 }
 

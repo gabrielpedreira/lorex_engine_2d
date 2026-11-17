@@ -2,8 +2,17 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('lorex', {
+  versao: () => ipcRenderer.invoke('app:versao'),
+  progresso: (texto) => ipcRenderer.send('app:progresso', texto),
+  pronto: () => ipcRenderer.send('app:pronto'),
+
   abrirProjeto: () => ipcRenderer.invoke('projeto:abrir'),
+  abrirCaminho: (caminho) => ipcRenderer.invoke('projeto:abrirCaminho', caminho),
   projetoAtual: () => ipcRenderer.invoke('projeto:atual'),
+  recentes: () => ipcRenderer.invoke('projeto:recentes'),
+  lerConfigProjeto: () => ipcRenderer.invoke('projeto:lerConfig'),
+  salvarConfigProjeto: (dados) => ipcRenderer.invoke('projeto:salvarConfig', dados),
+
   listarAssets: () => ipcRenderer.invoke('assets:listar'),
   garantirEmUso: (relRaiz) => ipcRenderer.invoke('assets:garantirEmUso', relRaiz),
   listarFases: () => ipcRenderer.invoke('fases:listar'),

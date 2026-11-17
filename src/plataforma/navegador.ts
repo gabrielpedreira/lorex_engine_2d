@@ -1,11 +1,12 @@
 // Modo navegador: usa o projeto de demonstração em public/demo-projeto (assets genéricos).
 // Fases salvas ficam no armazenamento do navegador. Serve para testar a engine sem o Electron.
-import { codificarCaminho, normalizarCaminho, type InfoProjeto, type Plataforma } from './plataforma';
+import { codificarCaminho, normalizarCaminho, type ConfigProjeto, type InfoProjeto, type Plataforma } from './plataforma';
 
 interface Manifesto { nome: string; arquivos: string[]; fases: string[] }
 
 const BASE = './demo-projeto/';
 const CHAVE = 'lorex.demo.fases';
+const CHAVE_CONFIG = 'lorex.demo.config';
 
 export class PlataformaNavegador implements Plataforma {
   readonly tipo = 'navegador' as const;
@@ -23,6 +24,17 @@ export class PlataformaNavegador implements Plataforma {
     try { return JSON.parse(localStorage.getItem(CHAVE) ?? '{}'); } catch { return {}; }
   }
 
+  async versao() { return import.meta.env.VITE_VERSAO ?? '0.0.0'; }
+  progresso() { /* sem splash no navegador */ }
+  pronto() { /* sem splash no navegador */ }
+  async recentes() { const p = await this.projetoAtual(); return p ? [p] : []; }
+  async abrirCaminho() { return this.projetoAtual(); }
+  async lerConfigProjeto(): Promise<ConfigProjeto | null> {
+    try { const t = localStorage.getItem(CHAVE_CONFIG); return t ? JSON.parse(t) : null; } catch { return null; }
+  }
+  async salvarConfigProjeto(c: ConfigProjeto) {
+    try { localStorage.setItem(CHAVE_CONFIG, JSON.stringify(c)); } catch { /* armazenamento indisponível */ }
+  }
   async abrirProjeto(): Promise<InfoProjeto | null> { return this.projetoAtual(); }
   async projetoAtual(): Promise<InfoProjeto | null> {
     const m = await this.carregarManifesto();

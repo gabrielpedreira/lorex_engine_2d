@@ -2,10 +2,31 @@
 
 export interface InfoProjeto {
   nome: string;
+  /** Caminho completo da pasta (só no Electron). */
+  caminho?: string;
 }
+
+/** Configuração do projeto inteiro (jogo/projeto.json). Vale para as fases novas. */
+export interface ConfigProjeto {
+  /** Resolução do jogo em pixels de arte (o "formato de pixels"). */
+  resolucaoBase: [number, number];
+  /** Tamanho da grade/tile em pixels. */
+  tamanhoGrade: number;
+}
+
+export const CONFIG_PADRAO: ConfigProjeto = { resolucaoBase: [640, 360], tamanhoGrade: 16 };
 
 export interface Plataforma {
   readonly tipo: 'electron' | 'navegador';
+  versao(): Promise<string>;
+  /** Mensagem de carregamento para a splash. */
+  progresso(texto: string): void;
+  /** Avisa que a interface está pronta (fecha a splash e mostra o editor). */
+  pronto(): void;
+  recentes(): Promise<InfoProjeto[]>;
+  abrirCaminho(caminho: string): Promise<InfoProjeto | null>;
+  lerConfigProjeto(): Promise<ConfigProjeto | null>;
+  salvarConfigProjeto(c: ConfigProjeto): Promise<void>;
   /** Abre o seletor de pasta (só no Electron). */
   abrirProjeto(): Promise<InfoProjeto | null>;
   /** Projeto já aberto ou o último usado. */

@@ -1,3 +1,5 @@
+<p align="center"><img src="public/marca/logo-fundo-claro.png" alt="Lorex Engine" width="420"></p>
+
 # Lorex Engine 2D
 
 Motor e editor visual 2D próprios, criados para construir o jogo **Infestação** (plataforma 2D em pixel art).
@@ -28,6 +30,12 @@ npm run dev
 Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo. O editor lembra a última pasta aberta.
 
 ## O que o editor faz hoje
+
+- **Splash de inicialização** (logo, status real do carregamento, créditos e licença) enquanto o editor carrega.
+- **Tela inicial**: projeto atual e recentes, fases do projeto e criação de fase com a **resolução do jogo**
+  (formato de pixels: 320×180, 480×270, 640×360, 960×540 ou personalizada), grade (8/16/32 px), tamanho em
+  telas e cor de fundo. A resolução e a grade ficam salvas em `jogo/projeto.json` e valem para as fases novas.
+  O ícone da Lorex na barra superior volta para essa tela.
 
 - **Biblioteca**: lista as imagens do projeto em "Em uso no jogo" (`jogo/assets`) e no material de apoio (resto
   da pasta). Ao colocar um asset de apoio numa fase, ele é **copiado** para `jogo/assets/<categoria>/`.
