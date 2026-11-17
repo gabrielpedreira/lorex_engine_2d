@@ -1,0 +1,25 @@
+{
+  "nome": "Projeto de demonstração",
+  "arquivos": [
+    "cenario/barril.png",
+    "cenario/caixa.png",
+    "cenario/chao.png",
+    "cenario/grama.png",
+    "cenario/plataforma.png",
+    "fundos/ceu.png",
+    "fundos/montanhas.png",
+    "fundos/predios.png",
+    "itens/chave.png",
+    "itens/moeda.png",
+    "jogo/assets/cenario/caixa.png",
+    "jogo/assets/cenario/chao.png",
+    "jogo/assets/cenario/plataforma.png",
+    "jogo/assets/fundos/ceu.png",
+    "jogo/assets/fundos/montanhas.png",
+    "jogo/assets/fundos/predios.png",
+    "jogo/assets/itens/chave.png"
+  ],
+  "fases": [
+    "demonstracao.json"
+  ]
+}

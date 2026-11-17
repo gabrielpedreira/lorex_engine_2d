@@ -1,0 +1,28 @@
+{
+  "name": "lorex-engine-2d",
+  "version": "0.1.0",
+  "description": "Lorex Engine 2D: motor e editor visual 2D (construtor de fases)",
+  "author": "Gabriel Pedreira",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n vite,electron -c blue,green \"vite\" \"wait-on tcp:127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "web": "vite",
+    "build": "tsc --noEmit && vite build",
+    "start": "electron .",
+    "verificar": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pixi.js": "^8.23.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "cross-env": "^7.0.3",
+    "electron": "^45.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^8.0.0",
+    "wait-on": "^8.0.0"
+  }
+}

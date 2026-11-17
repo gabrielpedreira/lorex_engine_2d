@@ -18,9 +18,9 @@
 |---|---|---|
 | Linguagem | TypeScript | o Gabriel já domina JS; tipagem ajuda em um projeto grande |
 | Renderização | PixiJS | 2D rápido via WebGL, bom para sprites e pixel art |
-| Interface do editor | HTML/CSS (+ framework leve, a definir) | montar painéis é rápido na web |
-| Painel de código | Monaco Editor | o mesmo editor do VS Code, com autocomplete |
-| App desktop | Tauri **ou** Electron (decidir na etapa 1) | acesso a arquivos locais e executável final |
+| Interface do editor | HTML/CSS + TypeScript puro (sem framework) | leve e simples de entender |
+| Painel de código | Monaco Editor (etapa 4) | o mesmo editor do VS Code, com autocomplete |
+| App desktop | **Electron** (decidido em 2026-11-16) | só JavaScript, simples de começar; acesso aos arquivos via IPC |
 | Build | Vite | dev server rápido com hot reload |
 
 ## 3. Módulos
@@ -79,7 +79,10 @@ Conexões: um objeto pode referenciar outro (chave → porta, alavanca → plata
 
 Script (opcional): ganchos `aoIniciar`, `aoAtualizar(dt)`, `aoInteragir`, `aoColetar`, `aoEntrarArea`.
 
-### 4.4 Formato da fase (rascunho v0)
+### 4.4 Formato da fase (v1)
+
+Definido em `src/core/tipos.ts`. Cada objeto também guarda `w`/`h` (tamanho original da imagem) e `nome`.
+`x`/`y` = canto superior esquerdo no espaço da camada. Fases antigas são completadas por `normalizarFase()`.
 
 ```json
 {
@@ -119,8 +122,28 @@ O jogo só enxerga `jogo/assets/` (caminhos das fases são relativos a `jogo/`).
 mostra também o material de apoio, e ao colocar um asset de apoio numa fase o editor o **copia** para
 `jogo/assets/<categoria>/` (o original fica onde está). Arquivos editáveis (`.sketchmotion` etc.) nunca entram.
 
-## 5. Questões em aberto
+### 4.7 Prévia de parallax
 
-- Tauri (mais leve; usa Rust, que o Gabriel já tem instalado) ou Electron (mais simples, só JS).
+No jogo, um objeto de uma camada aparece em `tela = (x - câmera × parallax) × zoom`. No editor, a prévia calcula a
+câmera que o jogo teria com a visão centralizada no mesmo ponto (resolução base, presa dentro da fase) e desloca
+cada camada em `câmera_jogo × (1 - parallax)`. O quadro amarelo no cenário é essa câmera. Com a prévia desligada (`P`),
+todas as camadas ficam alinhadas como na posição inicial.
+
+## 5. Estrutura do código
+
+```
+electron/main.cjs        processo principal: janela, protocolo projeto://, IPC de arquivos (listar, copiar, salvar)
+electron/preload.cjs     ponte segura (window.lorex)
+src/main.ts              monta a tela, barra, atalhos, abrir/salvar
+src/core/                formato de dados da fase (tipos, criação, normalização)
+src/editor/estado.ts     estado central + eventos + desfazer/refazer (snapshots JSON)
+src/editor/viewport.ts   cenário PixiJS: câmera, camadas, grade, seleção, mouse
+src/plataforma/          acesso a arquivos: Electron (disco) ou navegador (demo)
+src/ui/                  painéis: biblioteca, camadas, propriedades, diálogos, ícones
+public/demo-projeto/     projeto de demonstração com assets genéricos (para portfólio e testes)
+```
+
+## 6. Questões em aberto
+
 - Resolução base do jogo (480×270? 640×360?), a definir conforme o tamanho dos sprites.
 - Colisão por retângulos/polígonos desenhados (cenários pintados à mão) ou por tiles; provavelmente a primeira.
