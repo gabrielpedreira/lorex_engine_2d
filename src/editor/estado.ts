@@ -1,4 +1,5 @@
 // Estado central do editor: fase aberta, seleção, câmera, opções e histórico (desfazer/refazer).
+import { LOG } from '../core/log';
 import { criarFase } from '../core/fase';
 import type { Camada, Fase, ObjetoFase } from '../core/tipos';
 
@@ -56,6 +57,7 @@ export class Estado {
 
   avisar(msg: string) {
     this.mensagem = msg;
+    LOG.add({ cat: /não consegui|erro|falhou|não achei|não existe/i.test(msg) ? 'erro' : 'sistema', texto: msg });
     this.emit('mensagem');
   }
 

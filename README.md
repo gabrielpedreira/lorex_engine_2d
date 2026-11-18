@@ -94,6 +94,11 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
     eu.abrir();
   }
   ```
+- **Log** (`L`, ou o botão "Log" na barra de status): painel embaixo do cenário que registra, com o tempo do teste,
+  as **teclas** (apertada/solta e a ação disparada), o **personagem** (estado parado/andando/pulando/caindo, animações,
+  ações canceladas pelo código), o **mundo** (coletas, interações, alavancas, saídas, quedas), o **código** (ganchos que
+  rodaram, `jogo.log`) e os **erros** (scripts e engine). Filtros por categoria, busca, copiar. Ao parar o teste, o log
+  inteiro é salvo em `logs/` na raiz do projeto (`ultimo_teste.log` + os 30 mais recentes).
 - **Copiar/colar** (`Ctrl+C` / `Ctrl+X` / `Ctrl+V`): cola onde está o mouse, com o mesmo tamanho, efeitos e
   comportamento; o copiado continua guardado ao trocar de fase.
 - **Continuação (loop)**: botões ← ↑ ↓ → no painel (ou `Ctrl+Shift+setas`) criam uma cópia encostada exatamente na
@@ -131,7 +136,7 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 | Forma de colisão | `1` bloco · `2` rampa ◢ · `3` rampa ◣ · `4` polígono · `5` linha · `6` mão livre |
 | Sólido ↔ atravessável (modo Colisão) | `X` |
 | Polígono/linha: terminar · desfazer ponto · cancelar | `Enter` ou duplo clique · `Backspace` · `Esc` |
-| Personagens / Controles / Código | `K` / `B` / `O` |
+| Personagens / Controles / Código / Log | `K` / `B` / `O` / `L` |
 | ▶ Testar / voltar | `F5` / `Esc` (no teste: teclas da ferramenta Controles; `F6` reinicia) |
 | Mostrar colisões / prévia de efeitos | `Shift+C` / `Shift+E` |
 | Mostrar/ocultar caixa de ferramentas | `T` |

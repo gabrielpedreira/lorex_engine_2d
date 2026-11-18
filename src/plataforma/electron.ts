@@ -16,6 +16,7 @@ interface ApiLorex {
   listarDados(pasta: string): Promise<string[]>;
   lerDados(pasta: string, nome: string): Promise<string>;
   salvarDados(pasta: string, nome: string, conteudo: string): Promise<boolean>;
+  salvarLog(nome: string, conteudo: string): Promise<string>;
   otimizarAsset(fonteRaiz: string, largura: number, altura: number): Promise<ResultadoOtimizacao>;
   limparNaoUsados(emUsoAgora: string[]): Promise<string[]>;
   listarFases(): Promise<string[]>;
@@ -50,6 +51,7 @@ export class PlataformaElectron implements Plataforma {
   listarDados(p: PastaDados) { return this.api.listarDados(p); }
   lerDados(p: PastaDados, n: string) { return this.api.lerDados(p, n); }
   async salvarDados(p: PastaDados, n: string, c: string) { await this.api.salvarDados(p, n, c); }
+  salvarLog(n: string, c: string) { return this.api.salvarLog(n, c); }
   otimizarAsset(f: string, w: number, h: number) { return this.api.otimizarAsset(f, w, h); }
   limparNaoUsados(u: string[]) { return this.api.limparNaoUsados(u); }
   listarFases() { return this.api.listarFases(); }

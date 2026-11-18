@@ -139,6 +139,8 @@ export class Viewport {
     this.app.ticker.add((t) => { this.aoQuadro?.(t.deltaMS); this.quadro(); });
     this.ligarEventos();
     this.sincronizar();
+    // O cenário muda de tamanho sem a janela mudar (painel de Log, caixa de ferramentas): ajusta o canvas
+    new ResizeObserver(() => { this.app.resize(); this.chaveCamera = ''; }).observe(this.el);
   }
 
   // ---------- Coordenadas ----------

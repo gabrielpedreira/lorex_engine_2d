@@ -20,6 +20,8 @@ import { PainelPropriedades } from './ui/propriedades';
 import { ModoTeste } from './editor/testar';
 import { EditorPersonagens } from './ui/personagens';
 import { EditorControles } from './ui/controles';
+import { PainelLog } from './ui/log';
+import { LOG, capturarErrosGlobais } from './core/log';
 import { ACOES_SISTEMA, normalizarControles } from './core/controles';
 import { PainelCodigo, type ElementoCodigo } from './ui/codigo/painel';
 import { arquivoScript, tiposApi } from './core/scripts';
@@ -43,7 +45,10 @@ const painelProps = el('section', { class: 'bloco props-bloco' });
 const painelCamadas = el('section', { class: 'bloco camadas-bloco' });
 direita.append(painelProps, painelCamadas);
 const status = el('footer', { class: 'status' });
-app.append(barra, esquerda, centro, direita, status);
+// Painel de Log (embaixo do cenário): teclas, personagem, mundo, código, erros e avisos
+capturarErrosGlobais();
+const painelLog = new PainelLog();
+app.append(barra, esquerda, centro, painelLog.raiz, direita, status);
 
 // Painel lateral esquerdo: abas Ferramentas / Biblioteca, recolhível
 const abaFerr = el('button', { type: 'button', class: 'aba ativa', role: 'tab', 'aria-selected': 'true' }, 'Ferramentas');
@@ -440,6 +445,17 @@ dica(botaoTestar, 'Testar a fase', 'Jogue a fase agora com o personagem do teste
 
 // ---------- ▶ Testar ----------
 const teste = new ModoTeste(viewport, estado, centro);
+// Ao parar o teste, o log inteiro dele vai para logs/ (o Claude lê de lá quando você relata um problema)
+teste.aoTerminarLog = async (texto) => {
+  const d = new Date();
+  const p2 = (n: number) => String(n).padStart(2, '0');
+  const nome = `teste_${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}_${p2(d.getHours())}-${p2(d.getMinutes())}-${p2(d.getSeconds())}.log`;
+  const cabecalho = `Lorex Engine 2D · log de teste · ${d.toLocaleString('pt-BR')}\nFase: ${estado.fase.nome}${estado.arquivoFase ? ` (${estado.arquivoFase})` : ''}\n\n`;
+  try {
+    const caminho = await plat.salvarLog(nome, cabecalho + texto + '\n');
+    if (caminho) painelLog.mostrarArquivo(caminho);
+  } catch (err) { LOG.add({ cat: 'erro', texto: `Não consegui salvar o log do teste: ${String(err)}` }); }
+};
 teste.aoMudarConfig = (c) => { config.jogador = c; salvarConfigDepois(); };
 teste.aoMudarEstado = () => {
   app.classList.toggle('testando', estado.testando);
@@ -493,6 +509,7 @@ async function fontesScripts(): Promise<FontesScripts> {
 const painelCodigo = new PainelCodigo(plat);
 painelCodigo.aoAvisar = (m) => estado.avisar(m);
 painelCodigo.aoTestar = () => void alternarTeste();
+painelLog.aoAbrirScript = (arquivo, linha) => { if (estado.testando) teste.parar(); void painelCodigo.irPara(arquivo, linha); };
 
 /** Arquivo da fase atual (salva antes, se for nova). */
 async function garantirFaseSalva(): Promise<string | null> {
@@ -764,11 +781,24 @@ barra.append(
 );
 
 // ---------- Barra de status ----------
-const stCoord = el('span', {});
+const stCoord = el('span', { class: 'st-coord' });
 const stCamada = el('span', {});
 const stMsg = el('span', { class: 'msg', role: 'status' });
 const stAtalhos = el('span', { class: 'atalhos' }, 'V/C/I: selecionar, colisão, início · T: ferramentas · Roda: zoom · Espaço/botão do meio: mover a visão · Del: excluir · Ctrl+C/V: copiar/colar · Ctrl+Shift+setas: continuação · Alt: sem ímã · Ctrl+D: duplicar · F: espelhar · Setas: mover 1 px (Shift: 8)');
-status.append(stCoord, stCamada, stMsg, stAtalhos);
+// Botão do Log na barra de status (com contador de erros)
+const stLog = el('button', { type: 'button', class: 'st-log' }, 'Log', el('span', { class: 'st-log-erros' }));
+dica(stLog, 'Log', 'Mostra ou esconde o painel de Log embaixo do cenário: teclas, personagem, mundo, código e erros. Os testes são salvos em logs/.', 'L');
+stLog.addEventListener('click', () => painelLog.alternar());
+const atualizarStLog = () => {
+  const n = LOG.linhas.filter((l) => l.cat === 'erro').length;
+  const s = stLog.querySelector('.st-log-erros')!;
+  s.textContent = n ? String(n) : '';
+  stLog.classList.toggle('ligado', painelLog.aberto);
+};
+LOG.ouvintes.add(atualizarStLog);
+painelLog.aoMudarVisibilidade = atualizarStLog;
+status.append(stLog, stCoord, stCamada, stMsg, stAtalhos);
+atualizarStLog();
 let timerMsg = 0;
 
 function atualizarStatus() {
@@ -844,6 +874,7 @@ window.addEventListener('keydown', (e) => {
       else if (k === 'k') void abrirPersonagens();
       else if (k === 'b') void abrirControles();
       else if (k === 'o') void abrirCodigo();
+      else if (k === 'l') painelLog.alternar();
       else if (k === 'x' && estado.modo === 'colisao') { estado.comportamentoNovo = estado.comportamentoNovo === 'solido' ? 'atravessavel' : 'solido'; atualizarOpcoesColisao(); }
       else if (k === 'c' && e.shiftKey) { estado.mostrarColisoes = !estado.mostrarColisoes; estado.emit('opcoes'); sincronizarAlternadores(); }
       else if (k === 'c') estado.definirModo(estado.modo === 'colisao' ? 'selecionar' : 'colisao');

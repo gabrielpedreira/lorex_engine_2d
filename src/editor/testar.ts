@@ -1,7 +1,8 @@
 // ▶ Testar: joga a fase dentro do editor, com o jogador correndo e pulando sobre as colisões desenhadas.
 import { Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
 import { Animador, ancoraPes, estadoDoJogador, extras, retanguloQuadro, type Personagem } from '../core/personagem';
-import { EntradaJogo, TECLAS_RESERVADAS, controlesPadrao, normalizarCodigo, textoAtalho, type Controles } from '../core/controles';
+import { EntradaJogo, TECLAS_RESERVADAS, controlesPadrao, nomeTecla, normalizarCodigo, textoAtalho, type Controles } from '../core/controles';
+import { LOG } from '../core/log';
 import { Jogador, JOGADOR_PADRAO, montarSegmentos, type ConfigJogador, type Entrada, type Segmento } from '../core/fisica';
 import { MundoInterativo, type ResultadoInteracao } from '../core/comportamentos';
 import { MotorScripts, type FontesScripts } from './motorScripts';
@@ -96,7 +97,7 @@ export class ModoTeste {
       acaoAtual: () => t.pers?.animador.acaoAtual ?? null,
       teleportar: (x: number, y: number) => { if (t.jogador) { t.jogador.x = x; t.jogador.y = y; t.jogador.vx = 0; t.jogador.vy = 0; } },
       empurrar: (vx: number, vy: number) => { if (t.jogador) { t.jogador.vx += vx; t.jogador.vy += vy; } },
-      aviso: (x: string) => t.toast(x),
+      aviso: (x: string) => { LOG.add({ cat: 'mundo', texto: `aviso (código): ${x}` }); t.toast(x); },
       mensagem: (x: string) => t.tratar({ mensagem: x }),
       irPara: (f: string) => t.tratar({ irPara: f }),
       apertou: (a: string) => t.entradaJogo.apertou(a),
@@ -118,9 +119,15 @@ export class ModoTeste {
   private interagirCom(o: ObjetoFase) {
     const m = this.mundo;
     if (!m) return;
+    LOG.add({ cat: 'mundo', texto: `interagiu com ${o.nome}` });
     if (this.motor && !this.motor.interagir(o)) { this.aplicarVisibilidade(); this.atualizarInventario(); return; }
     this.tratar(m.interagir(o), o);
   }
+
+  /** O teste acabou: texto completo do log dele (o editor salva em logs/). */
+  aoTerminarLog: (texto: string) => void = () => {};
+  private ultimoEstado = '';
+  private ultimoProx = '';
 
   /** Saída para outra fase/área: o editor abre o destino e recomeça o teste lá. */
   aoIrPara: (destino: string) => void = () => {};
@@ -153,6 +160,8 @@ export class ModoTeste {
     e.mostrarColisoes = false;
     this.cameraAntes = { ...e.camera };
     this.segs = montarSegmentos(e.fase.colisoes);
+    LOG.iniciarTeste(`${e.fase.nome}${e.arquivoFase ? ` (${e.arquivoFase})` : ''} · jogador: ${this.pers?.dados.nome ?? 'retângulo provisório'}${this.motor ? ' · com código' : ''}`);
+    this.ultimoEstado = ''; this.ultimoProx = '';
     this.reiniciarJogador();
     this.reiniciarMundo();
     this.entradaJogo.limpar();
@@ -184,6 +193,7 @@ export class ModoTeste {
     const e = this.estado;
     e.testando = false;
     e.mostrarColisoes = this.colisoesAntes;
+    this.aoTerminarLog(LOG.terminarTeste());
     Object.assign(e.camera, this.cameraAntes);
     this.viewport.aoQuadro = null;
     this.viewport.aposSincronizar = null;
@@ -248,6 +258,10 @@ export class ModoTeste {
   }
 
   private tratar(r: ResultadoInteracao, origem?: ObjetoFase) {
+    if (r.acionado && origem) LOG.add({ cat: 'mundo', texto: `${origem.nome} acionou ${this.estado.objeto(r.acionado)?.nome ?? r.acionado}` });
+    if (r.aviso) LOG.add({ cat: 'mundo', texto: `aviso: ${r.aviso}` });
+    if (r.mensagem) LOG.add({ cat: 'mundo', texto: `mensagem: ${r.mensagem}` });
+    if (r.irPara) LOG.add({ cat: 'mundo', texto: `saída para ${r.irPara}` });
     if (r.acionado && origem && this.motor) this.motor.acionado(r.acionado, origem);
     if (r.aviso) this.toast(r.aviso);
     if (r.mensagem) {
@@ -292,7 +306,7 @@ export class ModoTeste {
     const alvo = ev.target as HTMLElement | null;
     if (alvo && this.hud.contains(alvo) && alvo.tagName === 'INPUT') return; // ajustando um controle do HUD
     if (ev.key === 'Escape' || ev.key === 'F5') { ev.preventDefault(); this.parar(); return; }
-    if (ev.key === 'F6') { ev.preventDefault(); this.reiniciarJogador(); this.reiniciarMundo(); this.posicionarCamera(true); this.toast('Fase reiniciada'); return; }
+    if (ev.key === 'F6') { ev.preventDefault(); LOG.add({ cat: 'sistema', texto: 'Fase reiniciada (F6)' }); this.reiniciarJogador(); this.reiniciarMundo(); this.posicionarCamera(true); this.toast('Fase reiniciada'); return; }
     if (ev.code === 'KeyC' && ev.shiftKey && !this.usada('KeyC')) { this.estado.mostrarColisoes = !this.estado.mostrarColisoes; this.estado.emit('opcoes'); return; }
     if (this.mensagemAberta && (ev.key === 'Enter' || this.ehDaAcao(ev.code, 'interagir'))) {
       ev.preventDefault();
@@ -303,6 +317,7 @@ export class ModoTeste {
     // Nada de rolar a página, digitar ou acionar atalhos do editor enquanto joga
     ev.preventDefault();
     ev.stopPropagation();
+    if (!ev.repeat) LOG.add({ cat: 'entrada', texto: `[${nomeTecla(normalizarCodigo(ev.code))}] apertada` });
     this.entradaJogo.apertar(ev.code, performance.now() / 1000);
   };
 
@@ -314,7 +329,11 @@ export class ModoTeste {
     return (this.controles.acoes[acao] ?? []).some((a) => a.teclas.includes(normalizarCodigo(code)));
   }
 
-  private soltarTecla = (ev: KeyboardEvent) => { this.entradaJogo.soltar(ev.code); };
+  private soltarTecla = (ev: KeyboardEvent) => {
+    if (TECLAS_RESERVADAS.has(ev.code)) return;
+    LOG.add({ cat: 'entrada', texto: `[${nomeTecla(normalizarCodigo(ev.code))}] solta` });
+    this.entradaJogo.soltar(ev.code);
+  };
   private perderFoco = () => { this.entradaJogo.limpar(); };
 
   private entrada(): Entrada {
@@ -341,14 +360,16 @@ export class ModoTeste {
     if (this.mensagemAberta) { this.desenharJogador(0); return; } // jogo pausado lendo a mensagem
     const ent = this.entradaJogo;
     ent.atualizar(performance.now() / 1000);
+    for (const a of ent.disparadasAgora) LOG.add({ cat: 'entrada', texto: `dispara a ação "${a}"` });
     if (ent.apertou('pular')) this.puloApertado = true;
     if (ent.apertou('interagir')) this.interagirApertado = true;
     // Ações do personagem (animações extras): tiro, recarga…
     if (this.pers) {
       for (const [chave, anim] of extras(this.pers.dados)) {
         if (!ent.apertou(chave)) continue;
-        if (this.motor && !this.motor.acao(chave)) continue; // o código (aoAcao) cancelou
-        if (this.pers.animador.tocar(chave, anim.repetir)) this.mostrarAcao(anim.nome ?? chave);
+        if (this.motor && !this.motor.acao(chave)) { LOG.add({ cat: 'personagem', texto: `ação "${chave}" cancelada pelo código (aoAcao)` }); continue; }
+        if (this.pers.animador.tocar(chave, anim.repetir)) { this.mostrarAcao(anim.nome ?? chave); LOG.add({ cat: 'personagem', texto: `animação: ${anim.nome ?? chave}` }); }
+        else LOG.add({ cat: 'personagem', texto: `ação "${chave}" ignorada: ${this.pers.animador.acaoAtual ? `já tocando "${this.pers.animador.acaoAtual}"` : 'sem animação'}` });
       }
     }
     const [fw, fh] = this.estado.fase.tamanho;
@@ -359,6 +380,7 @@ export class ModoTeste {
       this.puloApertado = false;
       this.acumulado -= PASSO;
       if (!vivo) {
+        LOG.add({ cat: 'mundo', texto: `caiu para fora da fase em (${Math.round(j.x)}, ${Math.round(j.y)}); voltando ao início` });
         this.estado.avisar('Caiu para fora da fase: voltando ao início.');
         this.reiniciarJogador();
         this.posicionarCamera(true);
@@ -369,9 +391,14 @@ export class ModoTeste {
     if (this.motor) this.motor.atualizar(ms / 1000);
     // Coletáveis tocados
     const pegos = m.coletar(this.caixaJogador());
-    if (pegos.length) { this.toast(pegos.join(' · ')); this.aplicarVisibilidade(); this.atualizarInventario(); }
+    if (pegos.length) { LOG.add({ cat: 'mundo', texto: pegos.join(' · ') }); this.toast(pegos.join(' · ')); this.aplicarVisibilidade(); this.atualizarInventario(); }
     // Objeto interagível por perto (tecla E)
     const prox = m.proximo(this.caixaJogador());
+    const chaveProx = prox ? `${prox.o.id}:${prox.acao}` : '';
+    if (chaveProx !== this.ultimoProx) {
+      this.ultimoProx = chaveProx;
+      if (prox) LOG.add({ cat: 'mundo', texto: `perto de ${prox.o.nome} (pode: ${prox.acao})` });
+    }
     if (this.interagirApertado) {
       this.interagirApertado = false;
       if (prox) this.interagirCom(prox.o);
@@ -430,7 +457,8 @@ export class ModoTeste {
       const acao = animador.acaoAtual;
       const andando = j.noChao && Math.abs(j.vx) > 12;
       const r = animador.atualizar(dt, estado, andando, acao ? this.entradaJogo.segurando(acao) : false);
-      if (acao && !animador.acaoAtual) this.mostrarAcao(null);
+      if (acao && !animador.acaoAtual) { this.mostrarAcao(null); LOG.add({ cat: 'personagem', texto: `fim da animação: ${p.animacoes[acao]?.nome ?? acao}` }); }
+      this.registrarEstado(estado);
       const frames = r ? this.pers.quadros.get(r.chave) : undefined;
       if (r && frames?.length) {
         const sp = this.spritePers;
@@ -449,6 +477,7 @@ export class ModoTeste {
       }
       return;
     }
+    this.registrarEstado(estadoDoJogador(j, 9));
     const w = j.cfg.largura, h = j.cfg.altura;
     const x = Math.round(j.x - w / 2), y = Math.round(j.y - h);
     // Corpo provisório (a Lorena animada entra com o módulo de animação)
@@ -456,6 +485,14 @@ export class ModoTeste {
     const olhoX = j.olhandoDireita ? x + w - 10 : x + 4;
     g.rect(olhoX, y + 12, 6, 6).fill({ color: 0x083933 });
     g.rect(x, y + h - 3, w, 3).fill({ color: 0x083933, alpha: 0.6 });
+  }
+
+  /** Estado da física mudou (parado → andando…): registra no log. */
+  private registrarEstado(estado: string) {
+    if (estado === this.ultimoEstado) return;
+    const j = this.jogador;
+    LOG.add({ cat: 'personagem', texto: `estado: ${this.ultimoEstado || 'início'} → ${estado}${j ? ` em (${Math.round(j.x)}, ${Math.round(j.y)})` : ''}` });
+    this.ultimoEstado = estado;
   }
 
   /** Mostra no HUD a ação tocando (ajuda a conferir os botões). */

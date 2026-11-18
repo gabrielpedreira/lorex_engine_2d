@@ -4,7 +4,7 @@
 // O que aparece no explorador vem de "fontes" registradas pelo editor (main.ts). Módulos novos (menus, HUD,
 // inimigos…) registram a fonte deles e o painel passa a mostrá-los, sem mexer aqui.
 import { GANCHOS, modeloScript, paramsDe, type DonoScript } from '../../core/scripts';
-import { SAIDA } from '../../editor/motorScripts';
+import { LOG, type LinhaLog } from '../../core/log';
 import type { Plataforma } from '../../plataforma/plataforma';
 import { el, perguntar } from '../dom';
 import { dica } from '../legenda';
@@ -29,6 +29,9 @@ export interface ElementoCodigo {
 }
 
 export type FonteCodigo = () => Promise<ElementoCodigo[]>;
+
+/** A Saída do painel mostra só o que é de código: logs, ganchos e erros. */
+const linhasSaida = (): LinhaLog[] => LOG.linhas.filter((l) => l.cat === 'codigo' || l.cat === 'erro');
 
 interface Aba { arquivo: string; modelo: import('monaco-editor').editor.ITextModel; salvo: number; titulo: string; dono: DonoScript }
 
@@ -66,7 +69,7 @@ export class PainelCodigo {
     this.raiz.hidden = true;
     document.body.append(this.raiz);
     this.montar();
-    SAIDA.ouvintes.add(() => { if (this.aberta) this.desenharSaida(); });
+    LOG.ouvintes.add((l) => { if (this.aberta && (!l || l.cat === 'codigo' || l.cat === 'erro')) this.desenharSaida(); });
     this.raiz.addEventListener('keydown', (e) => {
       e.stopPropagation(); // os atalhos do editor de fases não valem aqui
       const ctrl = e.ctrlKey || e.metaKey;
@@ -225,7 +228,6 @@ export class PainelCodigo {
 
   private async testar() {
     await this.salvarTudo();
-    SAIDA.limpar();
     this.raiz.hidden = true;
     this.aoTestar();
   }
@@ -242,6 +244,15 @@ export class PainelCodigo {
       this.aoAvisar(`Script ${arquivo} atualizado por fora.`);
     }
     this.desenharAbas();
+  }
+
+  /** Abre um script numa linha (usado pela Saída e pelo painel de Log). */
+  async irPara(arquivo: string, linha?: number) {
+    if (!this.aberta) await this.abrir();
+    const e = this.elementos.find((x) => x.arquivo === arquivo);
+    if (e) this.selecionado = e.chave;
+    await this.abrirArquivo(arquivo, e?.dono ?? 'objeto', e?.nome ?? arquivo, linha);
+    this.desenharExplorador();
   }
 
   /** Insere um gancho no fim do arquivo atual. */
@@ -412,22 +423,21 @@ export class PainelCodigo {
 
   private desenharSaida() {
     const titulo = el('button', { type: 'button', class: 'cod-saida-titulo' }, `${this.saidaAberta ? '▾' : '▸'} Saída`,
-      el('span', { class: 'dica-campo' }, SAIDA.linhas.some((l) => l.nivel === 'erro') ? ` · ${SAIDA.linhas.filter((l) => l.nivel === 'erro').length} erro(s)` : ''));
-    dica(titulo, 'Saída', 'Mensagens de jogo.log() e erros dos scripts durante o ▶ Testar. Clique num erro para ir à linha.');
+      el('span', { class: 'dica-campo' }, linhasSaida().some((l) => l.cat === 'erro') ? ` · ${linhasSaida().filter((l) => l.cat === 'erro').length} erro(s)` : ''));
+    dica(titulo, 'Saída', 'Mensagens de jogo.log(), ganchos que rodaram e erros dos scripts (o mesmo registro do painel de Log, só a parte do código). Clique num erro para ir à linha.');
     titulo.addEventListener('click', () => { this.saidaAberta = !this.saidaAberta; this.desenharSaida(); this.editor?.layout(); });
     const limpar = el('button', { type: 'button', class: 'secundario' }, 'Limpar');
-    limpar.addEventListener('click', () => SAIDA.limpar());
+    limpar.addEventListener('click', () => LOG.limpar());
     const linhas = el('div', { class: 'cod-saida-linhas' });
-    if (!SAIDA.linhas.length) linhas.append(el('span', { class: 'dica-campo' }, 'Nada ainda. Use jogo.log("…") no código e teste a fase (F5).'));
-    for (const l of [...SAIDA.linhas].reverse().slice(0, 120)) {
-      const d = el('div', { class: 'cod-log ' + l.nivel },
-        el('span', { class: 'cod-log-arq' }, `${l.arquivo}${l.linha ? `:${l.linha}` : ''}`), el('span', {}, l.texto));
-      if (l.nivel === 'erro' && /\.js$/.test(l.arquivo)) {
+    if (!linhasSaida().length) linhas.append(el('span', { class: 'dica-campo' }, 'Nada ainda. Use jogo.log("…") no código e teste a fase (F5).'));
+    for (const l of [...linhasSaida()].reverse().slice(0, 150)) {
+      const d = el('div', { class: 'cod-log ' + (l.cat === 'erro' ? 'erro' : 'info') },
+        el('span', { class: 'cod-log-arq' }, `${l.arquivo ?? ''}${l.linha ? `:${l.linha}` : ''}`), el('span', {}, l.texto));
+      if (l.cat === 'erro' && l.arquivo && /\.js$/.test(l.arquivo)) {
+        const arquivo = l.arquivo;
         d.classList.add('clicavel');
         d.addEventListener('click', () => {
-          const e = this.elementos.find((x) => x.arquivo === l.arquivo);
-          if (e) this.selecionado = e.chave;
-          void this.abrirArquivo(l.arquivo, e?.dono ?? 'objeto', e?.nome ?? l.arquivo, l.linha);
+          void this.irPara(arquivo, l.linha);
           this.desenharExplorador();
         });
       }

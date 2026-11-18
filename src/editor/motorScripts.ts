@@ -2,27 +2,8 @@
 // Erros nunca derrubam o teste: vão para a Saída do painel de Código e o gancho que falhou é desligado.
 import type { ObjetoFase } from '../core/tipos';
 import { toca, type MundoInterativo } from '../core/comportamentos';
+import { LOG } from '../core/log';
 import { compilarScript, linhaDoErro, type DonoScript, type ScriptCompilado } from '../core/scripts';
-
-export interface EntradaLog {
-  nivel: 'info' | 'erro';
-  arquivo: string;
-  texto: string;
-  linha?: number;
-  hora: number;
-}
-
-/** Registro global da Saída (o painel de Código mostra). */
-export const SAIDA = {
-  linhas: [] as EntradaLog[],
-  ouvintes: new Set<() => void>(),
-  add(e: Omit<EntradaLog, 'hora'>) {
-    this.linhas.push({ ...e, hora: Date.now() });
-    if (this.linhas.length > 300) this.linhas.splice(0, this.linhas.length - 300);
-    for (const f of this.ouvintes) f();
-  },
-  limpar() { this.linhas = []; for (const f of this.ouvintes) f(); },
-};
 
 /** O que o motor de scripts precisa do modo Teste. */
 export interface PonteTeste {
@@ -96,7 +77,7 @@ export class MotorScripts {
         if (!cache.has('!' + s.arquivo)) {
           cache.set('!' + s.arquivo, Promise.reject());
           cache.get('!' + s.arquivo)!.catch(() => {});
-          SAIDA.add({ nivel: 'erro', arquivo: s.arquivo, texto: `Erro de sintaxe: ${err instanceof Error ? err.message : String(err)}` });
+          LOG.add({ cat: 'erro', arquivo: s.arquivo, texto: `Erro de sintaxe: ${err instanceof Error ? err.message : String(err)}` });
           this.ponte.aviso(`Erro no código de ${s.arquivo} (veja Código › Saída)`);
         }
       }
@@ -179,7 +160,13 @@ export class MotorScripts {
     const api = this.apiJogo();
     const eu = s.dono === 'objeto' && s.idDono ? this.handle(this.objeto(s.idDono)!) : s.dono === 'personagem' ? (api as { jogador: unknown }).jogador : null;
     const todos = s.dono === 'jogo' || s.dono === 'fase' ? [api, ...args] : [eu, api, ...args];
-    return this.protegido(s.c.arquivo, nome, () => fn(...todos), s);
+    const r = this.protegido(s.c.arquivo, nome, () => fn(...todos), s);
+    if (nome !== 'aoAtualizar') {
+      const quem = s.dono === 'objeto' && s.idDono ? this.objeto(s.idDono)?.nome ?? s.idDono : s.dono;
+      const extra = args.length && typeof args[0] === 'string' ? `("${args[0]}")` : '';
+      LOG.add({ cat: 'codigo', texto: `${nome}${extra} de ${quem}${r === false ? ' → retornou false (cancelou)' : ''}`, arquivo: s.c.arquivo });
+    }
+    return r;
   }
 
   private protegido(arquivo: string, nome: string, fn: () => unknown, s?: ScriptAtivo) {
@@ -187,7 +174,7 @@ export class MotorScripts {
       return fn();
     } catch (err) {
       const l = s ? linhaDoErro(err, s.c.url) : null;
-      SAIDA.add({ nivel: 'erro', arquivo, texto: `${nome}: ${err instanceof Error ? err.message : String(err)}`, ...(l ? { linha: l.linha } : {}) });
+      LOG.add({ cat: 'erro', arquivo, texto: `${nome}: ${err instanceof Error ? err.message : String(err)}`, ...(l ? { linha: l.linha } : {}) });
       this.ponte.aviso(`Erro no código de ${arquivo}${l ? ` (linha ${l.linha})` : ''}: veja Código › Saída`);
       s?.desligados.add(nome); // não repete o mesmo erro a cada quadro
       return undefined;
@@ -295,7 +282,7 @@ export class MotorScripts {
       apertou: (a: string) => ponte.apertou(a),
       segurando: (a: string) => ponte.segurando(a),
       esperar: (seg: number, fn: () => void) => { motor.timers.push({ quando: motor.tempo + Math.max(0, Number(seg) || 0), fn, arquivo: 'esperar' }); },
-      log: (...v: unknown[]) => SAIDA.add({ nivel: 'info', arquivo: ponte.arquivoFase, texto: v.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') }),
+      log: (...v: unknown[]) => LOG.add({ cat: 'codigo', arquivo: ponte.arquivoFase, texto: v.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') }),
     };
     return this.api;
   }

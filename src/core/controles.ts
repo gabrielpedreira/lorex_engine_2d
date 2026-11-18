@@ -173,6 +173,9 @@ export class EntradaJogo {
     return t - fim[fim.length - 1].t <= janela;
   }
 
+  /** Ações disparadas neste quadro (para o log). */
+  get disparadasAgora(): string[] { return [...this.disparadas]; }
+
   /** A ação foi disparada neste quadro? */
   apertou(acao: string) { return this.disparadas.has(acao); }
 

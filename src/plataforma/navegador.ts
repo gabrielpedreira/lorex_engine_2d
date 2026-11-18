@@ -68,6 +68,7 @@ export class PlataformaNavegador implements Plataforma {
     if (!r.ok) throw new Error(`não achei jogo/${pasta}/${nome}`);
     return r.text();
   }
+  async salvarLog() { return ''; }
   async salvarDados(pasta: PastaDados, nome: string, conteudo: string) {
     const s = this.dadosSalvos(pasta);
     s[nome] = conteudo;

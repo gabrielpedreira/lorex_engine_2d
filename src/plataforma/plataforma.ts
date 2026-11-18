@@ -67,6 +67,8 @@ export interface Plataforma {
   listarDados(pasta: PastaDados): Promise<string[]>;
   lerDados(pasta: PastaDados, nome: string): Promise<string>;
   salvarDados(pasta: PastaDados, nome: string, conteudo: string): Promise<void>;
+  /** Salva o log de um teste em logs/ (raiz do projeto). Devolve o caminho ('' = não salvou, ex.: navegador). */
+  salvarLog(nome: string, conteudo: string): Promise<string>;
   /** Manda para a Lixeira os arquivos de jogo/assets sem uso em nenhuma fase. Retorna os removidos. */
   limparNaoUsados(emUsoAgora: string[]): Promise<string[]>;
   /** Gera cópia reduzida em jogo/assets (só Electron). null = indisponível. */

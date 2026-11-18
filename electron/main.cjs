@@ -269,6 +269,22 @@ function registrarIpc() {
     return true;
   });
 
+  // Logs dos testes → logs/ na raiz do projeto (não sobe para o GitHub). Guarda os 30 mais recentes
+  // e uma cópia fixa "ultimo_teste.log" (fácil de achar e de mandar para alguém analisar).
+  ipcMain.handle('logs:salvar', async (_e, nome, conteudo) => {
+    if (!raizProjeto) return '';
+    const dir = path.join(raizProjeto, 'logs');
+    await fsp.mkdir(dir, { recursive: true });
+    const arq = path.basename(String(nome)).replace(/[^\w.-]/g, '_');
+    await fsp.writeFile(path.join(dir, arq), conteudo, 'utf-8');
+    await fsp.writeFile(path.join(dir, 'ultimo_teste.log'), conteudo, 'utf-8');
+    try {
+      const antigos = (await fsp.readdir(dir)).filter((n) => /^teste_.*\.log$/.test(n)).sort();
+      for (const n of antigos.slice(0, Math.max(0, antigos.length - 30))) await fsp.unlink(path.join(dir, n));
+    } catch { /* limpeza é opcional */ }
+    return 'logs/' + arq;
+  });
+
   ipcMain.handle('fases:listar', async () => {
     if (!raizProjeto) return [];
     try {

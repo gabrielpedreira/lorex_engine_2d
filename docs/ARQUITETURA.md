@@ -297,6 +297,16 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
 - **REGRA:** todo módulo novo que crie algo programável registra uma fonte no painel (`painelCodigo.registrarFonte`),
   acrescenta seus ganchos em `GANCHOS` e sua API em `tiposApi()`/`motorScripts`. Assim o código acompanha o projeto.
 
+### 4.22 Log (registro único)
+
+- **`core/log.ts`:** `LOG.add({cat, texto, arquivo?, linha?})` com categorias entrada, personagem, mundo, código, erro e
+  sistema (editor). `iniciarTeste()`/`terminarTeste()` marcam o tempo do teste e devolvem o texto completo, que o
+  editor grava via IPC `logs:salvar` em `<projeto>/logs/` (fora do Git). Erros globais (`error`, `unhandledrejection`)
+  e todo `estado.avisar()` também entram. A Saída do painel de Código é um filtro do mesmo registro (código + erros).
+- **`ui/log.ts`:** painel na linha `log` do grid (abaixo do cenário; o canvas se ajusta via ResizeObserver), filtros,
+  busca, altura arrastável, preferências em localStorage; erros com script abrem o painel de Código na linha.
+- **REGRA:** todo módulo novo registra seus eventos no LOG, só quando algo muda (nada a cada quadro).
+
 ### 4.18 Legendas e recarregar por fora
 
 - `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas

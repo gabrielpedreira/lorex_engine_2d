@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('lorex', {
   listarDados: (pasta) => ipcRenderer.invoke('dados:listar', pasta),
   lerDados: (pasta, nome) => ipcRenderer.invoke('dados:ler', pasta, nome),
   salvarDados: (pasta, nome, conteudo) => ipcRenderer.invoke('dados:salvar', pasta, nome, conteudo),
+  salvarLog: (nome, conteudo) => ipcRenderer.invoke('logs:salvar', nome, conteudo),
   limparNaoUsados: (emUsoAgora) => ipcRenderer.invoke('assets:limparNaoUsados', emUsoAgora),
   otimizarAsset: (fonteRaiz, largura, altura) => ipcRenderer.invoke('assets:otimizar', fonteRaiz, largura, altura),
   listarFases: () => ipcRenderer.invoke('fases:listar'),
