@@ -148,13 +148,14 @@ export class PainelLog {
 
   private lerPrefs() {
     try {
-      const p = JSON.parse(localStorage.getItem(PREF) ?? '{}') as { ativas?: CategoriaLog[]; altura?: number };
-      if (Array.isArray(p.ativas)) this.ativas = new Set(p.ativas);
+      const p = JSON.parse(localStorage.getItem(PREF) ?? '{}') as { desligadas?: CategoriaLog[]; altura?: number };
+      // Guarda as DESLIGADAS: categorias novas (de módulos novos) já aparecem ligadas
+      if (Array.isArray(p.desligadas)) this.ativas = new Set(CATEGORIAS.map((c) => c.id).filter((c) => !p.desligadas!.includes(c)));
       if (p.altura) this.altura = p.altura;
     } catch { /* sem preferências */ }
   }
 
   private salvarPrefs() {
-    try { localStorage.setItem(PREF, JSON.stringify({ ativas: [...this.ativas], altura: this.altura, aberto: this.aberto })); } catch { /* sem armazenamento */ }
+    try { localStorage.setItem(PREF, JSON.stringify({ desligadas: CATEGORIAS.map((c) => c.id).filter((c) => !this.ativas.has(c)), altura: this.altura, aberto: this.aberto })); } catch { /* sem armazenamento */ }
   }
 }

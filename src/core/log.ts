@@ -5,11 +5,12 @@
 // REGRA DA ENGINE: todo módulo novo registra os próprios eventos aqui (LOG.add) na categoria certa,
 // só quando algo MUDA (nunca a cada quadro), para o log continuar legível.
 
-export type CategoriaLog = 'entrada' | 'personagem' | 'mundo' | 'codigo' | 'erro' | 'sistema';
+export type CategoriaLog = 'entrada' | 'personagem' | 'inimigo' | 'mundo' | 'codigo' | 'erro' | 'sistema';
 
 export const CATEGORIAS: { id: CategoriaLog; nome: string; texto: string }[] = [
   { id: 'entrada', nome: 'Entrada', texto: 'Teclas apertadas e soltas, e qual ação cada uma disparou (ferramenta Controles).' },
   { id: 'personagem', nome: 'Personagem', texto: 'Mudanças de estado (parado, andando, pulando, caindo…) e animações das ações.' },
+  { id: 'inimigo', nome: 'Inimigos', texto: 'O que cada inimigo faz: perambular, ver/perder o jogador, perseguir, atacar, levar tiro, morrer.' },
   { id: 'mundo', nome: 'Mundo', texto: 'Itens coletados, interações, portas, alavancas, troca de fase, quedas.' },
   { id: 'codigo', nome: 'Código', texto: 'jogo.log() e os ganchos que rodaram (menos aoAtualizar, que roda a cada quadro).' },
   { id: 'erro', nome: 'Erros', texto: 'Erros dos scripts e da engine (imagem que não carregou, falhas inesperadas).' },
@@ -70,7 +71,7 @@ class RegistroLog {
 
 export const LOG = new RegistroLog();
 
-const ROTULO: Record<CategoriaLog, string> = { entrada: 'ENTRADA', personagem: 'PERSON.', mundo: 'MUNDO', codigo: 'CÓDIGO', erro: 'ERRO', sistema: 'EDITOR' };
+const ROTULO: Record<CategoriaLog, string> = { entrada: 'ENTRADA', personagem: 'PERSON.', inimigo: 'INIMIGO', mundo: 'MUNDO', codigo: 'CÓDIGO', erro: 'ERRO', sistema: 'EDITOR' };
 
 export function formatarTempo(l: LinhaLog) {
   if (l.t !== null) return `${l.t.toFixed(2).padStart(7)} s`;

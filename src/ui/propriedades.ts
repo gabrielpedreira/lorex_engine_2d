@@ -1,6 +1,6 @@
 // Painel de propriedades: do objeto selecionado ou, sem seleção, da fase.
 import type { Estado } from '../editor/estado';
-import type { Colisao, ObjetoFase } from '../core/tipos';
+import type { Colisao, InimigoFase, ObjetoFase } from '../core/tipos';
 import { NOMES_FORMA, caixa, reescalar } from '../editor/colisoes';
 import { dica } from './legenda';
 import { EFEITOS_PADRAO, type Efeito, type TipoEfeito } from '../core/efeitos';
@@ -11,6 +11,12 @@ export interface AcoesObjeto {
   duplicar(): void;
   /** Abre o painel de Código no objeto (id) ou na fase (null). */
   abrirCodigo(id: string | null): void;
+  /** Tipos de inimigo disponíveis (personagens NPC). */
+  tiposInimigo(): { arquivo: string; nome: string; vida?: number; script?: string }[];
+  /** Abre o editor de Personagens no tipo do inimigo. */
+  abrirPersonagem(arquivo: string): void;
+  /** Abre o painel de Código no tipo do inimigo colocado (id da colocação). */
+  abrirCodigoInimigo(id: string): void;
   copiar(): void;
   /** Cópia encostada exatamente ao lado (continuação/loop). */
   continuar(lado: 'direita' | 'esquerda' | 'cima' | 'baixo'): void;
@@ -46,8 +52,10 @@ export class PainelPropriedades {
     this.corpo.replaceChildren();
     const o = this.estado.objetoSelecionado();
     const c = this.estado.colisaoSelecionada ? this.estado.colisao(this.estado.colisaoSelecionada) : undefined;
+    const ini = this.estado.inimigoSelecionado ? this.estado.inimigo(this.estado.inimigoSelecionado) : undefined;
     if (o) this.renderObjeto(o);
     else if (c) this.renderColisao(c);
+    else if (ini) this.renderInimigo(ini);
     else this.renderFase();
   }
 
@@ -428,6 +436,33 @@ export class PainelPropriedades {
     sel.value = valor;
     sel.addEventListener('change', () => { this.estado.alterar(() => aplicar(sel.value as 'fase' | 'area')); this.render(true); });
     return el('div', { class: 'campo largo' }, el('label', { for: 'p-tipo-cena' }, 'Tipo'), sel);
+  }
+
+  private renderInimigo(i: InimigoFase) {
+    const tipos = this.acoes.tiposInimigo();
+    const t = tipos.find((x) => x.arquivo === i.personagem);
+    const sel = el('select', { id: 'p-tipoini' }, ...tipos.map((x) => el('option', { value: x.arquivo }, x.nome)),
+      ...(t ? [] : [el('option', { value: i.personagem }, `${i.personagem} (não encontrado)`)]));
+    sel.value = i.personagem;
+    sel.addEventListener('change', () => this.estado.alterar(() => { i.personagem = sel.value; }));
+    const labTipo = el('label', { for: 'p-tipoini' }, 'Tipo');
+    dica(labTipo, 'Tipo do inimigo', 'Personagem NPC que define animações, vida, visão e ataques. Todos os inimigos do mesmo tipo dividem essas configurações e o código.');
+    const olhando = el('input', { type: 'checkbox' });
+    olhando.checked = i.olhandoDireita;
+    olhando.addEventListener('change', () => this.estado.alterar(() => { i.olhandoDireita = olhando.checked; }));
+    const botao = (txt: string, fn: () => void, classe = 'secundario') => { const b = el('button', { type: 'button', class: classe }, txt); b.addEventListener('click', fn); return b; };
+    this.corpo.append(el('div', { class: 'secao' },
+      el('h3', {}, `Inimigo · ${i.id}`),
+      el('div', { class: 'campo largo' }, labTipo, sel),
+      el('div', { class: 'linha2' },
+        this.num('X', i.x, (v) => { i.x = Math.round(v); }),
+        this.num('Y', i.y, (v) => { i.y = Math.round(v); })),
+      el('label', { class: 'check' }, olhando, 'Começa olhando para a direita'),
+      el('span', { class: 'dica-campo' }, t ? `Vida ${t.vida ?? '?'} tiro(s). Posição = pés. Arraste no cenário (gruda no chão; Alt solta).` : 'Tipo não encontrado: crie o personagem NPC em Personagens (K).')),
+      el('div', { class: 'secao acoes' },
+        botao('Editar o tipo…', () => this.acoes.abrirPersonagem(i.personagem)),
+        botao(t?.script ? 'Código do tipo { }' : 'Código do tipo…', () => this.acoes.abrirCodigoInimigo(i.id)),
+        botao('Excluir', () => this.acoes.excluir(), 'perigo')));
   }
 
   private renderFase() {

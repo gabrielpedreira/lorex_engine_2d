@@ -1,6 +1,7 @@
 // Executa os scripts (jogo/scripts/*.js) durante o ▶ Testar: compila, chama os ganchos e oferece a API "jogo".
 // Erros nunca derrubam o teste: vão para a Saída do painel de Código e o gancho que falhou é desligado.
 import type { ObjetoFase } from '../core/tipos';
+import type { InimigoVivo } from './inimigosTeste';
 import { toca, type MundoInterativo } from '../core/comportamentos';
 import { LOG } from '../core/log';
 import { compilarScript, linhaDoErro, type DonoScript, type ScriptCompilado } from '../core/scripts';
@@ -29,6 +30,12 @@ export interface PonteTeste {
   /** O código mudou visibilidade/posição: redesenhar. */
   mudouCena(): void;
   interagir(o: ObjetoFase): void;
+  inimigos(): InimigoVivo[];
+  municao(): number;
+  definirMunicao(n: number): void;
+  pente(): number;
+  recarregar(): void;
+  danoInimigo(ini: InimigoVivo, n: number): void;
 }
 
 interface ScriptAtivo { dono: DonoScript; idDono: string | null; c: ScriptCompilado; desligados: Set<string> }
@@ -39,10 +46,14 @@ export interface FontesScripts {
   fase?: { arquivo: string; codigo: string };
   personagem?: { arquivo: string; codigo: string };
   objetos: { id: string; arquivo: string; codigo: string }[];
+  /** Scripts dos tipos de inimigo: um por inimigo colocado (id da colocação). */
+  inimigos?: { id: string; arquivo: string; codigo: string }[];
 }
 
 export class MotorScripts {
   private scripts: ScriptAtivo[] = [];
+  /** Script rodando agora (para jogo.log saber de onde veio). */
+  private arquivoAtual = '';
   private tempo = 0;
   private timers: { quando: number; fn: () => void; arquivo: string }[] = [];
   private tocando = new Set<string>();
@@ -65,6 +76,7 @@ export class MotorScripts {
       ...(f.fase ? [{ dono: 'fase' as const, id: null, ...f.fase }] : []),
       ...(f.personagem ? [{ dono: 'personagem' as const, id: null, ...f.personagem }] : []),
       ...f.objetos.map((o) => ({ dono: 'objeto' as const, id: o.id, arquivo: o.arquivo, codigo: o.codigo })),
+      ...(f.inimigos ?? []).map((o) => ({ dono: 'inimigo' as const, id: o.id, arquivo: o.arquivo, codigo: o.codigo })),
     ];
     const cache = new Map<string, Promise<ScriptCompilado>>();
     for (const s of lista) {
@@ -144,6 +156,28 @@ export class MotorScripts {
     return ok;
   }
 
+  /** Gancho de um inimigo (aoVer, aoPerder, aoAtacar, aoMorrer…). */
+  inimigo(ini: InimigoVivo, nome: string, ...args: unknown[]): unknown {
+    let r: unknown;
+    for (const s of this.scripts) if (s.dono === 'inimigo' && s.idDono === ini.id) r = this.chamar(s, nome, ...args) ?? r;
+    return r;
+  }
+
+  /** aoLevarDano do inimigo: false = cancelar o dano. */
+  inimigoLevouDano(ini: InimigoVivo, dano: number) { return this.inimigo(ini, 'aoLevarDano', dano) !== false; }
+
+  /** aoAtirar do personagem (alvo = inimigo acertado ou null). */
+  atirou(alvo: InimigoVivo | null) {
+    for (const s of this.scripts) if (s.dono === 'personagem') this.chamar(s, 'aoAtirar', alvo ? this.handleInimigo(alvo) : null);
+  }
+
+  /** aoSerAtingido do personagem: false = ignorar o golpe. */
+  jogadorAtingido(ini: InimigoVivo, ataque: string, dano: number) {
+    let ok = true;
+    for (const s of this.scripts) if (s.dono === 'personagem' && this.chamar(s, 'aoSerAtingido', ataque, this.handleInimigo(ini), dano) === false) ok = false;
+    return ok;
+  }
+
   trocouFase(fase: string) {
     for (const s of this.scripts) if (s.dono === 'jogo') this.chamar(s, 'aoTrocarFase', fase);
   }
@@ -158,11 +192,16 @@ export class MotorScripts {
     const fn = s.c.ganchos[nome];
     if (!fn || s.desligados.has(nome)) return undefined;
     const api = this.apiJogo();
-    const eu = s.dono === 'objeto' && s.idDono ? this.handle(this.objeto(s.idDono)!) : s.dono === 'personagem' ? (api as { jogador: unknown }).jogador : null;
+    const ini = s.dono === 'inimigo' ? this.ponte.inimigos().find((i) => i.id === s.idDono) : undefined;
+    const eu = s.dono === 'objeto' && s.idDono ? this.handle(this.objeto(s.idDono)!) : s.dono === 'personagem' ? (api as { jogador: unknown }).jogador
+      : ini ? this.handleInimigo(ini) : null;
     const todos = s.dono === 'jogo' || s.dono === 'fase' ? [api, ...args] : [eu, api, ...args];
+    const antes = this.arquivoAtual;
+    this.arquivoAtual = s.c.arquivo;
     const r = this.protegido(s.c.arquivo, nome, () => fn(...todos), s);
+    this.arquivoAtual = antes;
     if (nome !== 'aoAtualizar') {
-      const quem = s.dono === 'objeto' && s.idDono ? this.objeto(s.idDono)?.nome ?? s.idDono : s.dono;
+      const quem = s.dono === 'objeto' && s.idDono ? this.objeto(s.idDono)?.nome ?? s.idDono : ini ? `${ini.nome} (${ini.id})` : s.dono;
       const extra = args.length && typeof args[0] === 'string' ? `("${args[0]}")` : '';
       LOG.add({ cat: 'codigo', texto: `${nome}${extra} de ${quem}${r === false ? ' → retornou false (cancelou)' : ''}`, arquivo: s.c.arquivo });
     }
@@ -224,6 +263,39 @@ export class MotorScripts {
     return novo;
   }
 
+  private handlesInimigo = new Map<string, unknown>();
+  /** Inimigo como o código enxerga. */
+  private handleInimigo(ini: InimigoVivo): unknown {
+    const h = this.handlesInimigo.get(ini.id);
+    if (h) return h;
+    const ponte = this.ponte;
+    const novo = {
+      get id() { return ini.id; },
+      get nome() { return ini.nome; },
+      get tipo() { return ini.tipo.arquivo; },
+      get x() { return ini.corpo.x; },
+      set x(v: number) { ini.corpo.x = v; },
+      get y() { return ini.corpo.y; },
+      set y(v: number) { ini.corpo.y = v; },
+      get vida() { return ini.ia.vida; },
+      set vida(v: number) { ini.ia.vida = v; },
+      get vidaMax() { return ini.ia.cfg.vida; },
+      get estado() { return ini.ia.estado; },
+      get vivo() { return ini.vivo; },
+      get olhandoDireita() { return ini.corpo.olhandoDireita; },
+      get dados() { return ini.dados; },
+      get config() { return ini.ia.cfg; },
+      distanciaDoJogador() { const j = ponte.jogador(); return j ? Math.hypot(j.x - ini.corpo.x, j.y - ini.corpo.y) : Infinity; },
+      perseguir() { ini.ia.forcar = 'perseguir'; },
+      parar() { ini.ia.forcar = 'parar'; },
+      liberar() { ini.ia.forcar = null; },
+      dano(n = 1) { ponte.danoInimigo(ini, n); },
+      matar() { ponte.danoInimigo(ini, ini.ia.vida); },
+    };
+    this.handlesInimigo.set(ini.id, novo);
+    return novo;
+  }
+
   private apiJogo(): unknown {
     if (this.api) return this.api;
     const ponte = this.ponte;
@@ -246,6 +318,12 @@ export class MotorScripts {
       teleportar: (x: number, y: number) => ponte.teleportar(x, y),
       empurrar: (vx: number, vy: number) => ponte.empurrar(vx, vy),
       get dados() { return motor.dadosJogador; },
+      arma: {
+        get municao() { return ponte.municao(); },
+        set municao(n: number) { ponte.definirMunicao(n); },
+        get pente() { return ponte.pente(); },
+        recarregar: () => ponte.recarregar(),
+      },
     };
     this.api = {
       jogador,
@@ -275,6 +353,8 @@ export class MotorScripts {
           ?? ponte.objetos().find((x) => x.nome.toLowerCase() === String(nome).toLowerCase());
         return o ? motor.handle(o) : null;
       },
+      inimigos: (contem = '') => ponte.inimigos().filter((i) => `${i.nome} ${i.id} ${i.tipo.arquivo}`.toLowerCase().includes(contem.toLowerCase())).map((i) => motor.handleInimigo(i)),
+      inimigo: (id: string) => { const i = ponte.inimigos().find((x) => x.id === id); return i ? motor.handleInimigo(i) : null; },
       objetos: (contem = '') => ponte.objetos().filter((o) => o.nome.toLowerCase().includes(contem.toLowerCase())).map((o) => motor.handle(o)),
       aviso: (t: string) => ponte.aviso(String(t)),
       mensagem: (t: string) => ponte.mensagem(String(t)),
@@ -282,7 +362,7 @@ export class MotorScripts {
       apertou: (a: string) => ponte.apertou(a),
       segurando: (a: string) => ponte.segurando(a),
       esperar: (seg: number, fn: () => void) => { motor.timers.push({ quando: motor.tempo + Math.max(0, Number(seg) || 0), fn, arquivo: 'esperar' }); },
-      log: (...v: unknown[]) => LOG.add({ cat: 'codigo', arquivo: ponte.arquivoFase, texto: v.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') }),
+      log: (...v: unknown[]) => LOG.add({ cat: 'codigo', arquivo: motor.arquivoAtual || ponte.arquivoFase, texto: v.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') }),
     };
     return this.api;
   }

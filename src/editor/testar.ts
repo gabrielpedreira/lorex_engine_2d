@@ -7,12 +7,21 @@ import { Jogador, JOGADOR_PADRAO, montarSegmentos, type ConfigJogador, type Entr
 import { MundoInterativo, type ResultadoInteracao } from '../core/comportamentos';
 import { MotorScripts, type FontesScripts } from './motorScripts';
 import type { ObjetoFase } from '../core/tipos';
+import { InimigoVivo, raioTiro, type TipoInimigo } from './inimigosTeste';
+import type { AtaqueInimigo, EventoIA } from '../core/inimigos';
+import { normalizarHud, posicaoHud, type ConfigHud } from '../core/hud';
 import { el } from '../ui/dom';
 import { dica } from '../ui/legenda';
 import type { Estado } from './estado';
 import type { Viewport } from './viewport';
 
-const PASSO = 1 / 120; // física em passo fixo (estável em qualquer taxa de quadros)
+const PASSO = 1 / 120;
+
+/** Inimigo ouve o tiro dado em x (se estiver perto o bastante). */
+function ouvir(i: InimigoVivo, x: number): EventoIA[] {
+  i.ia.ouvirTiro(x, i.corpo.x);
+  return []; // o evento "alerta" sai no próximo passo da IA
+} // física em passo fixo (estável em qualquer taxa de quadros)
 
 export class ModoTeste {
   private jogador: Jogador | null = null;
@@ -61,6 +70,25 @@ export class ModoTeste {
   set controles(c: Controles) { this.entradaJogo.controles = c; if (this.ativo) this.montarHud(); }
   get controles() { return this.entradaJogo.controles; }
 
+  // ---------- Inimigos, arma e HUD ----------
+  private tiposInimigo = new Map<string, TipoInimigo>();
+  private inimigos: InimigoVivo[] = [];
+  private municao = 0;
+  private recargaAte = 0;
+  private agarradoAte = 0;
+  private agarradoPor = '';
+  private tempoJogo = 0;
+  private rastro: { x0: number; y0: number; x1: number; y1: number; t: number; acertou: boolean } | null = null;
+  /** Munição levada para a próxima área. */
+  private municaoLevada: number | null = null;
+  /** Elementos do HUD (ferramenta HUD, projeto.json). */
+  hudConfig: ConfigHud = normalizarHud(null);
+  private elHudTela: HTMLElement;
+  private valoresHud = new Map<string, string>();
+
+  /** Tipos de inimigo (personagens NPC) usados na fase, já com as texturas. */
+  definirTiposInimigo(tipos: Map<string, TipoInimigo>) { this.tiposInimigo = tipos; }
+
   /** Código (jogo/scripts). null = sem scripts. */
   private motor: MotorScripts | null = null;
   private elHudJogo: HTMLElement;
@@ -102,8 +130,17 @@ export class ModoTeste {
       irPara: (f: string) => t.tratar({ irPara: f }),
       apertou: (a: string) => t.entradaJogo.apertou(a),
       segurando: (a: string) => t.entradaJogo.segurando(a),
-      hudDefinir: (r: string, v: string) => { t.hudJogo.set(r, v); t.desenharHudJogo(); },
-      hudRemover: (r: string) => { t.hudJogo.delete(r); t.desenharHudJogo(); },
+      hudDefinir: (r: string, v: string) => {
+        if (t.hudConfig.elementos.some((e) => e.chave === r)) { t.valoresHud.set(r, v); return; } // elemento da ferramenta HUD
+        t.hudJogo.set(r, v); t.desenharHudJogo();
+      },
+      hudRemover: (r: string) => { t.valoresHud.delete(r); t.hudJogo.delete(r); t.desenharHudJogo(); },
+      inimigos: () => t.inimigos,
+      municao: () => t.municao,
+      definirMunicao: (n: number) => { const a = t.pers?.dados.arma; if (a) t.municao = Math.max(0, Math.min(a.pente, Math.round(n))); },
+      pente: () => t.pers?.dados.arma?.pente ?? 0,
+      recarregar: () => { const a = t.pers?.dados.arma; if (a) t.tratarArma(a.acaoRecarga); },
+      danoInimigo: (ini: InimigoVivo, n: number) => { ini.atingido(); t.tratarEventosInimigo(ini, ini.ia.levarDano(n, t.jogador?.x ?? ini.corpo.x, { duracao: ini.duracao })); },
       mudouCena: () => { t.cenaMudou = true; },
       interagir: (o: ObjetoFase) => t.interagirCom(o),
     };
@@ -145,6 +182,9 @@ export class ModoTeste {
     this.elToast = el('div', { class: 'teste-toast', role: 'status' });
     this.elMensagem = el('div', { class: 'teste-mensagem', role: 'dialog' });
     this.elHudJogo = el('div', { class: 'teste-hud-jogo' });
+    this.elHudTela = el('div', { class: 'teste-hud-tela' });
+    centro.append(this.elHudTela);
+    this.elHudTela.hidden = true;
     for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem, this.elHudJogo]) { x.hidden = true; centro.append(x); }
     centro.append(this.hud);
   }
@@ -207,6 +247,10 @@ export class ModoTeste {
     for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem, this.elHudJogo]) x.hidden = true;
     this.hudJogo.clear();
     this.viewport.deslocamentoTeste = null;
+    for (const i of this.inimigos) i.remover();
+    this.inimigos = [];
+    this.viewport.ocultarInimigosEditor = false;
+    this.elHudTela.hidden = true;
     this.mensagemAberta = false;
     this.jogador = null;
     this.mundo = null;
@@ -221,9 +265,27 @@ export class ModoTeste {
   /** Itens, portas e alavancas voltam ao estado inicial (o inventário vem da área anterior, se houver). */
   private reiniciarMundo() {
     this.mundo = new MundoInterativo(this.estado.fase);
+    this.tempoJogo = 0;
+    this.agarradoAte = 0;
+    this.recargaAte = 0;
+    for (const i of this.inimigos) i.remover();
+    this.inimigos = [];
+    for (const def of this.estado.fase.inimigos) {
+      const tipo = this.tiposInimigo.get(def.personagem);
+      if (!tipo) { LOG.add({ cat: 'erro', texto: `Inimigo ${def.id}: o personagem ${def.personagem} não existe ou não carregou` }); continue; }
+      this.inimigos.push(new InimigoVivo(def, tipo, this.config.gravidade));
+    }
+    if (this.inimigos.length) LOG.add({ cat: 'inimigo', texto: `${this.inimigos.length} inimigo(s) na fase: ${this.inimigos.map((i) => `${i.nome} (${i.id})`).join(', ')}` });
+    this.viewport.ocultarInimigosEditor = true;
+    const arma = this.pers?.dados.arma;
+    this.municao = arma ? (this.municaoLevada ?? arma.pente) : 0;
+    this.municaoLevada = null;
+    this.inserirGrafico();
     if (this.inventarioLevado) for (const [k, v] of this.inventarioLevado) this.mundo.inventario.set(k, v);
     this.inventarioLevado = null;
     this.hudJogo.clear();
+    this.valoresHud.clear();
+    this.chaveHudTela = '';
     this.desenharHudJogo();
     if (this.motor) {
       this.motor.prepararMundo(this.mundo);
@@ -271,6 +333,7 @@ export class ModoTeste {
     }
     if (r.irPara) {
       this.inventarioLevado = this.mundo ? new Map(this.mundo.inventario) : null;
+      this.municaoLevada = this.pers?.dados.arma ? this.municao : null;
       this.levarCodigo = this.motor ? { variaveis: this.motor.variaveis, jogador: this.motor.dadosJogador } : null;
       const destino = r.irPara;
       setTimeout(() => this.aoIrPara(destino));
@@ -297,8 +360,11 @@ export class ModoTeste {
     const fase = this.estado.fase;
     const camada = fase.camadas.find((c) => c.id === 'objetos') ?? [...fase.camadas].reverse().find((c) => c.parallax[0] === 1) ?? fase.camadas[fase.camadas.length - 1];
     const cont = camada ? this.viewport.conteinerCamada(camada.id) : undefined;
-    if (cont && this.grafico.parent !== cont) cont.addChild(this.grafico);
-    if (cont && this.pers && this.spritePers.parent !== cont) cont.addChild(this.spritePers);
+    if (!cont) return;
+    for (const i of this.inimigos) i.inserir(cont);
+    // Jogador e o rastro do tiro sempre por cima dos inimigos
+    if (this.pers) cont.addChild(this.spritePers);
+    cont.addChild(this.grafico);
   }
 
   private tecla = (ev: KeyboardEvent) => {
@@ -339,12 +405,13 @@ export class ModoTeste {
   private entrada(): Entrada {
     const e = this.entradaJogo;
     const esquerda = e.segurando('esquerda'), direita = e.segurando('direita');
-    const trava = this.pers?.animador.travaMovimento(esquerda !== direita) ?? false;
+    const agarrado = this.tempoJogo < this.agarradoAte;
+    const trava = agarrado || (this.pers?.animador.travaMovimento(esquerda !== direita) ?? false);
     return {
       esquerda: esquerda && !trava,
       direita: direita && !trava,
-      pulo: e.segurando('pular'),
-      puloApertado: this.puloApertado,
+      pulo: !agarrado && e.segurando('pular'),
+      puloApertado: !agarrado && this.puloApertado,
     };
   }
 
@@ -367,16 +434,29 @@ export class ModoTeste {
     if (this.pers) {
       for (const [chave, anim] of extras(this.pers.dados)) {
         if (!ent.apertou(chave)) continue;
+        if (this.tratarArma(chave)) continue;
         if (this.motor && !this.motor.acao(chave)) { LOG.add({ cat: 'personagem', texto: `ação "${chave}" cancelada pelo código (aoAcao)` }); continue; }
         if (this.pers.animador.tocar(chave, anim.repetir)) { this.mostrarAcao(anim.nome ?? chave); LOG.add({ cat: 'personagem', texto: `animação: ${anim.nome ?? chave}` }); }
         else LOG.add({ cat: 'personagem', texto: `ação "${chave}" ignorada: ${this.pers.animador.acaoAtual ? `já tocando "${this.pers.animador.acaoAtual}"` : 'sem animação'}` });
       }
     }
     const [fw, fh] = this.estado.fase.tamanho;
+    const dtQ = Math.min(ms / 1000, 0.1);
+    this.tempoJogo += dtQ;
+    // Recarga termina quando a animação acaba: pente cheio
+    if (this.recargaAte && this.tempoJogo >= this.recargaAte) {
+      this.recargaAte = 0;
+      const arma = this.pers?.dados.arma;
+      if (arma) { this.municao = arma.pente; LOG.add({ cat: 'personagem', texto: `pente cheio: ${this.municao}/${arma.pente}` }); }
+    }
+    // Inimigos: IA (uma vez por quadro)
+    const segsInimigos = m.segmentosPortas().length ? this.segs.concat(m.segmentosPortas()) : this.segs;
+    for (const ini of this.inimigos) this.tratarEventosInimigo(ini, ini.pensar(dtQ, { x: j.x, y: j.y, largura: j.cfg.largura }, segsInimigos));
     this.acumulado = Math.min(this.acumulado + ms / 1000, 0.25);
     while (this.acumulado >= PASSO) {
       const segs = m.segmentosPortas().length ? this.segs.concat(m.segmentosPortas()) : this.segs;
       const vivo = j.passo(PASSO, this.entrada(), segs, fw, fh);
+      for (const ini of this.inimigos) ini.passoFisica(PASSO, segs, fw, fh);
       this.puloApertado = false;
       this.acumulado -= PASSO;
       if (!vivo) {
@@ -406,6 +486,9 @@ export class ModoTeste {
     if (this.cenaMudou) { this.cenaMudou = false; this.aplicarVisibilidade(); this.atualizarInventario(); }
     this.posicionarCamera(false, ms / 1000);
     this.desenharJogador(ms / 1000);
+    for (const ini of this.inimigos) ini.desenhar(dtQ);
+    this.desenharRastro(dtQ);
+    this.atualizarHudTela();
     this.mostrarPrompt(prox);
   }
 
@@ -485,6 +568,173 @@ export class ModoTeste {
     const olhoX = j.olhandoDireita ? x + w - 10 : x + 4;
     g.rect(olhoX, y + 12, 6, 6).fill({ color: 0x083933 });
     g.rect(x, y + h - 3, w, 3).fill({ color: 0x083933, alpha: 0.6 });
+  }
+
+  // ---------- Arma ----------
+
+  /** Tiro e recarga da arma do jogador. true = a ação foi tratada aqui. */
+  private tratarArma(chave: string): boolean {
+    const pers = this.pers;
+    const arma = pers?.dados.arma;
+    if (!pers || !arma || (chave !== arma.acaoTiro && chave !== arma.acaoRecarga)) return false;
+    const animador = pers.animador;
+    if (animador.acaoAtual || this.tempoJogo < this.agarradoAte) {
+      LOG.add({ cat: 'personagem', texto: `"${chave}" ignorada: ${animador.acaoAtual ? `ainda em "${animador.acaoAtual}"` : 'agarrada'}` });
+      return true;
+    }
+    if (this.motor && !this.motor.acao(chave)) { LOG.add({ cat: 'personagem', texto: `ação "${chave}" cancelada pelo código (aoAcao)` }); return true; }
+    if (chave === arma.acaoRecarga) {
+      if (this.municao >= arma.pente) { LOG.add({ cat: 'personagem', texto: 'recarga ignorada: pente cheio' }); return true; }
+      if (animador.tocar(chave)) {
+        this.recargaAte = this.tempoJogo + this.duracaoAnim(chave);
+        this.mostrarAcao(pers.dados.animacoes[chave]?.nome ?? chave);
+        LOG.add({ cat: 'personagem', texto: `recarregando (${this.municao}/${arma.pente})` });
+      }
+      return true;
+    }
+    // Tiro
+    if (this.municao <= 0) {
+      if (animador.tocar(arma.animacaoSemBala)) this.mostrarAcao(pers.dados.animacoes[arma.animacaoSemBala]?.nome ?? arma.animacaoSemBala);
+      LOG.add({ cat: 'personagem', texto: 'clique: pente vazio (recarregue)' });
+      this.toast('Sem munição! Recarregue.');
+      return true;
+    }
+    if (!animador.tocar(chave)) return true;
+    this.municao--;
+    this.mostrarAcao(pers.dados.animacoes[chave]?.nome ?? chave);
+    this.disparar(arma.dano, arma.alcance, arma.alturaTiro);
+    return true;
+  }
+
+  private duracaoAnim(chave: string) {
+    const a = this.pers?.dados.animacoes[chave];
+    return a ? a.quadros / a.fps : 0;
+  }
+
+  /** Tiro instantâneo na direção em que o jogador olha. */
+  private disparar(dano: number, alcance: number, alturaTiro: number) {
+    const j = this.jogador!;
+    const dir = (j.olhandoDireita ? 1 : -1) as -1 | 1;
+    const ox = j.x + dir * (j.cfg.largura / 2);
+    const oy = j.y - j.cfg.altura * alturaTiro;
+    const segs = this.mundo!.segmentosPortas().length ? this.segs.concat(this.mundo!.segmentosPortas()) : this.segs;
+    const { alvo, fimX } = raioTiro(segs, this.inimigos, ox, oy, dir, alcance);
+    this.rastro = { x0: ox, y0: oy, x1: fimX, y1: oy, t: 0.07, acertou: !!alvo };
+    LOG.add({ cat: 'personagem', texto: `tiro ${dir > 0 ? '→' : '←'} (${this.municao}/${this.pers?.dados.arma?.pente}): ${alvo ? `acertou ${alvo.nome} (${alvo.id}) a ${Math.round(Math.abs(fimX - ox))} px` : 'errou'}` });
+    // O barulho do tiro chama a atenção de quem estiver perto
+    for (const i of this.inimigos) if (i !== alvo && i.vivo) this.tratarEventosInimigo(i, ouvir(i, j.x));
+    if (alvo) {
+      if (this.motor && !this.motor.inimigoLevouDano(alvo, dano)) { LOG.add({ cat: 'inimigo', texto: `${alvo.nome}: dano cancelado pelo código (aoLevarDano)` }); this.motor.atirou(alvo); return; }
+      alvo.atingido();
+      this.tratarEventosInimigo(alvo, alvo.ia.levarDano(dano, j.x, { duracao: alvo.duracao }));
+    }
+    this.motor?.atirou(alvo);
+  }
+
+  // ---------- Inimigos ----------
+
+  private tratarEventosInimigo(ini: InimigoVivo, eventos: EventoIA[]) {
+    for (const ev of eventos) {
+      const quem = `${ini.nome} (${ini.id})`;
+      switch (ev.tipo) {
+        case 'estado':
+          LOG.add({ cat: 'inimigo', texto: `${quem}: ${ev.de} → ${ev.para}` });
+          // Levou tiro ou morreu no meio do agarrão: solta o jogador
+          if (ev.de === 'atacar' && this.agarradoPor === ini.id && this.tempoJogo < this.agarradoAte) {
+            this.agarradoAte = 0; this.agarradoPor = '';
+            LOG.add({ cat: 'personagem', texto: `${this.pers?.dados.nome ?? 'Jogador'} se soltou de ${ini.nome}` });
+          }
+          break;
+        case 'viu': LOG.add({ cat: 'inimigo', texto: `${quem} viu o jogador` }); this.motor?.inimigo(ini, 'aoVer'); break;
+        case 'perdeu': LOG.add({ cat: 'inimigo', texto: `${quem} perdeu o jogador de vista` }); this.motor?.inimigo(ini, 'aoPerder'); break;
+        case 'alerta': LOG.add({ cat: 'inimigo', texto: `${quem} foi atraído pelo tiro (vai na direção x=${Math.round(ev.x)})` }); break;
+        case 'atacou':
+          if (this.motor && this.motor.inimigo(ini, 'aoAtacar', ev.ataque.animacao) === false) {
+            LOG.add({ cat: 'inimigo', texto: `${quem}: ataque "${ev.ataque.animacao}" cancelado pelo código` });
+            ini.ia.estado = 'perseguir';
+          } else LOG.add({ cat: 'inimigo', texto: `${quem} ataca: ${ev.ataque.animacao}` });
+          break;
+        case 'errou': LOG.add({ cat: 'inimigo', texto: `${quem}: ${ev.ataque.animacao} errou (jogador saiu do alcance)` }); break;
+        case 'acertou': this.jogadorAtingido(ini, ev.ataque, ev.segurar); break;
+        case 'morreu':
+          LOG.add({ cat: 'inimigo', texto: `${quem} morreu` });
+          this.motor?.inimigo(ini, 'aoMorrer');
+          break;
+      }
+    }
+  }
+
+  /** Um inimigo acertou o jogador (sem barra de vida por enquanto: reação e registro). */
+  private jogadorAtingido(ini: InimigoVivo, ataque: AtaqueInimigo, segurar: number) {
+    const j = this.jogador;
+    if (!j || !this.pers && !j) return;
+    if (this.motor && !this.motor.jogadorAtingido(ini, ataque.animacao, ataque.dano)) {
+      LOG.add({ cat: 'personagem', texto: `golpe de ${ini.nome} ignorado pelo código (aoSerAtingido)` });
+      return;
+    }
+    const nome = this.pers?.dados.nome ?? 'Jogador';
+    if (ataque.agarra && segurar > 0) {
+      this.agarradoAte = this.tempoJogo + segurar;
+      this.agarradoPor = ini.id;
+      j.vx = 0;
+      LOG.add({ cat: 'personagem', texto: `${nome} foi agarrada por ${ini.nome} (${ataque.animacao}, dano ${ataque.dano}, presa por ${segurar.toFixed(1)} s)` });
+    } else {
+      const lado = j.x >= ini.corpo.x ? 1 : -1;
+      j.vx = 140 * lado; j.vy = -140;
+      LOG.add({ cat: 'personagem', texto: `${nome} levou ${ataque.animacao} de ${ini.nome} (dano ${ataque.dano}; sem barra de vida por enquanto)` });
+    }
+    this.pers?.animador.tocar('dano');
+  }
+
+  private desenharRastro(dt: number) {
+    const r = this.rastro;
+    if (!r) return;
+    r.t -= dt;
+    if (r.t <= 0) { this.rastro = null; return; }
+    this.grafico.moveTo(r.x0, r.y0).lineTo(r.x1, r.y1).stroke({ width: 1, color: 0xfff2a8, alpha: 0.85 });
+    this.grafico.circle(r.x0, r.y0, 2.5).fill({ color: 0xffe066, alpha: 0.9 });
+    if (r.acertou) this.grafico.circle(r.x1, r.y1, 3).fill({ color: 0xff5050, alpha: 0.9 });
+  }
+
+  // ---------- HUD (ferramenta HUD) ----------
+
+  /** Valor de uma chave do HUD (munição, inimigos, item:…, ou o que o código definiu). */
+  private valorHud(chave: string): string | null {
+    const arma = this.pers?.dados.arma;
+    if (chave === 'municao') return arma ? `${this.municao}/${arma.pente}` : null;
+    if (chave === 'inimigos') return String(this.inimigos.filter((i) => i.vivo).length);
+    if (chave.startsWith('item:')) return String(this.mundo?.inventario.get(chave.slice(5)) ?? 0);
+    return this.valoresHud.get(chave) ?? null;
+  }
+
+  private chaveHudTela = '';
+  private atualizarHudTela() {
+    const els = this.hudConfig.elementos.filter((e) => e.visivel);
+    if (!els.length) { this.elHudTela.hidden = true; return; }
+    const cj = this.viewport.cameraJogo();
+    const a = this.viewport.camadaParaTela(cj.x, cj.y, '');
+    const z = this.estado.camera.zoom;
+    const valores = els.map((e) => this.valorHud(e.chave));
+    const chave = `${Math.round(a.x)},${Math.round(a.y)},${z},${valores.join('|')},${els.length}`;
+    if (chave === this.chaveHudTela) return;
+    this.chaveHudTela = chave;
+    const [rw, rh] = this.estado.fase.resolucaoBase;
+    Object.assign(this.elHudTela.style, { left: `${a.x}px`, top: `${a.y}px`, width: `${rw * z}px`, height: `${rh * z}px` });
+    this.elHudTela.replaceChildren();
+    els.forEach((e, k) => {
+      const v = valores[k];
+      if (v === null) return;
+      const d = el('div', { class: 'hud-elemento' },
+        e.mostrarRotulo && e.rotulo ? el('span', { class: 'hud-rotulo' }, e.rotulo) : '', el('strong', {}, v));
+      d.style.fontSize = `${e.tamanho * z}px`;
+      d.style.color = e.cor;
+      this.elHudTela.append(d);
+      const w = d.offsetWidth / z, h = d.offsetHeight / z;
+      const p = posicaoHud(e, w, h, rw, rh);
+      d.style.left = `${p.x * z}px`;
+      d.style.top = `${p.y * z}px`;
+    });
+    this.elHudTela.hidden = false;
   }
 
   /** Estado da física mudou (parado → andando…): registra no log. */

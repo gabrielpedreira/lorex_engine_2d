@@ -24,6 +24,8 @@ export interface ConfigProjeto {
   ferramentas?: Ferramenta[];
   /** Personagem animado usado no ▶ Testar (arquivo em jogo/personagens/). Vazio = retângulo provisório. */
   personagemTeste?: string;
+  /** Elementos do HUD (ferramenta HUD). Vazio = padrão (munição). */
+  hud?: import('../core/hud').ConfigHud;
   /** Teclas de cada ação (ferramenta Controles). Vazio = padrão. */
   controles?: import('../core/controles').Controles;
   /** Ajustes do jogador usados no ▶ Testar (tamanho, velocidade, pulo, gravidade). */

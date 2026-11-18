@@ -6,7 +6,7 @@ import type { Camada, Fase, ObjetoFase } from '../core/tipos';
 export type Evento = 'fase' | 'selecao' | 'camera' | 'opcoes' | 'arquivo' | 'mensagem' | 'modo';
 
 /** Ferramenta ativa no cenário. */
-export type Modo = 'selecionar' | 'mao' | 'colisao' | 'inicio';
+export type Modo = 'selecionar' | 'mao' | 'colisao' | 'inicio' | 'inimigo';
 /** Forma desenhada pela ferramenta Colisão. */
 export type FormaNova = 'bloco' | 'rampa-direita' | 'rampa-esquerda' | 'poligono' | 'linha' | 'maoLivre';
 
@@ -21,6 +21,10 @@ export class Estado {
   selecionado: string | null = null;
   /** Colisão selecionada (só no modo Colisão). */
   colisaoSelecionada: string | null = null;
+  /** Inimigo colocado selecionado (ferramenta Inimigos). */
+  inimigoSelecionado: string | null = null;
+  /** Tipo (personagem NPC) que a ferramenta Inimigos coloca ao clicar. */
+  tipoInimigoNovo = '';
   camadaAtiva = 'objetos';
 
   modo: Modo = 'selecionar';
@@ -93,6 +97,7 @@ export class Estado {
     this.fase = JSON.parse(anterior) as Fase;
     if (this.selecionado && !this.objeto(this.selecionado)) this.selecionado = null;
     if (this.colisaoSelecionada && !this.colisao(this.colisaoSelecionada)) this.colisaoSelecionada = null;
+    if (this.inimigoSelecionado && !this.inimigo(this.inimigoSelecionado)) this.inimigoSelecionado = null;
     this.marcarAlterado();
     this.emit('selecao');
     this.avisar(msg);
@@ -105,6 +110,7 @@ export class Estado {
     this.sujo = false;
     this.selecionado = null;
     this.colisaoSelecionada = null;
+    this.inimigoSelecionado = null;
     this.desfazerPilha = [];
     this.refazerPilha = [];
     if (!fase.camadas.some((c) => c.id === this.camadaAtiva)) {
@@ -130,8 +136,19 @@ export class Estado {
   }
 
   selecionar(id: string | null) {
-    if (this.selecionado === id && !this.colisaoSelecionada) return;
+    if (this.selecionado === id && !this.colisaoSelecionada && !this.inimigoSelecionado) return;
     this.selecionado = id;
+    this.colisaoSelecionada = null;
+    this.inimigoSelecionado = null;
+    this.emit('selecao');
+  }
+
+  inimigo(id: string) { return this.fase.inimigos.find((i) => i.id === id); }
+
+  selecionarInimigo(id: string | null) {
+    if (this.inimigoSelecionado === id && !this.selecionado && !this.colisaoSelecionada) return;
+    this.inimigoSelecionado = id;
+    this.selecionado = null;
     this.colisaoSelecionada = null;
     this.emit('selecao');
   }
@@ -144,6 +161,7 @@ export class Estado {
     if (this.colisaoSelecionada === id && !this.selecionado) return;
     this.colisaoSelecionada = id;
     this.selecionado = null;
+    this.inimigoSelecionado = null;
     this.emit('selecao');
   }
 
@@ -152,6 +170,7 @@ export class Estado {
     this.modo = m;
     if (m !== 'colisao') this.colisaoSelecionada = null;
     if (m !== 'selecionar') this.selecionado = null;
+    if (m !== 'selecionar' && m !== 'inimigo') this.inimigoSelecionado = null;
     this.emit('modo');
     this.emit('selecao');
   }

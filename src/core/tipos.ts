@@ -58,6 +58,18 @@ export interface ObjetoFase {
   script: string | null;
 }
 
+/** Um inimigo colocado na fase. O tipo (animações, IA, vida) vem do personagem NPC. */
+export interface InimigoFase {
+  id: string;
+  /** Arquivo do personagem NPC em jogo/personagens/ (ex.: "zumbi.json"). */
+  personagem: string;
+  /** Posição dos pés. */
+  x: number;
+  y: number;
+  /** Começa olhando para a direita? */
+  olhandoDireita: boolean;
+}
+
 export interface Fase {
   versao: number;
   nome: string;
@@ -77,4 +89,6 @@ export interface Fase {
   spawnJogador: [number, number];
   /** Script da fase (arquivo em jogo/scripts/), se houver. */
   script?: string;
+  /** Inimigos colocados na fase (ferramenta Inimigos). */
+  inimigos: InimigoFase[];
 }

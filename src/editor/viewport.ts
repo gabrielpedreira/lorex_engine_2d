@@ -2,7 +2,11 @@
 import 'pixi.js/unsafe-eval';
 import { Application, Assets, BlurFilter, ColorMatrixFilter, Container, Graphics, Sprite, Texture, TextureStyle } from 'pixi.js';
 import { calcularEfeitos, faseDoId, type EfeitoBrilhar, type ResultadoEfeitos } from '../core/efeitos';
-import type { ObjetoFase } from '../core/tipos';
+import type { InimigoFase, ObjetoFase } from '../core/tipos';
+import { ancoraPes } from '../core/personagem';
+import { montarSegmentos, yEm } from '../core/fisica';
+import { novoIdInimigo } from '../core/fase';
+import type { TipoInimigo } from './inimigosTeste';
 import { desenharInicio, sobreInicio } from './colisoes';
 import { FerramentaColisao } from './ferramentaColisao';
 import { urlAsset, type Plataforma } from '../plataforma/plataforma';
@@ -33,7 +37,8 @@ type Arraste =
   | { tipo: 'pan'; sx: number; sy: number; cx: number; cy: number }
   | { tipo: 'mover'; id: string; dx: number; dy: number; mexeu: boolean }
   | { tipo: 'escala'; id: string; mexeu: boolean; canto: Canto; ancoraX: number; ancoraY: number }
-  | { tipo: 'inicio'; mexeu: boolean; dx: number; dy: number };
+  | { tipo: 'inicio'; mexeu: boolean; dx: number; dy: number }
+  | { tipo: 'inimigo'; id: string; mexeu: boolean; dx: number; dy: number };
 
 /** Halo (efeito Brilhar): cópia da imagem em silhueta colorida e borrada, atrás do objeto. */
 interface Halo { sp: Sprite; blur: BlurFilter; chave: string; raio: number }
@@ -93,6 +98,42 @@ export class Viewport {
   visibilidadeTeste: Map<string, boolean> | null = null;
   /** Objetos movidos pelo código durante o ▶ Testar (id → deslocamento). */
   deslocamentoTeste: Map<string, { dx: number; dy: number }> | null = null;
+  /** No ▶ Testar os inimigos de verdade aparecem; os marcadores do editor somem. */
+  ocultarInimigosEditor = false;
+  /** Tipos de inimigo (personagens NPC) para desenhar os inimigos colocados. */
+  private tiposInimigo = new Map<string, TipoInimigo>();
+  private spritesInimigo = new Map<string, Sprite>();
+
+  definirTiposInimigo(t: Map<string, TipoInimigo>) { this.tiposInimigo = t; this.sincronizar(); }
+
+  /** Caixa (mundo) de um inimigo colocado, pelos pés e pela caixa do tipo. */
+  caixaInimigo(i: InimigoFase) {
+    const t = this.tiposInimigo.get(i.personagem);
+    const w = t?.p.caixa.largura ?? 24, h = t?.p.caixa.altura ?? 48;
+    return { x: i.x - w / 2, y: i.y - h, w, h };
+  }
+
+  /** Inimigo colocado sob o ponto da tela. */
+  inimigoEm(sx: number, sy: number): InimigoFase | undefined {
+    const p = this.telaParaCamada(sx, sy, '');
+    for (let k = this.estado.fase.inimigos.length - 1; k >= 0; k--) {
+      const i = this.estado.fase.inimigos[k];
+      const b = this.caixaInimigo(i);
+      if (p.x >= b.x - 4 && p.x <= b.x + b.w + 4 && p.y >= b.y - 4 && p.y <= b.y + b.h + 4) return i;
+    }
+    return undefined;
+  }
+
+  /** Chão logo abaixo de um ponto (para o inimigo nascer pisando). */
+  private chaoAbaixo(x: number, y: number): number | null {
+    let melhor: number | null = null;
+    for (const s of montarSegmentos(this.estado.fase.colisoes)) {
+      if (s.tipo !== 'chao') continue;
+      const yi = yEm(s, x);
+      if (yi !== null && yi >= y - 8 && (melhor === null || yi < melhor)) melhor = yi;
+    }
+    return melhor;
+  }
 
   /** Reconstrói a cena (ex.: depois que algo mudou no jogo de teste). */
   atualizarCena() { this.sincronizar(); }
@@ -363,6 +404,28 @@ export class Viewport {
       cont?.addChild(sp);
     }
     for (const [id, sp] of this.sprites) if (!ids.has(id)) { sp.destroy(); this.sprites.delete(id); }
+
+    // Inimigos colocados (primeiro quadro da animação Parado do tipo)
+    const contInimigos = this.conteineres.get('objetos') ?? this.conteineres.get(fase.camadas[fase.camadas.length - 1]?.id ?? '');
+    const idsIni = new Set<string>();
+    for (const i of fase.inimigos) {
+      idsIni.add(i.id);
+      let sp = this.spritesInimigo.get(i.id);
+      if (!sp) { sp = new Sprite(Texture.EMPTY); this.spritesInimigo.set(i.id, sp); }
+      const t = this.tiposInimigo.get(i.personagem);
+      const frames = t?.quadros.get('parado') ?? (t ? [...t.quadros.values()][0] : undefined);
+      sp.texture = frames?.[0] ?? Texture.EMPTY;
+      if (t) {
+        const anc = ancoraPes(t.p);
+        sp.anchor.set(anc.ax, anc.ay);
+        const esc = t.p.escala * (t.p.animacoes.parado?.escala ?? 1);
+        sp.scale.set(i.olhandoDireita !== t.p.olhaDireita ? -esc : esc, esc);
+      }
+      sp.position.set(i.x, i.y);
+      sp.visible = !this.ocultarInimigosEditor;
+      contInimigos?.addChild(sp);
+    }
+    for (const [id, sp] of this.spritesInimigo) if (!idsIni.has(id)) { sp.destroy(); this.spritesInimigo.delete(id); }
     for (const [id, h] of this.halos) if (!ids.has(id)) { h.sp.destroy(); this.halos.delete(id); }
     this.aposSincronizar?.();
 
@@ -553,7 +616,7 @@ export class Viewport {
       cont.scale.set(zoom);
     }
     const { w, h } = this.tamanhoTela();
-    const chave = `${x},${y},${zoom},${this.estado.fase.objetos.length},${this.estado.fase.objetos.reduce((n, o) => n + (o.tipo === 'interativo' ? o.x + o.y * 7 + o.escala * 13 : 0), 0)},${this.estado.previaParallax},${JSON.stringify(this.estado.fase.camadas)},${this.estado.fase.resolucaoBase},${w},${h},${this.estado.grade},${this.hover},${this.estado.selecionado},${JSON.stringify(this.estado.objetoSelecionado() ?? '')},${this.estado.fase.tamanho},${this.estado.fase.corFundo},${this.estado.modo},${this.estado.mostrarColisoes},${this.estado.colisaoSelecionada},${JSON.stringify(this.estado.fase.colisoes)},${this.ferrColisao.versao},${this.estado.testando},${this.estado.fase.spawnJogador},${JSON.stringify(this.guias)}`;
+    const chave = `${x},${y},${zoom},${this.estado.fase.objetos.length},${this.estado.fase.objetos.reduce((n, o) => n + (o.tipo === 'interativo' ? o.x + o.y * 7 + o.escala * 13 : 0), 0)},${this.estado.previaParallax},${JSON.stringify(this.estado.fase.camadas)},${this.estado.fase.resolucaoBase},${w},${h},${this.estado.grade},${this.hover},${this.estado.selecionado},${JSON.stringify(this.estado.objetoSelecionado() ?? '')},${this.estado.fase.tamanho},${this.estado.fase.corFundo},${this.estado.modo},${this.estado.mostrarColisoes},${this.estado.colisaoSelecionada},${JSON.stringify(this.estado.fase.colisoes)},${this.ferrColisao.versao},${this.estado.testando},${this.estado.fase.spawnJogador},${JSON.stringify(this.guias)},${JSON.stringify(this.estado.fase.inimigos)},${this.estado.inimigoSelecionado},${this.ocultarInimigosEditor}`;
     if (this.carimbo) this.atualizarFantasma();
     if (chave === this.chaveCamera) return;
     this.chaveCamera = chave;
@@ -672,6 +735,19 @@ export class Viewport {
       const r = this.retanguloTela(o);
       const mx = Math.round(r.x), my = Math.round(r.y), t = 4;
       g.poly([mx, my - t, mx + t, my, mx, my + t, mx - t, my]).fill({ color: COR_SELECAO }).stroke({ width: 1, color: 0x083933 });
+    }
+    // Inimigos: marcador vermelho nos pés; selecionado com caixa lima
+    if (!this.ocultarInimigosEditor) for (const i of this.estado.fase.inimigos) {
+      const b = this.caixaInimigo(i);
+      const a1 = this.camadaParaTela(b.x, b.y, ''), z = this.estado.camera.zoom;
+      const sel = this.estado.inimigoSelecionado === i.id;
+      const pe = this.camadaParaTela(i.x, i.y, '');
+      g.poly([pe.x - 5, pe.y + 1, pe.x + 5, pe.y + 1, pe.x, pe.y - 6]).fill({ color: 0xef6461, alpha: 0.9 });
+      if (sel || this.estado.modo === 'inimigo') {
+        g.rect(Math.round(a1.x) + 0.5, Math.round(a1.y) + 0.5, Math.round(b.w * z), Math.round(b.h * z))
+          .stroke({ width: 1, color: sel ? COR_SELECAO : 0xef6461, alpha: sel ? 1 : 0.6 });
+      }
+      if (!this.tiposInimigo.has(i.personagem)) g.rect(a1.x, a1.y, b.w * z, b.h * z).fill({ color: 0xef6461, alpha: 0.25 });
     }
     // Guias do encaixe entre objetos
     for (const gu of this.guias) {
@@ -805,6 +881,21 @@ export class Viewport {
 
   // ---------- Início do jogador (arrastar a bandeira) ----------
 
+  /** Coloca um inimigo do tipo escolhido onde clicou (pisando no chão abaixo, se houver). */
+  private colocarInimigo(sx: number, sy: number) {
+    const tipo = this.estado.tipoInimigoNovo;
+    if (!tipo) { this.estado.avisar('Escolha o tipo de inimigo na barra de cima (crie um personagem NPC em Personagens, K).'); return; }
+    const w = this.telaParaCamada(sx, sy, '');
+    const chao = this.chaoAbaixo(w.x, w.y);
+    const y = Math.round(chao ?? w.y);
+    const id = novoIdInimigo(this.estado.fase);
+    const olhaDireita = w.x < this.estado.fase.spawnJogador[0] ? true : false;
+    this.estado.alterar((f) => { f.inimigos.push({ id, personagem: tipo, x: Math.round(w.x), y, olhandoDireita: olhaDireita }); });
+    this.estado.selecionarInimigo(id);
+    const nome = this.tiposInimigo.get(tipo)?.p.nome ?? tipo;
+    this.estado.avisar(`${nome} colocado (${id})${chao === null ? ' — sem chão abaixo: ele vai cair' : ''}. Clique de novo para colocar outro.`);
+  }
+
   private moverInicio(a: Extract<Arraste, { tipo: 'inicio' }>, sx: number, sy: number) {
     if (!a.mexeu) { this.estado.checkpoint(); a.mexeu = true; }
     const livre = this.telaParaCamada(sx, sy, '');
@@ -844,6 +935,17 @@ export class Viewport {
         if (!e.shiftKey) this.cancelarCarimbo(true); // um clique = um objeto (Shift mantém o carimbo)
         this.aoCarimbar(caminho, p.x, p.y, escala);
         return;
+      }
+      // Inimigos: clicar num inimigo seleciona e arrasta (em Selecionar e em Inimigos); em Inimigos, clicar no vazio coloca um
+      if (this.estado.modo === 'inimigo' || this.estado.modo === 'selecionar') {
+        const ini = this.inimigoEm(p.x, p.y);
+        if (ini) {
+          this.estado.selecionarInimigo(ini.id);
+          const w = this.telaParaCamada(p.x, p.y, '');
+          this.arraste = { tipo: 'inimigo', id: ini.id, mexeu: false, dx: w.x - ini.x, dy: w.y - ini.y };
+          return;
+        }
+        if (this.estado.modo === 'inimigo') { this.colocarInimigo(p.x, p.y); return; }
       }
       if (this.estado.modo === 'inicio') {
         const w = this.mundoEncaixado(p.x, p.y);
@@ -920,6 +1022,15 @@ export class Viewport {
       if (!a) {
         if (this.espacoPressionado || this.estado.modo === 'mao') { cv.style.cursor = 'grab'; this.aoPairar(null, 0, 0); return; }
         if (this.estado.modo === 'inicio') { cv.style.cursor = 'crosshair'; this.aoPairar(null, 0, 0); return; }
+        const iniHover = this.estado.modo === 'inimigo' || this.estado.modo === 'selecionar' ? this.inimigoEm(p.x, p.y) : undefined;
+        if (iniHover) {
+          const t = this.tiposInimigo.get(iniHover.personagem);
+          cv.style.cursor = 'move';
+          this.aoPairar({ titulo: `${t?.p.nome ?? iniHover.personagem} · inimigo (${iniHover.id})`,
+            texto: `${t?.p.inimigo ? `Vida ${t.p.inimigo.vida} · visão ${t.p.inimigo.visao} px. ` : ''}Clique para selecionar, arraste para mover (gruda no chão; Alt solta). Del exclui.` }, e.clientX, e.clientY);
+          return;
+        }
+        if (this.estado.modo === 'inimigo') { cv.style.cursor = 'crosshair'; this.aoPairar(null, 0, 0); return; }
         this.hover = this.objetoEm(p.x, p.y)?.id ?? null;
         if (this.estado.escolhendoAlvo) { cv.style.cursor = this.hover ? 'pointer' : 'crosshair'; this.aoPairar(null, 0, 0); return; }
         const naBandeira = this.sobreMarcadorInicio(p.x, p.y);
@@ -938,6 +1049,20 @@ export class Viewport {
       }
       this.aoPairar(null, 0, 0);
       if (a.tipo === 'inicio') { this.moverInicio(a, p.x, p.y); return; }
+      if (a.tipo === 'inimigo') {
+        const ini = this.estado.inimigo(a.id);
+        if (!ini) return;
+        if (!a.mexeu) { this.estado.checkpoint(); a.mexeu = true; }
+        const w = this.telaParaCamada(p.x, p.y, '');
+        const nx = Math.round(w.x - a.dx);
+        let ny = Math.round(w.y - a.dy);
+        // Gruda no chão perto dos pés (Alt solta)
+        const chao = e.altKey ? null : this.chaoAbaixo(nx, ny - 12);
+        if (chao !== null && Math.abs(chao - ny) < 24) ny = Math.round(chao);
+        ini.x = nx; ini.y = ny;
+        this.estado.marcarAlterado();
+        return;
+      }
       const o = this.estado.objeto(a.id);
       if (!o) return;
       if (!a.mexeu) { this.estado.checkpoint(); a.mexeu = true; }

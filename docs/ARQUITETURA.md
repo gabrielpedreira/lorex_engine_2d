@@ -307,6 +307,26 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   busca, altura arrastável, preferências em localStorage; erros com script abrem o painel de Código na linha.
 - **REGRA:** todo módulo novo registra seus eventos no LOG, só quando algo muda (nada a cada quadro).
 
+### 4.23 Inimigos, arma e HUD
+
+- **Dados:** `Personagem.inimigo` (NPC) = `ConfigInimigo` (comportamento, vida, visão, perderVisao, velocidades,
+  alcanceAtaque **borda a borda**, intervalo, ataques[{animacao, peso, dano, agarra}], alertaTiro, audicaoTiro,
+  momentoDano). `Personagem.arma` (jogador) = `ConfigArma`. `Fase.inimigos[] = {id, personagem, x, y, olhandoDireita}`.
+  `projeto.json.hud = {elementos[]}` (core/hud.ts: âncoras de 9 posições + distância).
+- **IA** (`core/inimigos.ts`, pura): `IAInimigo.passo(dt, ctx)` → decisão (mover, velocidade, olhar) + eventos (estado,
+  viu, perdeu, atacou, acertou{segurar}, errou, alerta, morreu). Estados: perambular (anda/para ao acaso, vira na beirada
+  ou parede), perseguir (desiste além de perderVisao), alerta (vai ao ponto do tiro por alertaTiro s), atacar (dano no
+  momentoDano se ainda no alcance), dano, morto. `sortearAtaque` usa os pesos.
+- **Teste** (`editor/inimigosTeste.ts` + `testar.ts`): corpo com a mesma física (`Jogador`), `podeAndar` (chão à frente,
+  sem parede), `raioTiro` (tiro instantâneo, paredes param), animação por estado (morte para no último quadro), flash
+  vermelho no acerto, rastro do tiro. Golpe empurra o jogador; agarrão prende até o fim (solta se o zumbi levar tiro).
+- **Editor:** modo `inimigo` (N) com barra de tipo; viewport desenha o 1º quadro do Parado, gruda no chão ao arrastar;
+  painel de propriedades do inimigo; ferramenta HUD (`ui/hud.ts`).
+- **Código:** dono `inimigo` (script do TIPO, compartilhado), ganchos aoVer/aoPerder/aoAtacar/aoLevarDano/aoMorrer;
+  personagem ganha aoAtirar/aoSerAtingido; API `jogo.inimigos()/inimigo(id)`, `Inimigo` (vida, estado, perseguir,
+  parar, liberar, dano, matar, dados), `jogador.arma`; autocompletar com ids dos inimigos e chaves do HUD.
+- **Log:** categoria `inimigo`.
+
 ### 4.18 Legendas e recarregar por fora
 
 - `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas

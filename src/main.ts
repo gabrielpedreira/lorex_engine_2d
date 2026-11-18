@@ -15,12 +15,15 @@ import { PainelCamadas } from './ui/camadas';
 import { el, perguntar } from './ui/dom';
 import { Legendas, dica } from './ui/legenda';
 import type { FormaNova } from './editor/estado';
-import { icone, type ICONES } from './ui/icones';
+import { ICONES, icone } from './ui/icones';
 import { PainelPropriedades } from './ui/propriedades';
 import { ModoTeste } from './editor/testar';
 import { EditorPersonagens } from './ui/personagens';
 import { EditorControles } from './ui/controles';
 import { PainelLog } from './ui/log';
+import { carregarTipo, type TipoInimigo } from './editor/inimigosTeste';
+import { EditorHud } from './ui/hud';
+import { normalizarHud } from './core/hud';
 import { LOG, capturarErrosGlobais } from './core/log';
 import { ACOES_SISTEMA, normalizarControles } from './core/controles';
 import { PainelCodigo, type ElementoCodigo } from './ui/codigo/painel';
@@ -81,6 +84,13 @@ const biblioteca = new Biblioteca(conteudoBib, plat);
 
 // ---------- Ações sobre objetos ----------
 function excluirSelecionado() {
+  const idIni = estado.inimigoSelecionado;
+  if (idIni) {
+    estado.alterar((f) => { f.inimigos = f.inimigos.filter((i) => i.id !== idIni); });
+    estado.selecionarInimigo(null);
+    estado.avisar(`Inimigo ${idIni} removido.`);
+    return;
+  }
   const idCol = estado.colisaoSelecionada;
   if (idCol) {
     estado.alterar((f) => { f.colisoes = f.colisoes.filter((c) => c.id !== idCol); });
@@ -177,6 +187,9 @@ function moverSelecionado(dx: number, dy: number) {
 new PainelPropriedades(painelProps, estado, {
   duplicar: duplicarSelecionado,
   abrirCodigo: (id) => void abrirCodigo(id ? 'obj:' + id : 'fase'),
+  tiposInimigo: () => [...tiposInimigo].map(([arquivo, t]) => ({ arquivo, nome: t.p.nome, vida: t.p.inimigo?.vida, script: t.p.script })),
+  abrirPersonagem: (arquivo) => void abrirPersonagens(arquivo),
+  abrirCodigoInimigo: (id) => void abrirCodigo('ini:' + id),
   copiar: () => copiarSelecionado(),
   continuar,
   excluir: excluirSelecionado,
@@ -461,6 +474,11 @@ teste.aoMudarEstado = () => {
   app.classList.toggle('testando', estado.testando);
   botaoTestar.classList.toggle('ligado', estado.testando);
   botaoTestar.querySelector('span:last-child')!.textContent = estado.testando ? 'Parar' : 'Testar';
+  // Durante o teste o botão vira "parar" (quadrado), no topo e na barra lateral
+  const ico = ICONES[estado.testando ? 'parar' : 'play'];
+  botaoTestar.querySelector('.ico')!.innerHTML = ico;
+  const noTrilho = document.querySelector<HTMLElement>('.trilho-ferramentas [data-id="testar"] .ico');
+  if (noTrilho) noTrilho.innerHTML = ico;
   atualizarModos();
   if (!estado.testando) viewport.app.canvas.focus();
 };
@@ -472,6 +490,8 @@ teste.aoIrPara = async (destino) => {
   teste.config = { ...JOGADOR_PADRAO, ...(config.jogador ?? {}) };
   teste.controles = normalizarControles(config.controles);
   await prepararPersonagemTeste();
+  await carregarTiposInimigo();
+  teste.hudConfig = normalizarHud(config.hud);
   await teste.prepararScripts(await fontesScripts());
   teste.levarInventario(inv);
   teste.iniciar();
@@ -485,6 +505,8 @@ async function alternarTeste() {
   teste.config = { ...JOGADOR_PADRAO, ...(config.jogador ?? {}) };
   teste.controles = normalizarControles(config.controles);
   await prepararPersonagemTeste();
+  await carregarTiposInimigo();
+  teste.hudConfig = normalizarHud(config.hud);
   await teste.prepararScripts(await fontesScripts());
   teste.iniciar();
 }
@@ -502,7 +524,13 @@ async function fontesScripts(): Promise<FontesScripts> {
     if (f) objetos.push({ id: o.id, ...f });
     else if (o.script) estado.avisar(`O script ${o.script} de ${o.nome} não existe mais.`);
   }
-  return { jogo: await ler('jogo.js'), fase: await ler(estado.fase.script), personagem: await ler(personagemDoTeste?.script), objetos };
+  // Inimigos: cada inimigo colocado usa o script do seu tipo (personagem NPC)
+  const inimigos: NonNullable<FontesScripts['inimigos']> = [];
+  for (const i of estado.fase.inimigos) {
+    const f = await ler(tiposInimigo.get(i.personagem)?.p.script);
+    if (f) inimigos.push({ id: i.id, ...f });
+  }
+  return { jogo: await ler('jogo.js'), fase: await ler(estado.fase.script), personagem: await ler(personagemDoTeste?.script), objetos, inimigos };
 }
 
 // ---------- Código (painel estilo VS Code) ----------
@@ -541,6 +569,21 @@ painelCodigo.registrarFonte(async () => {
       ligar: async (a) => { estado.alterar(() => { o.script = a; }); return !!(await garantirFaseSalva()); },
     });
   }
+  // Inimigos colocados: o código é do TIPO (personagem NPC), compartilhado por todos daquele tipo
+  for (const i of f.inimigos) {
+    const t = tiposInimigo.get(i.personagem);
+    lista.push({
+      chave: 'ini:' + i.id, grupo, nome: `${t?.p.nome ?? i.personagem} (${i.id})`, detalhe: `inimigo · código do tipo ${i.personagem}`,
+      dono: 'inimigo', arquivo: t?.p.script ?? null, arquivoNovo: arquivoScript.inimigo(i.personagem),
+      ligar: async (a) => {
+        const atual = normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', i.personagem)));
+        atual.script = a;
+        await plat.salvarDados('personagens', i.personagem, JSON.stringify(atual, null, 2));
+        await carregarTiposInimigo();
+        return true;
+      },
+    });
+  }
   return lista;
 });
 // Fonte 3: personagens (jogador e NPCs)
@@ -550,7 +593,7 @@ painelCodigo.registrarFonte(async () => {
     try {
       const p = normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', arq)));
       lista.push({
-        chave: 'pers:' + arq, grupo: 'Personagens', nome: p.nome, detalhe: p.tipo === 'npc' ? 'NPC' : 'Jogador', dono: 'personagem',
+        chave: 'pers:' + arq, grupo: 'Personagens', nome: p.nome, detalhe: p.tipo === 'npc' ? (p.inimigo ? 'NPC · inimigo' : 'NPC') : 'Jogador', dono: p.tipo === 'npc' ? 'inimigo' : 'personagem',
         arquivo: p.script ?? null, arquivoNovo: arquivoScript.personagem(arq),
         ligar: async (a) => {
           const atual = normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', arq)));
@@ -584,7 +627,9 @@ painelCodigo.tipos = async () => {
   return tiposApi({
     objetos: f.objetos.map((o) => o.nome),
     acoes: [...ACOES_SISTEMA.map((a) => a.id), ...Object.keys(normalizarControles(config.controles).acoes)],
-    animacoes: pers ? Object.keys(pers.animacoes) : [],
+    animacoes: [...new Set([...(pers ? Object.keys(pers.animacoes) : []), ...[...tiposInimigo.values()].flatMap((t) => Object.keys(t.p.animacoes))])],
+    inimigos: f.inimigos.map((i) => i.id),
+    hud: normalizarHud(config.hud).elementos.map((e) => e.chave),
     fases: await plat.listarFases(),
     itens,
   });
@@ -594,6 +639,25 @@ async function abrirCodigo(foco?: string) {
   if (editorPersonagens.aberta) await editorPersonagens.fechar();
   if (editorControles.aberta) editorControles.fechar();
   await painelCodigo.abrir(foco);
+}
+
+// ---------- Tipos de inimigo (personagens NPC) ----------
+let tiposInimigo = new Map<string, TipoInimigo>();
+/** Lê os personagens NPC (com IA de inimigo) e carrega as texturas: o editor desenha e o ▶ Testar usa. */
+async function carregarTiposInimigo() {
+  const novo = new Map<string, TipoInimigo>();
+  for (const arq of await plat.listarDados('personagens')) {
+    try {
+      const p = normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', arq)));
+      if (p.tipo !== 'npc' || !p.animacoes.parado) continue;
+      novo.set(arq, await carregarTipo(arq, p, (folha) => viewport.textura(folha)));
+    } catch (err) { LOG.add({ cat: 'erro', texto: `Não consegui carregar o inimigo ${arq}: ${String(err)}` }); }
+  }
+  tiposInimigo = novo;
+  viewport.definirTiposInimigo(novo);
+  teste.definirTiposInimigo(novo);
+  if (!novo.has(estado.tipoInimigoNovo)) estado.tipoInimigoNovo = [...novo.keys()][0] ?? '';
+  atualizarBarraInimigos();
 }
 
 /** Lê o personagem do ▶ Testar (null = retângulo provisório). */
@@ -616,13 +680,14 @@ async function prepararPersonagemTeste() {
 const editorPersonagens = new EditorPersonagens(plat);
 editorPersonagens.aoAvisar = (m) => estado.avisar(m);
 editorPersonagens.aoDefinirTeste = (arquivo) => { config.personagemTeste = arquivo; salvarConfigDepois(); };
-async function abrirPersonagens() {
+async function abrirPersonagens(arquivo?: string) {
   if (estado.testando) teste.parar();
   if (editorControles.aberta) editorControles.fechar();
   editorPersonagens.controles = normalizarControles(config.controles);
-  await editorPersonagens.abrir(biblioteca.caminhos, config.personagemTeste ?? '');
+  await editorPersonagens.abrir(biblioteca.caminhos, config.personagemTeste ?? '', arquivo);
 }
 editorPersonagens.aoAbrirControles = () => void abrirControles();
+editorPersonagens.aoSalvo = () => void carregarTiposInimigo();
 editorPersonagens.aoAbrirCodigo = (arquivo) => void abrirCodigo('pers:' + arquivo);
 // Renomear uma animação extra leva junto as teclas dela
 editorPersonagens.aoRenomearAcao = (antiga, nova) => {
@@ -633,6 +698,14 @@ editorPersonagens.aoRenomearAcao = (antiga, nova) => {
   config.controles = c;
   salvarConfigDepois();
 };
+
+// ---------- HUD ----------
+const editorHud = new EditorHud();
+editorHud.aoMudar = (h: import('./core/hud').ConfigHud) => { config.hud = h; salvarConfigDepois(); };
+async function abrirHud() {
+  if (estado.testando) teste.parar();
+  editorHud.abrir(normalizarHud(config.hud), estado.fase.resolucaoBase, estado.fase.objetos.flatMap((o) => { const c = comportamentoDe(o); return c?.tipo === 'coletavel' ? [c.item] : []; }));
+}
 
 // ---------- Controles ----------
 const editorControles = new EditorControles();
@@ -661,7 +734,7 @@ async function atualizarListaFases() {
 
 // ---------- Barra de ferramentas lateral (estilo Photoshop) ----------
 const trilhoFerr = el('nav', { class: 'trilho-ferramentas', 'aria-label': 'Ferramentas' });
-type ItemTrilho = { id: string; ico: keyof typeof ICONES; titulo: string; texto: string; atalho: string; acao: () => void; modo?: 'selecionar' | 'mao' | 'colisao' | 'inicio' };
+type ItemTrilho = { id: string; ico: keyof typeof ICONES; titulo: string; texto: string; atalho: string; acao: () => void; modo?: 'selecionar' | 'mao' | 'colisao' | 'inicio' | 'inimigo' };
 const itensTrilho: (ItemTrilho | 'sep')[] = [
   { id: 'selecionar', modo: 'selecionar', ico: 'cursor', titulo: 'Selecionar e mover', atalho: 'V', acao: () => estado.definirModo('selecionar'),
     texto: 'Clique num objeto para selecionar, arraste para mover, use as alças dos cantos para mudar o tamanho. A bandeira verde (início do jogador) também se arrasta.' },
@@ -674,8 +747,12 @@ const itensTrilho: (ItemTrilho | 'sep')[] = [
     texto: 'Desenha onde o jogador pisa e esbarra. Ao escolher, aparece uma barra no topo do cenário com as formas (bloco, rampas, polígono, linha, mão livre) e o tipo (sólido ou atravessável).' },
   { id: 'inicio', modo: 'inicio', ico: 'bandeira', titulo: 'Início do jogador', atalho: 'I', acao: () => estado.definirModo('inicio'),
     texto: 'Clique no cenário onde ficam os pés da personagem quando a fase começa. A bandeira verde marca esse lugar.' },
+  { id: 'inimigos', modo: 'inimigo', ico: 'inimigo', titulo: 'Inimigos', atalho: 'N', acao: () => estado.definirModo(estado.modo === 'inimigo' ? 'selecionar' : 'inimigo'),
+    texto: 'Coloca inimigos na fase: escolha o tipo na barra de cima (ex.: Zumbi) e clique no cenário (ele pisa no chão abaixo). Clique num inimigo para selecionar e arraste para mover; Del exclui.' },
   { id: 'personagens', ico: 'personagem', titulo: 'Personagens', atalho: 'K', acao: () => void abrirPersonagens(),
     texto: 'Monta personagens animados a partir dos spritesheets (parado, andando, pulando, caindo…), marca os pés e a caixa de colisão, e escolhe quem é o jogador no ▶ Testar.' },
+  { id: 'hud', ico: 'hud', titulo: 'HUD', atalho: 'U', acao: () => void abrirHud(),
+    texto: 'Edita o que aparece na tela durante o jogo: munição, inimigos vivos, itens, valores do código. Arraste os elementos na prévia da tela.' },
   { id: 'codigo', ico: 'codigo', titulo: 'Código', atalho: 'O', acao: () => void abrirCodigo(),
     texto: 'Painel de código estilo VS Code: à esquerda o jogo, a fase, cada objeto e cada personagem; à direita o editor. Programe o que os comportamentos prontos não cobrem.' },
   { id: 'controles', ico: 'controle', titulo: 'Controles', atalho: 'B', acao: () => void abrirControles(),
@@ -703,6 +780,8 @@ function atualizarModos() {
     b.setAttribute('aria-pressed', String(ativo));
   });
   barraColisao.hidden = estado.modo !== 'colisao' || estado.testando;
+  barraInimigos.hidden = estado.modo !== 'inimigo' || estado.testando;
+  if (estado.modo === 'inimigo') atualizarBarraInimigos();
   if (estado.modo !== 'colisao') viewport.ferrColisao.cancelar();
 }
 
@@ -750,7 +829,29 @@ const barraColisao = el('div', { class: 'barra-flutuante' }, segFormas, el('div'
 barraColisao.hidden = true;
 centro.append(barraColisao);
 atualizarOpcoesColisao();
+// ---------- Barra da ferramenta Inimigos ----------
+const seletorInimigo = el('select', { 'aria-label': 'Tipo de inimigo' });
+seletorInimigo.addEventListener('change', () => { estado.tipoInimigoNovo = seletorInimigo.value; });
+dica(seletorInimigo, 'Tipo de inimigo', 'O que será colocado ao clicar no cenário. Os tipos são personagens NPC (Personagens, K) com a seção Inimigo preenchida.');
+const novoTipoInimigo = el('button', { type: 'button', class: 'secundario' }, 'Editar tipos…');
+dica(novoTipoInimigo, 'Editar tipos de inimigo', 'Abre Personagens: animações, vida, visão, velocidades e ataques de cada inimigo.', 'K');
+novoTipoInimigo.addEventListener('click', () => void abrirPersonagens(estado.tipoInimigoNovo || undefined));
+const dicaInimigos = el('span', { class: 'dica-barra' }, 'Clique para colocar · arraste para mover · Del exclui');
+const barraInimigos = el('div', { class: 'barra-flutuante' }, el('strong', { class: 'rotulo-barra' }, 'Inimigo:'), seletorInimigo, novoTipoInimigo, el('div', { class: 'sep-v' }), dicaInimigos);
+barraInimigos.hidden = true;
+centro.append(barraInimigos);
+function atualizarBarraInimigos() {
+  seletorInimigo.replaceChildren(...(tiposInimigo.size
+    ? [...tiposInimigo].map(([arq, t]) => el('option', { value: arq }, `${t.p.nome} (${arq})`))
+    : [el('option', { value: '' }, 'Nenhum NPC: crie em Personagens (K)')]));
+  seletorInimigo.value = estado.tipoInimigoNovo;
+}
+
 estado.on('modo', () => {
+  if (estado.modo === 'inimigo') {
+    estado.avisar(tiposInimigo.size ? 'Inimigos: escolha o tipo na barra de cima e clique no cenário para colocar.' : 'Inimigos: ainda não há personagem NPC. Crie um em Personagens (K), tipo NPC.');
+    void carregarTiposInimigo();
+  }
   atualizarModos();
   if (estado.modo === 'colisao') estado.avisar('Colisão: escolha a forma e o tipo na barra do topo e desenhe no cenário. Clique numa forma pronta para editar.');
   if (estado.modo === 'inicio') estado.avisar('Início do jogador: clique onde ficam os pés da personagem ao começar.');
@@ -825,7 +926,7 @@ function digitando(): boolean {
 }
 
 window.addEventListener('keydown', (e) => {
-  if (document.querySelector('.modal-fundo') || inicio.aberta || editorPersonagens.aberta || editorControles.aberta || painelCodigo.aberta) return;
+  if (document.querySelector('.modal-fundo') || inicio.aberta || editorPersonagens.aberta || editorControles.aberta || painelCodigo.aberta || editorHud.aberta) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (ctrl && k === 's') { e.preventDefault(); void salvar(); return; }
@@ -874,6 +975,8 @@ window.addEventListener('keydown', (e) => {
       else if (k === 'k') void abrirPersonagens();
       else if (k === 'b') void abrirControles();
       else if (k === 'o') void abrirCodigo();
+      else if (k === 'n') estado.definirModo(estado.modo === 'inimigo' ? 'selecionar' : 'inimigo');
+      else if (k === 'u') void abrirHud();
       else if (k === 'l') painelLog.alternar();
       else if (k === 'x' && estado.modo === 'colisao') { estado.comportamentoNovo = estado.comportamentoNovo === 'solido' ? 'atravessavel' : 'solido'; atualizarOpcoesColisao(); }
       else if (k === 'c' && e.shiftKey) { estado.mostrarColisoes = !estado.mostrarColisoes; estado.emit('opcoes'); sincronizarAlternadores(); }
@@ -905,7 +1008,7 @@ plat.aoMudarProjeto(async (m) => {
     recarregandoBib = window.setTimeout(async () => { await biblioteca.recarregar(); ferramentas.definir(ferramentasAtuais, biblioteca.caminhos); }, 300);
     return;
   }
-  if (m.tipo === 'personagem') { await editorPersonagens.mudouPorFora(m.nome); if (painelCodigo.aberta) await painelCodigo.atualizarElementos(); return; }
+  if (m.tipo === 'personagem') { await editorPersonagens.mudouPorFora(m.nome); await carregarTiposInimigo(); if (painelCodigo.aberta) await painelCodigo.atualizarElementos(); return; }
   if (m.tipo === 'script') { await painelCodigo.mudouPorFora(m.nome); return; }
   if (m.tipo === 'config') {
     config = { ...CONFIG_PADRAO, ...((await plat.lerConfigProjeto()) ?? {}) };
@@ -946,6 +1049,7 @@ async function carregarProjeto(nome: string) {
   ferramentasAtuais = config.ferramentas ?? [];
   viewport.cancelarCarimbo();
   ferramentas.definir(ferramentasAtuais, biblioteca.caminhos);
+  void carregarTiposInimigo();
 }
 
 async function iniciar() {

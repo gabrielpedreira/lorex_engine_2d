@@ -94,6 +94,14 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
     eu.abrir();
   }
   ```
+- **Inimigos** (`N`): coloque inimigos na fase (escolha o tipo, clique no cenário; ele pisa no chão abaixo), arraste
+  e exclua. Os tipos são personagens **NPC** com a seção **Inimigo**: comportamento (ex.: **Zumbi** — perambula ao
+  acaso, visão curta, persegue e desiste quando o jogador se afasta, ataques sorteados por peso como golpe 60% e
+  mordida 40%, "agarra" segura o jogador, tiros e barulho de tiro chamam a atenção), vida, visão, velocidades, alcance.
+- **Arma do jogador** (Personagens → Arma): pente, dano, alcance, ações de tiro e recarga e animação "sem bala";
+  tiro instantâneo (paredes param), recarga enche o pente ao fim da animação.
+- **HUD** (`U`): elementos de texto presos a cantos/bordas da tela do jogo (munição, inimigos vivos, `item:<nome>` ou
+  chaves do código via `jogo.hud.definir`), com prévia arrastável.
 - **Log** (`L`, ou o botão "Log" na barra de status): painel embaixo do cenário que registra, com o tempo do teste,
   as **teclas** (apertada/solta e a ação disparada), o **personagem** (estado parado/andando/pulando/caindo, animações,
   ações canceladas pelo código), o **mundo** (coletas, interações, alavancas, saídas, quedas), o **código** (ganchos que
@@ -136,7 +144,7 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 | Forma de colisão | `1` bloco · `2` rampa ◢ · `3` rampa ◣ · `4` polígono · `5` linha · `6` mão livre |
 | Sólido ↔ atravessável (modo Colisão) | `X` |
 | Polígono/linha: terminar · desfazer ponto · cancelar | `Enter` ou duplo clique · `Backspace` · `Esc` |
-| Personagens / Controles / Código / Log | `K` / `B` / `O` / `L` |
+| Personagens / Inimigos / HUD / Controles / Código / Log | `K` / `N` / `U` / `B` / `O` / `L` |
 | ▶ Testar / voltar | `F5` / `Esc` (no teste: teclas da ferramenta Controles; `F6` reinicia) |
 | Mostrar colisões / prévia de efeitos | `Shift+C` / `Shift+E` |
 | Mostrar/ocultar caixa de ferramentas | `T` |

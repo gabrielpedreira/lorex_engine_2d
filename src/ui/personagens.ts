@@ -5,6 +5,7 @@ import {
   personagemNovo, quadroEm, retanguloQuadro, type Animacao, type Personagem,
 } from '../core/personagem';
 import { controlesPadrao, textoAtalho, type Controles } from '../core/controles';
+import { COMPORTAMENTOS_INIMIGO, armaPadrao, inimigoPadrao } from '../core/inimigos';
 import { nomeArquivoFase, nomeDoArquivo } from '../core/fase';
 import type { Plataforma } from '../plataforma/plataforma';
 import { urlAsset } from '../plataforma/plataforma';
@@ -80,6 +81,8 @@ export class EditorPersonagens {
   aoAvisar: (msg: string) => void = () => {};
   /** O personagem usado no ▶ Testar mudou. */
   aoDefinirTeste: (arquivo: string) => void = () => {};
+  /** Salvou um personagem (o editor recarrega os tipos de inimigo). */
+  aoSalvo: () => void = () => {};
   /** Abrir a ferramenta Controles (para dar teclas às ações). */
   aoAbrirControles: () => void = () => {};
   /** Abrir o painel de Código neste personagem (arquivo do personagem). */
@@ -114,12 +117,13 @@ export class EditorPersonagens {
 
   get aberta() { return !this.raiz.hidden; }
 
-  async abrir(assets: string[], personagemTeste: string) {
+  async abrir(assets: string[], personagemTeste: string, arquivo?: string) {
     this.assets = assets;
     this.personagemTeste = personagemTeste;
     this.raiz.hidden = false;
     const lista = await this.plat.listarDados('personagens');
-    if (!this.arquivo && lista.length) await this.carregar(personagemTeste && lista.includes(personagemTeste) ? personagemTeste : lista[0]);
+    if (arquivo && lista.includes(arquivo) && arquivo !== this.arquivo && !this.sujo) await this.carregar(arquivo);
+    else if (!this.arquivo && lista.length) await this.carregar(personagemTeste && lista.includes(personagemTeste) ? personagemTeste : lista[0]);
     else await this.render();
     this.animar();
   }
@@ -185,6 +189,7 @@ export class EditorPersonagens {
     await this.plat.salvarDados('personagens', this.arquivo, JSON.stringify(this.p, null, 2));
     this.sujo = false;
     this.aoAvisar(`Personagem salvo em jogo/personagens/${this.arquivo}`);
+    this.aoSalvo();
     if (!this.personagemTeste) this.usarNoTeste();
     await this.render();
     return true;
@@ -405,7 +410,11 @@ export class EditorPersonagens {
     detectar.addEventListener('click', () => void this.detectar());
     const tipo = el('select', { id: 'pp-tipo' }, ...TIPOS_PERSONAGEM.map((t) => el('option', { value: t.id }, t.nome)));
     tipo.value = this.p.tipo;
-    tipo.addEventListener('change', () => { this.p.tipo = tipo.value === 'npc' ? 'npc' : 'jogador'; this.mudou(); });
+    tipo.addEventListener('change', () => {
+      this.p.tipo = tipo.value === 'npc' ? 'npc' : 'jogador';
+      if (this.p.tipo === 'npc') delete this.p.arma; else delete this.p.inimigo;
+      this.mudou();
+    });
     const labTipo = el('label', { for: 'pp-tipo' }, 'Tipo');
     dica(labTipo, 'Tipo', TIPOS_PERSONAGEM.map((t) => `${t.nome}: ${t.texto}`).join(' '));
     col.append(
@@ -423,7 +432,103 @@ export class EditorPersonagens {
         this.num('Caixa largura', this.p.caixa.largura, (v) => { this.p.caixa.largura = Math.max(2, Math.round(v)); }, 'Largura do corpo para colisão (mais estreita que o desenho fica mais natural).', 1, 2),
         this.num('Caixa altura', this.p.caixa.altura, (v) => { this.p.caixa.altura = Math.max(2, Math.round(v)); }, 'Altura do corpo para colisão.', 1, 2)),
       detectar);
+    col.append(...(this.p.tipo === 'npc' ? this.secaoInimigo() : this.secaoArma()));
     return col;
+  }
+
+  /** Jogador: arma (munição, tiro, recarga). */
+  private secaoArma(): HTMLElement[] {
+    const titulo = el('h3', {}, 'Arma');
+    dica(titulo, 'Arma', 'Tiro com munição: cada tiro gasta uma bala do pente; sem bala, toca a animação "sem bala"; a recarga enche o pente quando a animação termina. A munição aparece no HUD (chave "municao").');
+    if (!this.p.arma) {
+      const ativar = el('button', { type: 'button', class: 'secundario largo' }, 'Dar uma arma a este personagem');
+      ativar.addEventListener('click', () => { this.p.arma = armaPadrao(); this.mudou(); });
+      return [titulo, ativar];
+    }
+    const a = this.p.arma;
+    const opcoes = ['', ...extras(this.p).map(([k]) => k)];
+    const sel = (rotulo: string, valor: string, aplicar: (v: string) => void, texto: string) => {
+      const id = 'pa-' + rotulo.replace(/\W+/g, '');
+      const s = el('select', { id }, ...opcoes.map((k) => el('option', { value: k }, k ? (this.p.animacoes[k]?.nome ?? k) : '(nenhuma)')));
+      s.value = valor;
+      s.addEventListener('change', () => { aplicar(s.value); this.mudou(); });
+      const lab = el('label', { for: id }, rotulo);
+      dica(lab, rotulo, texto);
+      return el('div', { class: 'campo largo' }, lab, s);
+    };
+    const remover = el('button', { type: 'button', class: 'perigo' }, 'Tirar a arma');
+    remover.addEventListener('click', () => { delete this.p.arma; this.mudou(); });
+    return [titulo,
+      el('div', { class: 'linha2' },
+        sel('Tiro', a.acaoTiro, (v) => { a.acaoTiro = v; }, 'Ação (animação extra) que atira.'),
+        sel('Recarga', a.acaoRecarga, (v) => { a.acaoRecarga = v; }, 'Ação que recarrega; o pente enche quando a animação termina.')),
+      sel('Sem bala', a.animacaoSemBala, (v) => { a.animacaoSemBala = v; }, 'Animação tocada ao tentar atirar com o pente vazio.'),
+      el('div', { class: 'linha2' },
+        this.num('Balas no pente', a.pente, (v) => { a.pente = Math.max(1, Math.round(v)); }, 'Quantos tiros antes de recarregar.', 1, 1),
+        this.num('Dano', a.dano, (v) => { a.dano = v; }, 'Dano por tiro (um zumbi de vida 3 morre com 3 tiros de dano 1).', 1, 0)),
+      el('div', { class: 'linha2' },
+        this.num('Alcance (px)', a.alcance, (v) => { a.alcance = v; }, 'Até onde o tiro chega (paredes param o tiro).', 10, 10),
+        this.num('Altura do tiro', a.alturaTiro, (v) => { a.alturaTiro = Math.min(1, v); }, 'Fração da altura do corpo, a partir dos pés (0,6 ≈ peito).', 0.05, 0)),
+      el('div', { class: 'secao acoes' }, remover)];
+  }
+
+  /** NPC: inimigo (IA, vida, ataques). */
+  private secaoInimigo(): HTMLElement[] {
+    const titulo = el('h3', {}, 'Inimigo');
+    dica(titulo, 'Inimigo', 'Comportamento de inimigo para este NPC. Coloque-o nas fases com a ferramenta Inimigos (N).');
+    if (!this.p.inimigo) {
+      const ativar = el('button', { type: 'button', class: 'secundario largo' }, 'Tornar este NPC um inimigo');
+      ativar.addEventListener('click', () => { this.p.inimigo = inimigoPadrao(); this.mudou(); });
+      return [titulo, ativar];
+    }
+    const c = this.p.inimigo;
+    const comp = el('select', { id: 'pi-comp' }, ...COMPORTAMENTOS_INIMIGO.map((x) => el('option', { value: x.id }, x.nome)));
+    comp.value = c.comportamento;
+    comp.addEventListener('change', () => { c.comportamento = comp.value as typeof c.comportamento; this.mudou(); });
+    const labComp = el('label', { for: 'pi-comp' }, 'Comportamento');
+    dica(labComp, 'Comportamento', COMPORTAMENTOS_INIMIGO.map((x) => `${x.nome}: ${x.texto}`).join(' '));
+    const opcoes = Object.keys(this.p.animacoes).filter((k) => !ehBasica(k) || k === 'dano');
+    const ataques = c.ataques.map((at, i) => {
+      const s = el('select', { 'aria-label': 'Animação do ataque' }, ...opcoes.map((k) => el('option', { value: k }, this.p.animacoes[k]?.nome ?? k)), ...(opcoes.includes(at.animacao) ? [] : [el('option', { value: at.animacao }, `${at.animacao} (falta)`)]));
+      s.value = at.animacao;
+      s.addEventListener('change', () => { at.animacao = s.value; this.mudou(); });
+      const peso = el('input', { type: 'number', value: at.peso, min: 0, step: 5, 'aria-label': 'Chance (%)' });
+      peso.addEventListener('change', () => { at.peso = Math.max(0, Number(peso.value) || 0); this.mudou(); });
+      const dano = el('input', { type: 'number', value: at.dano, min: 0, step: 1, 'aria-label': 'Dano' });
+      dano.addEventListener('change', () => { at.dano = Math.max(0, Number(dano.value) || 0); this.mudou(); });
+      const agarra = el('input', { type: 'checkbox' }); agarra.checked = at.agarra;
+      agarra.addEventListener('change', () => { at.agarra = agarra.checked; this.mudou(); });
+      const x = el('button', { type: 'button', class: 'secundario', 'aria-label': 'Remover ataque' }, '×');
+      x.addEventListener('click', () => { c.ataques.splice(i, 1); this.mudou(); });
+      const total = c.ataques.reduce((t, a) => t + a.peso, 0) || 1;
+      const linha = el('div', { class: 'pi-ataque' }, s, peso, el('span', { class: 'dica-campo' }, `${Math.round((at.peso / total) * 100)}%`), dano, el('label', { class: 'check' }, agarra, 'agarra'), x);
+      dica(linha, 'Ataque', 'Animação · chance (pesos somados) · dano · "agarra" segura o jogador durante a animação (mordida, agarrão).');
+      return linha;
+    });
+    const addAtaque = el('button', { type: 'button', class: 'secundario' }, '+ Ataque');
+    addAtaque.addEventListener('click', () => { c.ataques.push({ animacao: opcoes[0] ?? '', peso: 50, dano: 1, agarra: false }); this.mudou(); });
+    const remover = el('button', { type: 'button', class: 'perigo' }, 'Deixar de ser inimigo');
+    remover.addEventListener('click', () => { delete this.p.inimigo; this.mudou(); });
+    return [titulo,
+      el('div', { class: 'campo largo' }, labComp, comp),
+      el('div', { class: 'linha2' },
+        this.num('Vida (tiros)', c.vida, (v) => { c.vida = Math.max(1, Math.round(v)); }, 'Quantos tiros de dano 1 para morrer.', 1, 1),
+        this.num('Intervalo ataque', c.intervaloAtaque, (v) => { c.intervaloAtaque = v; }, 'Segundos entre um ataque e o próximo.', 0.1, 0)),
+      el('div', { class: 'linha2' },
+        this.num('Visão (px)', c.visao, (v) => { c.visao = v; }, 'Distância em que percebe o jogador e começa a perseguir (curta para zumbis).', 10, 0),
+        this.num('Desiste em (px)', c.perderVisao, (v) => { c.perderVisao = v; }, 'Se o jogador ficar mais longe que isso, ele para de perseguir e volta a perambular.', 10, 0)),
+      el('div', { class: 'linha2' },
+        this.num('Vel. andando', c.velocidadeAndar, (v) => { c.velocidadeAndar = v; }, 'Velocidade perambulando (px/s).', 1, 0),
+        this.num('Vel. perseguindo', c.velocidadePerseguir, (v) => { c.velocidadePerseguir = v; }, 'Velocidade perseguindo (px/s).', 1, 0)),
+      el('div', { class: 'linha2' },
+        this.num('Alcance ataque', c.alcanceAtaque, (v) => { c.alcanceAtaque = v; }, 'Distância (px) para começar a atacar.', 1, 0),
+        this.num('Momento do dano', c.momentoDano, (v) => { c.momentoDano = Math.min(1, v); }, 'Em que parte da animação de ataque o golpe acerta (0–1).', 0.05, 0)),
+      el('div', { class: 'linha2' },
+        this.num('Alerta por tiro (s)', c.alertaTiro, (v) => { c.alertaTiro = v; }, 'Ao levar (ou ouvir) um tiro, anda na direção do jogador por esse tempo.', 0.5, 0),
+        this.num('Ouve tiro a (px)', c.audicaoTiro, (v) => { c.audicaoTiro = v; }, 'Distância em que um tiro chama a atenção dele (0 = não ouve).', 10, 0)),
+      el('h3', {}, 'Ataques'), ...ataques, addAtaque,
+      el('p', { class: 'dica-campo' }, 'Animações usadas: Parado (parado), Andando (perambular/perseguir), Dano (levar tiro), Morte, e as dos ataques.'),
+      el('div', { class: 'secao acoes' }, remover)];
   }
 
   /** Campos das animações extras: nome, travar movimento, variante ao andar e teclas. */

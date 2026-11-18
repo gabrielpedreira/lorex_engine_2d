@@ -581,9 +581,34 @@ textarea:focus { border-color: var(--acento); outline: none; }
 .cat-entrada .log-cat, .log-chip.cat-entrada.ligado { color: #7cc4f5; }
 .cat-personagem .log-cat, .log-chip.cat-personagem.ligado { color: #c79bf2; }
 .cat-mundo .log-cat, .log-chip.cat-mundo.ligado { color: var(--acento); }
+.cat-inimigo .log-cat, .log-chip.cat-inimigo.ligado { color: #f27a5e; }
 .cat-codigo .log-cat, .log-chip.cat-codigo.ligado { color: var(--laranja); }
 .cat-erro .log-cat, .cat-erro .log-txt, .log-chip.cat-erro.ligado { color: var(--perigo); }
 .cat-sistema .log-cat, .log-chip.cat-sistema.ligado { color: var(--texto-2); }
 .st-log { flex: none; width: auto; padding: 0 8px; font-size: 12px; border: 1px solid var(--borda); border-radius: 4px; }
 .st-log.ligado { border-color: var(--acento); color: var(--acento); }
 .st-log-erros:not(:empty) { background: var(--perigo); color: #fff; border-radius: 8px; padding: 0 5px; font-size: 10px; }
+
+/* ---------- Inimigos, arma e HUD ---------- */
+.barra-flutuante .rotulo-barra { font-size: 12px; color: var(--texto-2); padding: 0 4px; }
+.barra-flutuante select { max-width: 220px; }
+.pi-ataque { display: grid; grid-template-columns: 1fr 52px 34px 44px auto auto; gap: 4px; align-items: center; }
+.pi-ataque input[type='number'] { width: 100%; }
+.pi-ataque .check { font-size: 11px; }
+.hud-previa {
+  position: relative; border: 1px solid var(--borda); border-radius: 6px; overflow: hidden;
+  background: linear-gradient(180deg, #1b2330 0%, #121a1f 70%, #2b2a20 100%);
+}
+.hud-elemento {
+  position: absolute; display: flex; align-items: baseline; gap: 0.4em; white-space: nowrap; line-height: 1.1;
+  font-family: Consolas, 'Cascadia Code', monospace; text-shadow: 0 1px 0 #000, 0 0 3px #000; pointer-events: none;
+}
+.hud-elemento .hud-rotulo { color: #dbe7e2; font-weight: 400; opacity: 0.85; }
+.hud-editavel { pointer-events: auto; cursor: move; padding: 1px 3px; border: 1px dashed transparent; border-radius: 3px; }
+.hud-editavel:hover { border-color: rgba(255, 255, 255, 0.35); }
+.hud-editavel.selecionado { border-color: var(--acento); }
+.hud-editavel.oculto { opacity: 0.35; }
+.teste-hud-tela { position: absolute; z-index: 5; pointer-events: none; }
+.teste-hud-tela[hidden] { display: none; }
+
+.teste-hud-jogo[hidden] { display: none; }

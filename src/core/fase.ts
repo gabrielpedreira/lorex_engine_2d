@@ -43,6 +43,7 @@ export function criarFase(nome: string, o: OpcoesFase = {}): Fase {
     camadas: camadasPadrao(),
     objetos: [],
     colisoes: [],
+    inimigos: [],
     spawnJogador: [64, Math.round(res[1] * telas[1] * 0.7)],
   };
 }
@@ -70,6 +71,9 @@ export function normalizarFase(dados: unknown): Fase {
     tamanhoGrade: typeof d.tamanhoGrade === 'number' && d.tamanhoGrade > 0 ? d.tamanhoGrade : 16,
     tipo: d.tipo === 'area' ? 'area' : 'fase',
     regiao: typeof d.regiao === 'string' ? d.regiao : '',
+    inimigos: (Array.isArray(d.inimigos) ? d.inimigos : []).filter((i) => i && typeof i.personagem === 'string').map((i) => ({
+      id: String(i.id), personagem: i.personagem, x: Number(i.x) || 0, y: Number(i.y) || 0, olhandoDireita: !!i.olhandoDireita,
+    })),
   } as Fase;
 }
 
@@ -91,6 +95,12 @@ function normalizarObjeto(o: Partial<ObjetoFase>, camadaPadrao: string): ObjetoF
     efeitos: normalizarEfeitos(o.efeitos), comportamentos: normalizarComportamentos(o.comportamentos),
     conexoes: o.conexoes ?? {}, script: o.script ?? null,
   };
+}
+
+export function novoIdInimigo(fase: Fase): string {
+  let maior = 0;
+  for (const i of fase.inimigos) { const m = /^ini_(\d+)$/.exec(i.id); if (m) maior = Math.max(maior, Number(m[1])); }
+  return 'ini_' + String(maior + 1).padStart(3, '0');
 }
 
 export function novoIdObjeto(fase: Fase): string {

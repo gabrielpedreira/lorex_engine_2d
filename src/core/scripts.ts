@@ -10,7 +10,7 @@
 // (1) aparecer no explorador do painel de Código (fonte de elementos), (2) ganhar ganchos aqui em GANCHOS e
 // (3) expor a API dele em tiposApi(). Assim o código sempre acompanha o que existe no projeto.
 
-export type DonoScript = 'jogo' | 'fase' | 'objeto' | 'personagem';
+export type DonoScript = 'jogo' | 'fase' | 'objeto' | 'personagem' | 'inimigo';
 
 export interface Gancho {
   nome: string;
@@ -23,13 +23,20 @@ export interface Gancho {
 }
 
 export const GANCHOS: Gancho[] = [
-  { nome: 'aoIniciar', donos: ['jogo', 'fase', 'objeto', 'personagem'], params: 'eu, jogo', texto: 'Uma vez, quando a fase começa.' },
-  { nome: 'aoAtualizar', donos: ['jogo', 'fase', 'objeto', 'personagem'], params: 'eu, jogo, dt', texto: 'A cada quadro (dt = segundos desde o último). Use com moderação.' },
+  { nome: 'aoIniciar', donos: ['jogo', 'fase', 'objeto', 'personagem', 'inimigo'], params: 'eu, jogo', texto: 'Uma vez, quando a fase começa.' },
+  { nome: 'aoAtualizar', donos: ['jogo', 'fase', 'objeto', 'personagem', 'inimigo'], params: 'eu, jogo, dt', texto: 'A cada quadro (dt = segundos desde o último). Use com moderação.' },
   { nome: 'aoTocar', donos: ['objeto'], params: 'eu, jogo', texto: 'Quando o jogador encosta no objeto (uma vez por encostada).' },
   { nome: 'aoInteragir', donos: ['objeto'], params: 'eu, jogo', texto: 'Quando o jogador aperta Interagir perto do objeto. Retorne false para cancelar o comportamento pronto (porta, alavanca…). Um objeto com este gancho vira interagível mesmo sem comportamento.' },
   { nome: 'aoColetar', donos: ['objeto'], params: 'eu, jogo', texto: 'Antes de um coletável ir para o inventário. Retorne false para não pegar.' },
   { nome: 'aoAcionado', donos: ['objeto'], params: 'eu, jogo, origem', texto: 'Quando uma alavanca ligada a este objeto é acionada (origem = a alavanca).' },
   { nome: 'aoAcao', donos: ['personagem'], params: 'eu, jogo, acao', texto: 'Quando o jogador dispara uma ação (ex.: "tiro", "recarga"). Retorne false para cancelar a animação.' },
+  { nome: 'aoAtirar', donos: ['personagem'], params: 'eu, jogo, alvo', texto: 'Depois de cada tiro da arma (alvo = inimigo acertado, ou null se errou).' },
+  { nome: 'aoSerAtingido', donos: ['personagem'], params: 'eu, jogo, ataque, inimigo, dano', texto: 'Quando um inimigo acerta o jogador (ataque = "golpe", "mordida"…). Retorne false para ignorar o golpe.' },
+  { nome: 'aoVer', donos: ['inimigo'], params: 'eu, jogo', texto: 'O inimigo viu o jogador e começou a perseguir.' },
+  { nome: 'aoPerder', donos: ['inimigo'], params: 'eu, jogo', texto: 'O jogador se afastou e o inimigo desistiu da perseguição.' },
+  { nome: 'aoAtacar', donos: ['inimigo'], params: 'eu, jogo, ataque', texto: 'O inimigo vai atacar (ataque = "golpe", "mordida"…). Retorne false para cancelar.' },
+  { nome: 'aoLevarDano', donos: ['inimigo'], params: 'eu, jogo, dano', texto: 'O inimigo levou um tiro. Retorne false para ignorar o dano.' },
+  { nome: 'aoMorrer', donos: ['inimigo'], params: 'eu, jogo', texto: 'O inimigo morreu.' },
   { nome: 'aoTrocarFase', donos: ['jogo'], params: 'eu, jogo, fase', texto: 'Quando o jogador chega numa fase ou área (fase = nome do arquivo).' },
 ];
 
@@ -48,17 +55,18 @@ export function slugScript(t: string) {
 export const arquivoScript = {
   jogo: () => 'jogo.js',
   fase: (arquivoFase: string) => `${slugScript(arquivoFase.replace(/\.json$/i, ''))}.js`,
+  inimigo: (arquivoPersonagem: string) => `personagem.${slugScript(arquivoPersonagem.replace(/\.json$/i, ''))}.js`,
   objeto: (arquivoFase: string, idObjeto: string) => `${slugScript(arquivoFase.replace(/\.json$/i, ''))}.${slugScript(idObjeto)}.js`,
   personagem: (arquivoPersonagem: string) => `personagem.${slugScript(arquivoPersonagem.replace(/\.json$/i, ''))}.js`,
 };
 
-const TIPO_EU: Record<DonoScript, string> = { jogo: 'Jogo', fase: 'Jogo', objeto: 'Objeto', personagem: 'Jogador' };
+const TIPO_EU: Record<DonoScript, string> = { jogo: 'Jogo', fase: 'Jogo', objeto: 'Objeto', personagem: 'Jogador', inimigo: 'Inimigo' };
 
 /** Script novo, já com os ganchos daquele tipo de dono (comentados os que não são essenciais). */
 export function modeloScript(dono: DonoScript, nome: string, extra = ''): string {
   const ganchos = GANCHOS.filter((g) => g.donos.includes(dono));
   const principais: Record<DonoScript, string[]> = {
-    jogo: ['aoIniciar', 'aoTrocarFase'], fase: ['aoIniciar'], objeto: ['aoInteragir'], personagem: ['aoAcao'],
+    jogo: ['aoIniciar', 'aoTrocarFase'], fase: ['aoIniciar'], objeto: ['aoInteragir'], personagem: ['aoAcao'], inimigo: ['aoVer', 'aoMorrer'],
   };
   const linhas = [
     `// Script de ${nome}${extra ? ` (${extra})` : ''}.`,
@@ -70,7 +78,9 @@ export function modeloScript(dono: DonoScript, nome: string, extra = ''): string
     const ativo = principais[dono].includes(g.nome);
     const params = paramsDe(g, dono);
     const p = params.split(', ');
-    const doc = [`/**`, ` * ${g.texto}`, ...p.map((x) => ` * @param {${x === 'eu' ? TIPO_EU[dono] : x === 'jogo' ? 'Jogo' : x === 'dt' ? 'number' : x === 'origem' ? 'Objeto' : 'string'}} ${x}`), ' */'];
+    const tipoParam = (x: string) => x === 'eu' ? TIPO_EU[dono] : x === 'jogo' ? 'Jogo' : x === 'dt' || x === 'dano' ? 'number'
+      : x === 'origem' ? 'Objeto' : x === 'inimigo' ? 'Inimigo' : x === 'alvo' ? 'Inimigo | null' : 'string';
+    const doc = [`/**`, ` * ${g.texto}`, ...p.map((x) => ` * @param {${tipoParam(x)}} ${x}`), ' */'];
     const corpo = ativo ? exemploPara(dono, g.nome) : '  ';
     const bloco = [...doc, `export function ${g.nome}(${params}) {`, corpo, '}'];
     linhas.push(...(ativo ? bloco : bloco.map((l) => '// ' + l)), '');
@@ -82,6 +92,8 @@ function exemploPara(dono: DonoScript, nome: string) {
   if (dono === 'objeto' && nome === 'aoInteragir') return "  jogo.aviso(`Você mexeu em ${eu.nome}`);\n  // return false; // descomente para cancelar o comportamento pronto";
   if (dono === 'personagem' && nome === 'aoAcao') return '  // if (acao === "tiro") { ... }';
   if (dono === 'jogo' && nome === 'aoTrocarFase') return '  // jogo.log("Entrou em", fase);';
+  if (dono === 'inimigo' && nome === 'aoVer') return '  // jogo.log(`${eu.nome} viu o jogador`);';
+  if (dono === 'inimigo' && nome === 'aoMorrer') return '  // jogo.inventario.dar("pontos", 10);';
   return '  ';
 }
 
@@ -114,6 +126,10 @@ export function linhaDoErro(err: unknown, url: string): { linha: number; coluna:
 
 export interface ContextoTipos {
   objetos: string[];
+  /** Ids dos inimigos colocados na fase. */
+  inimigos?: string[];
+  /** Chaves dos elementos do HUD. */
+  hud?: string[];
   acoes: string[];
   animacoes: string[];
   fases: string[];
@@ -133,6 +149,10 @@ type NomeAcao = ${uniao(c.acoes)} | (string & {});
 type NomeAnimacao = ${uniao(c.animacoes)} | (string & {});
 /** Arquivo de fase ou área. */
 type NomeFase = ${uniao(c.fases)} | (string & {});
+/** Inimigo colocado nesta fase (id). */
+type NomeInimigo = ${uniao(c.inimigos ?? [])} | (string & {});
+/** Chave de um elemento do HUD (ferramenta HUD). */
+type ChaveHud = ${uniao(c.hud ?? [])} | (string & {});
 /** Item do inventário. */
 type NomeItem = ${uniao(c.itens)} | (string & {});
 
@@ -184,8 +204,40 @@ interface Jogador {
   teleportar(x: number, y: number): void;
   /** Dá um impulso (px/s), ex.: empurrar(0, -400) para um pulo extra. */
   empurrar(vx: number, vy: number): void;
-  /** Guarde aqui o que quiser do jogador (ex.: munição). */
+  /** Guarde aqui o que quiser do jogador. */
   dados: Record<string, any>;
+  /** Arma (configurada no editor de Personagens): munição no pente e recarga. */
+  readonly arma: { municao: number; readonly pente: number; recarregar(): void };
+}
+
+/** Um inimigo da fase durante o jogo. */
+interface Inimigo {
+  readonly id: string;
+  readonly nome: string;
+  /** Arquivo do tipo (ex.: "zumbi.json"). */
+  readonly tipo: string;
+  /** Posição dos pés. */
+  x: number;
+  y: number;
+  vida: number;
+  readonly vidaMax: number;
+  /** "perambular" | "perseguir" | "alerta" | "atacar" | "dano" | "morto" */
+  readonly estado: string;
+  readonly vivo: boolean;
+  readonly olhandoDireita: boolean;
+  /** Configuração da IA (visão, velocidades, ataques…), editável durante o jogo. */
+  readonly config: Record<string, any>;
+  /** Guarde aqui o que quiser deste inimigo. */
+  dados: Record<string, any>;
+  distanciaDoJogador(): number;
+  /** Persegue o jogador mesmo de longe (até liberar()). */
+  perseguir(): void;
+  /** Fica parado (até liberar()). */
+  parar(): void;
+  /** Volta ao comportamento normal. */
+  liberar(): void;
+  dano(quantidade?: number): void;
+  matar(): void;
 }
 
 interface Inventario {
@@ -198,9 +250,9 @@ interface Inventario {
 }
 
 interface Hud {
-  /** Mostra (ou atualiza) uma linha no canto da tela, ex.: hud.definir("Munição", "7/7"). */
-  definir(rotulo: string, valor: string | number): void;
-  remover(rotulo: string): void;
+  /** Define o valor de um elemento do HUD (ferramenta HUD) pela chave; se não houver elemento, mostra uma linha no canto. */
+  definir(chave: ChaveHud, valor: string | number): void;
+  remover(chave: ChaveHud): void;
 }
 
 /** Tudo o que o código pode usar durante o jogo. */
@@ -215,6 +267,9 @@ interface Jogo {
   /** Segundos desde que a fase começou. */
   readonly tempo: number;
   objeto(nomeOuId: NomeObjeto): Objeto | null;
+  /** Inimigos da fase (filtro opcional pelo nome, id ou tipo). */
+  inimigos(contem?: string): Inimigo[];
+  inimigo(id: NomeInimigo): Inimigo | null;
   /** Objetos cujo nome contém o texto (ou todos). */
   objetos(nomeContem?: string): Objeto[];
   /** Aviso rápido na tela. */

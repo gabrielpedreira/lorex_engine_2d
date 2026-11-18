@@ -1,3 +1,5 @@
+import { normalizarArma, normalizarInimigo, type ConfigArma, type ConfigInimigo } from './inimigos';
+
 // Personagens animados: formato dos dados (jogo/personagens/<nome>.json), detecção automática de spritesheets
 // e escolha da animação conforme o estado do jogador. Puro (sem PixiJS e sem DOM).
 // Básicas (parado, andando…) a física escolhe; extras (tiro, recarga, ataque…) são ações tocadas por botão ou código.
@@ -73,6 +75,10 @@ export interface Personagem {
   animacoes: Record<string, Animacao>;
   /** Script do personagem (arquivo em jogo/scripts/), se houver. */
   script?: string;
+  /** Jogador: arma (munição, tiro, recarga). */
+  arma?: ConfigArma;
+  /** NPC: comportamento de inimigo (IA, vida, ataques). */
+  inimigo?: ConfigInimigo;
 }
 
 const IDS_BASICOS = new Set<string>(ESTADOS.map((e) => e.id));
@@ -121,6 +127,8 @@ export function normalizarPersonagem(d: unknown): Personagem {
   return {
     ...base, ...p, versao: 1, animacoes,
     tipo: p.tipo === 'npc' ? 'npc' : 'jogador',
+    arma: p.tipo === 'npc' ? undefined : normalizarArma(p.arma),
+    inimigo: p.tipo === 'npc' && p.inimigo ? normalizarInimigo(p.inimigo) : undefined,
     pes: Array.isArray(p.pes) && p.pes.length === 2 ? [Number(p.pes[0]) || 0, Number(p.pes[1]) || 0] : base.pes,
     caixa: { largura: Math.max(2, Number(p.caixa?.largura) || base.caixa.largura), altura: Math.max(2, Number(p.caixa?.altura) || base.caixa.altura) },
     escala: Number(p.escala) > 0 ? Number(p.escala) : 1,

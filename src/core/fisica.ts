@@ -66,14 +66,14 @@ export function montarSegmentos(colisoes: Colisao[]): Segmento[] {
 }
 
 /** y do segmento na posição x (null se o segmento não passa por x). */
-function yEm(s: Segmento, x: number) {
+export function yEm(s: Segmento, x: number) {
   const x0 = Math.min(s.ax, s.bx), x1 = Math.max(s.ax, s.bx);
   if (x < x0 || x > x1 || s.ax === s.bx) return null;
   return s.ay + ((x - s.ax) * (s.by - s.ay)) / (s.bx - s.ax);
 }
 
 /** x do segmento na altura y (null se o segmento não passa por y). */
-function xEm(s: Segmento, y: number) {
+export function xEm(s: Segmento, y: number) {
   const y0 = Math.min(s.ay, s.by), y1 = Math.max(s.ay, s.by);
   if (y < y0 || y > y1) return null;
   if (s.ay === s.by) return null;
