@@ -9,6 +9,9 @@ import { el } from './dom';
 
 export interface AcoesObjeto {
   duplicar(): void;
+  copiar(): void;
+  /** Cópia encostada exatamente ao lado (continuação/loop). */
+  continuar(lado: 'direita' | 'esquerda' | 'cima' | 'baixo'): void;
   excluir(): void;
   ordem(direcao: 'frente' | 'tras'): void;
   /** Multiplica o tamanho do selecionado. */
@@ -338,15 +341,35 @@ export class PainelPropriedades {
           this.check('Espelhar ↕', o.espelharY, (v) => { o.espelharY = v; })),
         this.num('Opacidade', o.opacidade, (v) => { o.opacidade = v; }, { passo: 0.1, min: 0, max: 1 }),
       ),
+      this.secaoContinuacao(),
       this.secaoComportamento(o),
       this.secaoEfeitos(o),
       el('div', { class: 'secao acoes' },
         botao('Trazer p/ frente', () => this.acoes.ordem('frente')),
         botao('Enviar p/ trás', () => this.acoes.ordem('tras')),
         botao('Duplicar', () => this.acoes.duplicar()),
+        botao('Copiar', () => this.acoes.copiar()),
         botao('Excluir', () => this.acoes.excluir(), 'perigo'),
       ),
     );
+  }
+
+  /** Botões de continuação: uma cópia encostada exatamente ao lado (cenários em loop). */
+  private secaoContinuacao() {
+    const lados = [
+      { lado: 'esquerda', seta: '←', tecla: '←' }, { lado: 'cima', seta: '↑', tecla: '↑' },
+      { lado: 'baixo', seta: '↓', tecla: '↓' }, { lado: 'direita', seta: '→', tecla: '→' },
+    ] as const;
+    const titulo = el('h3', {}, 'Continuação (loop)');
+    dica(titulo, 'Continuação', 'Cria uma cópia encostada exatamente na borda deste objeto, com o mesmo tamanho: ideal para chão, muros e fundos que se repetem. Ao arrastar objetos, eles também grudam nas bordas dos vizinhos (linhas laranja); Alt desliga o ímã.');
+    const linha = el('div', { class: 'continuacao' });
+    for (const l of lados) {
+      const b = el('button', { type: 'button', class: 'secundario' }, l.seta);
+      dica(b, `Continuar para ${l.lado === 'cima' || l.lado === 'baixo' ? l.lado : 'a ' + l.lado}`, 'Cópia exatamente encostada deste lado.', `Ctrl+Shift+${l.tecla}`);
+      b.addEventListener('click', () => this.acoes.continuar(l.lado));
+      linha.append(b);
+    }
+    return el('div', { class: 'secao' }, titulo, linha);
   }
 
   /** Tamanho: em %, largura ou altura em px (proporcional), atalhos e otimização. */

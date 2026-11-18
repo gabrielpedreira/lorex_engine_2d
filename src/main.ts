@@ -94,6 +94,60 @@ function duplicarSelecionado() {
   estado.selecionar(copia.id);
 }
 
+// ---------- Copiar, recortar, colar e continuação ----------
+/** Objeto copiado (Ctrl+C). Fica guardado ao trocar de fase, para colar em outra. */
+let copiado: ObjetoFase | null = null;
+let colagens = 0;
+
+function copiarSelecionado(recortar = false) {
+  const o = estado.objetoSelecionado();
+  if (!o) { estado.avisar('Selecione um objeto para copiar.'); return; }
+  copiado = JSON.parse(JSON.stringify(o));
+  colagens = 0;
+  if (recortar) { excluirSelecionado(); estado.avisar(`Recortado: ${o.nome}. Ctrl+V cola onde está o mouse.`); }
+  else estado.avisar(`Copiado: ${o.nome} (${Math.round(o.w * o.escala)} × ${Math.round(o.h * o.escala)} px). Ctrl+V cola onde está o mouse.`);
+}
+
+function colar() {
+  if (!copiado) { estado.avisar('Nada copiado ainda: selecione um objeto e use Ctrl+C.'); return; }
+  const c: ObjetoFase = JSON.parse(JSON.stringify(copiado));
+  c.id = novoIdObjeto(estado.fase);
+  // Mesma camada do original (se existir e estiver liberada); senão, a camada ativa
+  const camOrig = estado.camada(c.camada);
+  if (!camOrig || camOrig.travada || !camOrig.visivel) c.camada = estado.camadaAtiva;
+  const cam = estado.camada(c.camada);
+  if (!cam || cam.travada) { estado.avisar('A camada ativa está travada: destrave para colar.'); return; }
+  const m = viewport.posicaoMouse;
+  if (m) {
+    const pos = viewport.posicaoColocacao(m.x, m.y, c.w * c.escala, c.h * c.escala, c.camada);
+    c.x = pos.x; c.y = pos.y;
+  } else {
+    colagens++;
+    c.x += 16 * colagens; c.y += 16 * colagens;
+  }
+  estado.alterar((f) => { f.objetos.push(c); });
+  estado.selecionar(c.id);
+  estado.avisar(`Colado: ${c.nome} na camada ${cam.nome}.`);
+}
+
+/** Cópia encostada exatamente ao lado do selecionado (para cenários em loop, chão, muros…). */
+function continuar(lado: 'direita' | 'esquerda' | 'cima' | 'baixo') {
+  const o = estado.objetoSelecionado();
+  if (!o) { estado.avisar('Selecione o objeto que vai continuar.'); return; }
+  const c: ObjetoFase = JSON.parse(JSON.stringify(o));
+  c.id = novoIdObjeto(estado.fase);
+  const w = o.w * o.escala, h = o.h * o.escala;
+  if (lado === 'direita') c.x = o.x + w;
+  if (lado === 'esquerda') c.x = o.x - w;
+  if (lado === 'cima') c.y = o.y - h;
+  if (lado === 'baixo') c.y = o.y + h;
+  estado.alterar((f) => { f.objetos.splice(f.objetos.indexOf(o) + 1, 0, c); });
+  estado.selecionar(c.id);
+  const frac = !Number.isInteger(Math.round(w * 1000) / 1000) || !Number.isInteger(Math.round(h * 1000) / 1000);
+  estado.avisar(`Continuação para ${lado === 'cima' ? 'cima' : lado === 'baixo' ? 'baixo' : 'a ' + lado}: ${o.nome}.`
+    + (frac ? ` Tamanho fracionário (${w.toFixed(2)} × ${h.toFixed(2)} px): se aparecer uma emenda, use um tamanho em px inteiro.` : ' Repita para continuar o loop.'));
+}
+
 function mudarOrdem(direcao: 'frente' | 'tras') {
   const o = estado.objetoSelecionado();
   if (!o) return;
@@ -113,6 +167,8 @@ function moverSelecionado(dx: number, dy: number) {
 
 new PainelPropriedades(painelProps, estado, {
   duplicar: duplicarSelecionado,
+  copiar: () => copiarSelecionado(),
+  continuar,
   excluir: excluirSelecionado,
   ordem: mudarOrdem,
   escalar: (f) => viewport.escalarSelecionado(f),
@@ -593,7 +649,7 @@ barra.append(
 const stCoord = el('span', {});
 const stCamada = el('span', {});
 const stMsg = el('span', { class: 'msg', role: 'status' });
-const stAtalhos = el('span', { class: 'atalhos' }, 'V/C/I: selecionar, colisão, início · T: ferramentas · Roda: zoom · Espaço/botão do meio: mover a visão · Del: excluir · Ctrl+D: duplicar · F: espelhar · Setas: mover 1 px (Shift: 8)');
+const stAtalhos = el('span', { class: 'atalhos' }, 'V/C/I: selecionar, colisão, início · T: ferramentas · Roda: zoom · Espaço/botão do meio: mover a visão · Del: excluir · Ctrl+C/V: copiar/colar · Ctrl+Shift+setas: continuação · Alt: sem ímã · Ctrl+D: duplicar · F: espelhar · Setas: mover 1 px (Shift: 8)');
 status.append(stCoord, stCamada, stMsg, stAtalhos);
 let timerMsg = 0;
 
@@ -633,6 +689,14 @@ window.addEventListener('keydown', (e) => {
   if (ctrl && k === 'z' && !e.shiftKey) { e.preventDefault(); estado.desfazer(); return; }
   if (ctrl && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); estado.refazer(); return; }
   if (ctrl && k === 'd') { e.preventDefault(); duplicarSelecionado(); return; }
+  if (ctrl && k === 'c' && !e.shiftKey) { e.preventDefault(); copiarSelecionado(); return; }
+  if (ctrl && k === 'x') { e.preventDefault(); copiarSelecionado(true); return; }
+  if (ctrl && k === 'v') { e.preventDefault(); colar(); return; }
+  if (ctrl && e.shiftKey && e.key.startsWith('Arrow')) {
+    e.preventDefault();
+    continuar(({ ArrowRight: 'direita', ArrowLeft: 'esquerda', ArrowUp: 'cima', ArrowDown: 'baixo' } as const)[e.key as 'ArrowRight']);
+    return;
+  }
   if (ctrl) return;
   switch (e.key) {
     case ' ': e.preventDefault(); viewport.setEspaco(true); break;

@@ -62,6 +62,10 @@ export class Viewport {
   /** Carimbo armado pela caixa de ferramentas (caminho relativo à raiz do projeto). */
   private carimbo: { caminho: string; tex: Texture | null; escala: number } | null = null;
   private mouseTela: { x: number; y: number } | null = null;
+  /** Alt segurado: desliga o encaixe nos outros objetos. */
+  private altPressionado = false;
+  /** Guias do encaixe entre objetos (no espaço da camada) — linhas laranja enquanto arrasta/carimba. */
+  private guias: { camada: string; x1: number; y1: number; x2: number; y2: number }[] = [];
   private conteineres = new Map<string, Container>();
   private sprites = new Map<string, Sprite>();
   private texturas = new Map<string, Texture>();
@@ -189,9 +193,12 @@ export class Viewport {
 
   get carimboAtivo() { return !!this.carimbo; }
 
+  /** Posição do mouse sobre o cenário (null = fora). */
+  get posicaoMouse() { return this.mouseTela ? { ...this.mouseTela } : null; }
+
   /** Arma o carimbo. escala = tamanho com que o objeto vai entrar (0 = automático: lembrado ou cabendo na tela). */
   armarCarimbo(caminhoRaiz: string | null, escala = 0) {
-    if (!caminhoRaiz) { this.carimbo = null; this.fantasma.visible = false; this.app.canvas.style.cursor = ''; return; }
+    if (!caminhoRaiz) { this.carimbo = null; this.fantasma.visible = false; this.app.canvas.style.cursor = ''; this.guias = []; return; }
     const c = { caminho: caminhoRaiz, tex: null as Texture | null, escala };
     this.carimbo = c;
     this.app.canvas.style.cursor = 'crosshair';
@@ -225,7 +232,53 @@ export class Viewport {
       const g = this.estado.fase.tamanhoGrade;
       x = Math.round(x / g) * g; y = Math.round(y / g) * g;
     }
-    return { x: Math.round(x), y: Math.round(y) };
+    return this.encaixarEmObjetos(x, y, w, h, camadaId, null);
+  }
+
+  /**
+   * Encaixe magnético nas bordas e centros dos objetos vizinhos da mesma camada: ao chegar perto (8 px de tela),
+   * o objeto gruda exatamente na continuação do outro (lado a lado, em cima, embaixo) ou alinhado com ele.
+   * Alt desliga. Atualiza as guias laranja.
+   */
+  encaixarEmObjetos(x: number, y: number, w: number, h: number, camadaId: string, ignorar: string | null) {
+    this.guias = [];
+    if (this.altPressionado) return { x: Math.round(x), y: Math.round(y) };
+    const tol = 8 / this.estado.camera.zoom;
+    type Encaixe = { d: number; alvo: number; o: { x: number; y: number; w: number; h: number } };
+    let melhorX = null as Encaixe | null;
+    let melhorY = null as Encaixe | null;
+    for (const o of this.estado.fase.objetos) {
+      if (o.id === ignorar || o.camada !== camadaId || !o.visivel) continue;
+      const r = { x: o.x, y: o.y, w: o.w * o.escala, h: o.h * o.escala };
+      // Só vizinhos: precisam estar perto no outro eixo (evita grudar em algo do outro lado da fase)
+      const pertoY = y < r.y + r.h + tol && y + h > r.y - tol;
+      const pertoX = x < r.x + r.w + tol && x + w > r.x - tol;
+      if (pertoY) {
+        // minhas bordas (esq., dir., centro) × bordas dele → deslocamento que encaixa
+        for (const [meu, dele] of [[x, r.x + r.w], [x + w, r.x], [x, r.x], [x + w, r.x + r.w], [x + w / 2, r.x + r.w / 2]]) {
+          const d = dele - meu;
+          if (Math.abs(d) <= tol && (!melhorX || Math.abs(d) < Math.abs(melhorX.d))) melhorX = { d, alvo: dele, o: r };
+        }
+      }
+      if (pertoX) {
+        for (const [meu, dele] of [[y, r.y + r.h], [y + h, r.y], [y, r.y], [y + h, r.y + r.h], [y + h / 2, r.y + r.h / 2]]) {
+          const d = dele - meu;
+          if (Math.abs(d) <= tol && (!melhorY || Math.abs(d) < Math.abs(melhorY.d))) melhorY = { d, alvo: dele, o: r };
+        }
+      }
+    }
+    if (melhorX) {
+      x += melhorX.d;
+      const o = melhorX.o;
+      this.guias.push({ camada: camadaId, x1: melhorX.alvo, y1: Math.min(y, o.y), x2: melhorX.alvo, y2: Math.max(y + h, o.y + o.h) });
+    }
+    if (melhorY) {
+      y += melhorY.d;
+      const o = melhorY.o;
+      this.guias.push({ camada: camadaId, x1: Math.min(x, o.x), y1: melhorY.alvo, x2: Math.max(x + w, o.x + o.w), y2: melhorY.alvo });
+    }
+    // Encaixado: posição exata (pode ser fracionária se o vizinho tiver tamanho fracionário); senão, pixel inteiro
+    return { x: melhorX ? x : Math.round(x), y: melhorY ? y : Math.round(y) };
   }
 
   private atualizarFantasma() {
@@ -495,7 +548,7 @@ export class Viewport {
       cont.scale.set(zoom);
     }
     const { w, h } = this.tamanhoTela();
-    const chave = `${x},${y},${zoom},${this.estado.fase.objetos.length},${this.estado.fase.objetos.reduce((n, o) => n + (o.tipo === 'interativo' ? o.x + o.y * 7 + o.escala * 13 : 0), 0)},${this.estado.previaParallax},${JSON.stringify(this.estado.fase.camadas)},${this.estado.fase.resolucaoBase},${w},${h},${this.estado.grade},${this.hover},${this.estado.selecionado},${JSON.stringify(this.estado.objetoSelecionado() ?? '')},${this.estado.fase.tamanho},${this.estado.fase.corFundo},${this.estado.modo},${this.estado.mostrarColisoes},${this.estado.colisaoSelecionada},${JSON.stringify(this.estado.fase.colisoes)},${this.ferrColisao.versao},${this.estado.testando},${this.estado.fase.spawnJogador}`;
+    const chave = `${x},${y},${zoom},${this.estado.fase.objetos.length},${this.estado.fase.objetos.reduce((n, o) => n + (o.tipo === 'interativo' ? o.x + o.y * 7 + o.escala * 13 : 0), 0)},${this.estado.previaParallax},${JSON.stringify(this.estado.fase.camadas)},${this.estado.fase.resolucaoBase},${w},${h},${this.estado.grade},${this.hover},${this.estado.selecionado},${JSON.stringify(this.estado.objetoSelecionado() ?? '')},${this.estado.fase.tamanho},${this.estado.fase.corFundo},${this.estado.modo},${this.estado.mostrarColisoes},${this.estado.colisaoSelecionada},${JSON.stringify(this.estado.fase.colisoes)},${this.ferrColisao.versao},${this.estado.testando},${this.estado.fase.spawnJogador},${JSON.stringify(this.guias)}`;
     if (this.carimbo) this.atualizarFantasma();
     if (chave === this.chaveCamera) return;
     this.chaveCamera = chave;
@@ -614,6 +667,13 @@ export class Viewport {
       const r = this.retanguloTela(o);
       const mx = Math.round(r.x), my = Math.round(r.y), t = 4;
       g.poly([mx, my - t, mx + t, my, mx, my + t, mx - t, my]).fill({ color: COR_SELECAO }).stroke({ width: 1, color: 0x083933 });
+    }
+    // Guias do encaixe entre objetos
+    for (const gu of this.guias) {
+      const a1 = this.camadaParaTela(gu.x1, gu.y1, gu.camada), a2 = this.camadaParaTela(gu.x2, gu.y2, gu.camada);
+      const vert = gu.x1 === gu.x2;
+      const fx = (v: number) => Math.round(v) + (vert ? 0.5 : 0), fy = (v: number) => Math.round(v) + (vert ? 0 : 0.5);
+      g.moveTo(fx(a1.x), fy(a1.y) - (vert ? 12 : 0)).lineTo(fx(a2.x), fy(a2.y) + (vert ? 12 : 0)).stroke({ width: 1, color: 0xf89715 });
     }
     const sel = this.estado.objetoSelecionado();
     if (sel && this.estado.camada(sel.camada)?.visivel !== false) {
@@ -831,6 +891,7 @@ export class Viewport {
       const cam = this.estado.camera;
       this.mouseMundo = { x: Math.floor(p.x / cam.zoom + cam.x), y: Math.floor(p.y / cam.zoom + cam.y) };
       this.mouseTela = p;
+      this.altPressionado = e.altKey;
       this.estado.emit('camera');
       if (this.estado.testando) return;
       const a = this.arraste;
@@ -884,8 +945,10 @@ export class Viewport {
           nx = Math.round(nx / g) * g;
           ny = Math.round(ny / g) * g;
         }
-        o.x = Math.round(nx);
-        o.y = Math.round(ny);
+        this.altPressionado = e.altKey;
+        const enc = this.encaixarEmObjetos(nx, ny, o.w * o.escala, o.h * o.escala, o.camada, o.id);
+        o.x = enc.x;
+        o.y = enc.y;
       } else {
         // Redimensiona livremente mantendo a proporção; Shift = valores redondos.
         const bruta = Math.max(Math.abs(lp.x - a.ancoraX) / o.w, Math.abs(lp.y - a.ancoraY) / o.h);
@@ -908,11 +971,12 @@ export class Viewport {
       }
       if (!a && this.estado.modo === 'colisao') this.ferrColisao.pointerUp();
       this.arraste = null;
+      if (this.guias.length && !this.carimbo) { this.guias = []; this.chaveCamera = ''; }
       this.chaveCamera = '';
     };
     cv.addEventListener('pointerup', soltar);
     cv.addEventListener('pointercancel', soltar);
-    cv.addEventListener('pointerleave', () => { this.hover = null; this.mouseTela = null; this.fantasma.visible = false; this.aoPairar(null, 0, 0); });
+    cv.addEventListener('pointerleave', () => { this.hover = null; this.mouseTela = null; this.fantasma.visible = false; this.guias = []; this.aoPairar(null, 0, 0); });
 
     cv.addEventListener('wheel', (e) => {
       e.preventDefault();

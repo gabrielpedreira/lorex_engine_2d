@@ -82,6 +82,11 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 - **Controles** (`B`): define as teclas de cada ação (andar, pular, interagir e as ações do personagem), com
   **tecla**, **combinação** (Shift + J) ou **sequência** (↓ › → › J). Base pronta: setas/A D andam, Espaço/W/↑ pulam,
   E interage, J/X atiram, R recarrega. Mostra conflitos, tem área para experimentar e salva em `jogo/projeto.json`.
+- **Copiar/colar** (`Ctrl+C` / `Ctrl+X` / `Ctrl+V`): cola onde está o mouse, com o mesmo tamanho, efeitos e
+  comportamento; o copiado continua guardado ao trocar de fase.
+- **Continuação (loop)**: botões ← ↑ ↓ → no painel (ou `Ctrl+Shift+setas`) criam uma cópia encostada exatamente na
+  borda do objeto. Ao arrastar ou carimbar, os objetos **grudam** nas bordas e centros dos vizinhos da mesma camada,
+  com guias laranja; `Alt` desliga o ímã.
 - **Barras de rolagem** no cenário para navegar com zoom (arrastar ou clicar no trilho).
 - **Trabalho a quatro mãos:** se uma fase é alterada fora do editor (por outra ferramenta ou pelo assistente), o
   editor recarrega sozinho ou, havendo alterações não salvas, pergunta antes.
@@ -105,6 +110,8 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 | Desfazer / refazer | `Ctrl+Z` / `Ctrl+Y` |
 | Salvar / nova fase | `Ctrl+S` / `Ctrl+N` |
 | Duplicar / excluir | `Ctrl+D` / `Del` |
+| Copiar / recortar / colar | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` |
+| Continuação ao lado | `Ctrl+Shift+setas` (Alt ao arrastar: sem ímã) |
 | Espelhar | `F` |
 | Mover 1 px (8 px) | setas (Shift + setas) |
 | Grade / encaixar / prévia de parallax | `G` / `E` / `P` |

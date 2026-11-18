@@ -482,3 +482,6 @@ textarea:focus { border-color: var(--acento); outline: none; }
 .barra-rolagem.vertical .polegar { left: 2px; right: 2px; }
 .barra-rolagem .polegar:hover { background: rgba(167, 221, 62, 0.6); }
 .barra-rolagem .polegar.arrastando { background: var(--acento); cursor: grabbing; }
+
+.continuacao { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.continuacao button { padding: 5px 0; font-size: 14px; }

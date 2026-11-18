@@ -275,6 +275,9 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   `apertou(acao)`/`segurando(acao)`. O atalho mais específico vence e "consome" a tecla (Shift+J não dispara J;
   ↓ › → › J não dispara J). Ações fixas: esquerda, direita, pular, interagir; as demais são chaves de animações extras.
 - **▶ Testar:** Esc/F5 saem, F6 reinicia (reservadas). O HUD lista as teclas atuais e mostra a ação tocando.
+- **Ímã entre objetos** (`Viewport.encaixarEmObjetos`): ao mover/carimbar, compara bordas e centros (esq./dir./centro e
+  topo/base/centro) com os vizinhos da MESMA camada que estejam perto no outro eixo; tolerância 8 px de tela; o encaixe
+  pode deixar posição fracionária para a continuação ser exata. Copiar/colar e continuação ficam em `main.ts`.
 - **Rolagem do cenário:** barras DOM sobre o canvas; faixa navegável = fase + meia tela de folga em cada lado.
 
 ### 4.18 Legendas e recarregar por fora
