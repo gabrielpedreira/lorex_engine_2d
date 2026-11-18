@@ -16,6 +16,8 @@ let observador = null;  // vigia jogo/ para avisar o editor de mudanças feitas 
 const escritasProprias = new Map(); // caminho → hora da última escrita feita pelo próprio editor
 const avisosPendentes = new Map();
 let janelaSplash = null;
+/** Janela separada do painel de Código (pode ir para outro monitor). */
+let janelaCodigo = null;
 let janelaEditor = null;
 let inicioSplash = 0;
 
@@ -67,6 +69,7 @@ function observarProjeto() {
           : rel === 'projeto.json' ? 'config' : rel.startsWith('assets/') ? 'assets' : 'outro';
         if (tipo !== 'outro' && janelaEditor && !janelaEditor.isDestroyed()) {
           janelaEditor.webContents.send('projeto:mudou', { tipo, nome: path.basename(rel) });
+          if (janelaCodigo && !janelaCodigo.isDestroyed()) janelaCodigo.webContents.send('projeto:mudou', { tipo, nome: path.basename(rel) });
         }
       }, 350));
     });
@@ -269,6 +272,13 @@ function registrarIpc() {
     return true;
   });
 
+  // Janela do Código e mensagens entre as janelas (editor ↔ código)
+  ipcMain.handle('codigo:abrir', () => abrirJanelaCodigo());
+  ipcMain.on('ponte:enviar', (_e, destino, msg) => {
+    const alvo = destino === 'codigo' ? janelaCodigo : janelaEditor;
+    if (alvo && !alvo.isDestroyed()) alvo.webContents.send('ponte:mensagem', msg);
+  });
+
   // Logs dos testes → logs/ na raiz do projeto (não sobe para o GitHub). Guarda os 30 mais recentes
   // e uma cópia fixa "ultimo_teste.log" (fácil de achar e de mandar para alguém analisar).
   ipcMain.handle('logs:salvar', async (_e, nome, conteudo) => {
@@ -338,10 +348,57 @@ function criarEditor() {
     });
     if (r === 0) e.preventDefault(); // ignora o bloqueio e fecha
   });
+  janelaEditor.on('closed', () => { if (janelaCodigo && !janelaCodigo.isDestroyed()) janelaCodigo.destroy(); });
+  // Links externos (ex.: GitHub no rodapé) abrem no navegador do sistema
+  janelaEditor.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+    return { action: 'deny' };
+  });
   if (URL_DEV) janelaEditor.loadURL(URL_DEV);
   else janelaEditor.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
   // Se a interface travar ao carregar, não deixa o usuário preso na splash
   setTimeout(() => { if (janelaEditor && !janelaEditor.isVisible()) fecharSplashEMostrarEditor(); }, 15000);
+}
+
+// ---------- Janela do Código (pode ir para o segundo monitor) ----------
+function abrirJanelaCodigo() {
+  if (janelaCodigo && !janelaCodigo.isDestroyed()) {
+    if (janelaCodigo.isMinimized()) janelaCodigo.restore();
+    janelaCodigo.show();
+    janelaCodigo.focus();
+    return false; // já estava aberta
+  }
+  const cfg = lerConfig();
+  const b = cfg.janelaCodigo ?? {};
+  janelaCodigo = new BrowserWindow({
+    width: b.width ?? 1200, height: b.height ?? 800, x: b.x, y: b.y,
+    minWidth: 700, minHeight: 420,
+    backgroundColor: '#141a19', title: 'Lorex Engine 2D — Código', icon: ICONE, autoHideMenuBar: true,
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  if (b.maximizada) janelaCodigo.maximize();
+  const guardar = () => {
+    if (!janelaCodigo || janelaCodigo.isDestroyed()) return;
+    const c = lerConfig();
+    c.janelaCodigo = { ...janelaCodigo.getNormalBounds(), maximizada: janelaCodigo.isMaximized() };
+    salvarConfig(c);
+  };
+  janelaCodigo.on('close', guardar);
+  janelaCodigo.on('closed', () => {
+    janelaCodigo = null;
+    if (janelaEditor && !janelaEditor.isDestroyed()) janelaEditor.webContents.send('ponte:mensagem', { tipo: 'codigoFechado' });
+  });
+  janelaCodigo.webContents.on('will-prevent-unload', (e) => {
+    const r = dialog.showMessageBoxSync(janelaCodigo, {
+      type: 'warning', buttons: ['Fechar sem salvar', 'Cancelar'], defaultId: 1, cancelId: 1,
+      title: 'Código não salvo', message: 'Há scripts com alterações não salvas.',
+      detail: 'Se fechar agora, essas alterações serão perdidas. Use Ctrl+Shift+S para salvar tudo.',
+    });
+    if (r === 0) e.preventDefault();
+  });
+  if (URL_DEV) janelaCodigo.loadURL(URL_DEV + '/codigo.html');
+  else janelaCodigo.loadFile(path.join(__dirname, '..', 'dist', 'codigo.html'));
+  return true;
 }
 
 // Uma janela só: abrir a engine de novo (atalho, duplo clique) traz a janela que já está aberta para a frente

@@ -16,6 +16,7 @@
   --raio: 6px;
   --barra-h: 44px;
   --status-h: 26px;
+  --info-h: 24px;
   font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
   font-size: 13px;
   color: var(--texto);
@@ -30,8 +31,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; }
   height: 100vh;
   display: grid;
   grid-template-columns: 46px 260px 1fr 300px;
-  grid-template-rows: var(--barra-h) 1fr auto var(--status-h);
-  grid-template-areas: 'barra barra barra barra' 'rail esq centro dir' 'rail esq log dir' 'status status status status';
+  grid-template-rows: var(--barra-h) var(--info-h) 1fr auto var(--status-h);
+  grid-template-areas: 'barra barra barra barra' 'info info info info' 'rail esq centro dir' 'rail esq log dir' 'status status status status';
 }
 
 button, input, select { font: inherit; color: inherit; }
@@ -613,3 +614,32 @@ textarea:focus { border-color: var(--acento); outline: none; }
 
 .teste-hud-jogo[hidden] { display: none; }
 .cod-pronto { color: var(--acento); background: var(--acento-suave); border: 1px solid var(--acento); border-radius: 6px; padding: 8px 10px; }
+
+/* ---------- Linha de informações (abaixo da barra de menu) e rodapé ---------- */
+.barra-info {
+  grid-area: info; display: flex; align-items: center; gap: 16px; padding: 0 12px; font-size: 12px; white-space: nowrap; overflow: hidden;
+  background: #151c1a; border-bottom: 1px solid var(--borda); color: var(--texto-2);
+}
+.barra-info .st-coord { min-width: 110px; font-variant-numeric: tabular-nums; }
+.barra-info .msg { color: var(--texto); flex: 1; overflow: hidden; text-overflow: ellipsis; }
+.status .st-botao { flex: none; padding: 0 8px; font-size: 12px; border: 1px solid var(--borda); border-radius: 4px; }
+.status .st-botao:hover, .status .st-log:hover { border-color: var(--acento); color: var(--acento); }
+.status .st-versao { color: var(--texto-2); }
+.status .st-sep { color: var(--borda); }
+.status .st-dev { color: var(--texto-2); text-decoration: none; }
+.status .st-dev:hover { color: var(--acento); text-decoration: underline; }
+/* Guia de atalhos */
+.atalhos-caixa { width: min(1100px, calc(100vw - 32px)); height: min(760px, calc(100vh - 32px)); }
+.atalhos-caixa .pers-topo input { width: 260px; }
+.atalhos-grade { overflow-y: auto; padding: 14px 18px; columns: 3 300px; column-gap: 24px; }
+.atalhos-grupo { break-inside: avoid; margin-bottom: 16px; }
+.atalhos-grupo h3 { margin: 0 0 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--acento); }
+.atalho-linha { display: grid; grid-template-columns: minmax(110px, auto) 1fr; gap: 10px; padding: 3px 0; font-size: 12px; border-bottom: 1px solid rgba(43, 56, 53, 0.5); }
+.atalho-teclas { white-space: nowrap; }
+.atalho-teclas kbd { font: 600 11px/1 'Segoe UI', sans-serif; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--borda); border-bottom-width: 2px; background: var(--painel-2); }
+.atalho-teclas .sep { color: var(--texto-2); }
+/* Código em janela própria */
+body.corpo-codigo { margin: 0; height: 100vh; overflow: hidden; background: var(--fundo); }
+.tela-codigo.janela { padding: 0; background: var(--fundo); }
+.tela-codigo.janela .cod-caixa { border-radius: 0; border: 0; box-shadow: none; }
+.cod-aviso { font-size: 12px; color: var(--acento); max-width: 420px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

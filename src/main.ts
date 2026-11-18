@@ -21,8 +21,11 @@ import { ModoTeste } from './editor/testar';
 import { EditorPersonagens } from './ui/personagens';
 import { EditorControles } from './ui/controles';
 import { PainelLog } from './ui/log';
+import { abrirJanelaCodigo, aoReceber, enviar, ponteDisponivel, type ElementoSerial } from './plataforma/ponte';
 import { carregarTipo, type TipoInimigo } from './editor/inimigosTeste';
 import { EditorHud } from './ui/hud';
+import { GuiaAtalhos } from './ui/atalhos';
+import { textoAtalho } from './core/controles';
 import { normalizarHud } from './core/hud';
 import { LOG, capturarErrosGlobais } from './core/log';
 import { ACOES_SISTEMA, normalizarControles } from './core/controles';
@@ -57,10 +60,12 @@ const painelProps = el('section', { class: 'bloco props-bloco' });
 const painelCamadas = el('section', { class: 'bloco camadas-bloco' });
 direita.append(painelProps, painelCamadas);
 const status = el('footer', { class: 'status' });
+/** Linha logo abaixo da barra de menu: posição do mouse, camada ativa e a última mensagem do editor. */
+const barraInfo = el('div', { class: 'barra-info', role: 'status' });
 // Painel de Log (embaixo do cenário): teclas, personagem, mundo, código, erros e avisos
 capturarErrosGlobais();
 const painelLog = new PainelLog();
-app.append(barra, esquerda, centro, painelLog.raiz, direita, status);
+app.append(barra, barraInfo, esquerda, centro, painelLog.raiz, direita, status);
 
 // Painel lateral esquerdo: abas Ferramentas / Biblioteca, recolhível
 const abaFerr = el('button', { type: 'button', class: 'aba ativa', role: 'tab', 'aria-selected': 'true' }, 'Ferramentas');
@@ -546,7 +551,17 @@ async function fontesScripts(): Promise<FontesScripts> {
 const painelCodigo = new PainelCodigo(plat);
 painelCodigo.aoAvisar = (m) => estado.avisar(m);
 painelCodigo.aoTestar = () => void alternarTeste();
-painelLog.aoAbrirScript = (arquivo, linha) => { if (estado.testando) teste.parar(); void painelCodigo.irPara(arquivo, linha); };
+painelLog.aoAbrirScript = (arquivo, linha) => {
+  if (codigoEmJanela) {
+    void abrirJanelaCodigo().then((nova) => {
+      if (nova || !janelaCodigoPronta) { janelaCodigoPronta = false; irParaPendente = { arquivo, linha }; }
+      else enviar('codigo', { tipo: 'irPara', arquivo, linha });
+    });
+    return;
+  }
+  if (estado.testando) teste.parar();
+  void painelCodigo.irPara(arquivo, linha);
+};
 
 /** Arquivo da fase atual (salva antes, se for nova). */
 async function garantirFaseSalva(): Promise<string | null> {
@@ -647,11 +662,69 @@ painelCodigo.tipos = async () => {
     itens,
   });
 };
+// No Electron o Código abre numa JANELA PRÓPRIA (pode ir para o segundo monitor); no navegador, por cima do editor
+const codigoEmJanela = ponteDisponivel();
+let janelaCodigoPronta = false;
+let focoPendente: string | undefined;
+let irParaPendente: { arquivo: string; linha?: number } | undefined;
+
 async function abrirCodigo(foco?: string) {
-  if (estado.testando) teste.parar();
   if (editorPersonagens.aberta) await editorPersonagens.fechar();
   if (editorControles.aberta) editorControles.fechar();
+  if (codigoEmJanela) {
+    const abriuAgora = await abrirJanelaCodigo();
+    if (abriuAgora || !janelaCodigoPronta) { janelaCodigoPronta = false; focoPendente = foco; }
+    else enviar('codigo', { tipo: 'foco', ...(foco ? { chave: foco } : {}) });
+    return;
+  }
+  if (estado.testando) teste.parar();
   await painelCodigo.abrir(foco);
+}
+
+/** Manda para a janela do Código a lista atual (objetos, inimigos, personagens…) e os tipos do autocompletar. */
+let timerElementos = 0;
+function avisarCodigoMudou() {
+  clearTimeout(timerElementos);
+  timerElementos = window.setTimeout(async () => {
+    if (codigoEmJanela) {
+      if (!janelaCodigoPronta) return;
+      const lista: ElementoSerial[] = (await painelCodigo.coletarElementos()).map(({ ligar, ...e }) => ({ ...e, ligavel: !!ligar }));
+      enviar('codigo', { tipo: 'elementos', lista, tipos: await painelCodigo.tipos() });
+    } else if (painelCodigo.aberta) {
+      await painelCodigo.atualizarElementos();
+    }
+  }, 250);
+}
+// Tempo real: colocou um inimigo, apagou um objeto, salvou, trocou de fase → a lista do Código acompanha
+estado.on('fase', avisarCodigoMudou);
+estado.on('arquivo', avisarCodigoMudou);
+
+if (codigoEmJanela) {
+  aoReceber(async (msg) => {
+    switch (msg.tipo) {
+      case 'pronto':
+        janelaCodigoPronta = true;
+        avisarCodigoMudou();
+        if (focoPendente) { enviar('codigo', { tipo: 'foco', chave: focoPendente }); focoPendente = undefined; }
+        if (irParaPendente) { enviar('codigo', { tipo: 'irPara', ...irParaPendente }); irParaPendente = undefined; }
+        break;
+      case 'testar':
+        if (estado.testando) teste.parar();
+        await alternarTeste();
+        break;
+      case 'ligar': {
+        const e = (await painelCodigo.coletarElementos()).find((x) => x.chave === msg.chave);
+        const ok = e?.ligar ? await e.ligar(msg.arquivo) : false;
+        enviar('codigo', { tipo: 'resposta', id: msg.id, ok: !!ok });
+        avisarCodigoMudou();
+        break;
+      }
+      case 'aviso': estado.avisar(msg.texto); break;
+      case 'codigoFechado': janelaCodigoPronta = false; break;
+    }
+  });
+  // A Saída da janela do Código mostra o que o teste registra (código e erros)
+  LOG.ouvintes.add((l) => { if (janelaCodigoPronta && l && (l.cat === 'codigo' || l.cat === 'erro')) enviar('codigo', { tipo: 'log', linha: l }); });
 }
 
 // ---------- Tipos de inimigo (personagens NPC) ----------
@@ -669,6 +742,7 @@ async function carregarTiposInimigo() {
   tiposInimigo = novo;
   viewport.definirTiposInimigo(novo);
   teste.definirTiposInimigo(novo);
+  avisarCodigoMudou();
   if (!novo.has(estado.tipoInimigoNovo)) estado.tipoInimigoNovo = [...novo.keys()][0] ?? '';
   atualizarBarraInimigos();
 }
@@ -898,7 +972,20 @@ barra.append(
 const stCoord = el('span', { class: 'st-coord' });
 const stCamada = el('span', {});
 const stMsg = el('span', { class: 'msg', role: 'status' });
-const stAtalhos = el('span', { class: 'atalhos' }, 'V/C/I: selecionar, colisão, início · T: ferramentas · Roda: zoom · Espaço/botão do meio: mover a visão · Del: excluir · Ctrl+C/V: copiar/colar · Ctrl+Shift+setas: continuação · Alt: sem ímã · Ctrl+D: duplicar · F: espelhar · Setas: mover 1 px (Shift: 8)');
+// Rodapé: Log, guia de atalhos, versão e desenvolvedor
+const guiaAtalhos = new GuiaAtalhos();
+guiaAtalhos.teclasTeste = () => {
+  const c = normalizarControles(config.controles);
+  const nomes: Record<string, string> = { esquerda: 'Andar para a esquerda', direita: 'Andar para a direita', pular: 'Pular', interagir: 'Interagir' };
+  return Object.entries(c.acoes).filter(([, l]) => l.length).map(([a, l]) => [l.map(textoAtalho).join(' / '), nomes[a] ?? `Ação "${a}" (ferramenta Controles, B)`] as [string, string]);
+};
+const stAtalhos = el('button', { type: 'button', class: 'st-botao' }, 'Teclas de atalho');
+dica(stAtalhos, 'Teclas de atalho', 'Guia com todos os atalhos do editor, do ▶ Testar e do Código, com busca.', 'F1');
+stAtalhos.addEventListener('click', () => guiaAtalhos.alternar());
+const stVersao = el('span', { class: 'st-versao' }, 'Lorex Engine 2D');
+void plat.versao().then((v) => { stVersao.textContent = `Lorex Engine 2D v${v}`; });
+const stDev = el('a', { class: 'st-dev', href: 'https://github.com/gabrielpedreira', target: '_blank', rel: 'noopener' }, 'Desenvolvido por Gabriel Pedreira · github.com/gabrielpedreira');
+dica(stDev, 'Desenvolvedor', 'Abre o GitHub de Gabriel Pedreira no navegador.');
 // Botão do Log na barra de status (com contador de erros)
 const stLog = el('button', { type: 'button', class: 'st-log' }, 'Log', el('span', { class: 'st-log-erros' }));
 dica(stLog, 'Log', 'Mostra ou esconde o painel de Log embaixo do cenário: teclas, personagem, mundo, código e erros. Os testes são salvos em logs/.', 'L');
@@ -911,7 +998,8 @@ const atualizarStLog = () => {
 };
 LOG.ouvintes.add(atualizarStLog);
 painelLog.aoMudarVisibilidade = atualizarStLog;
-status.append(stLog, stCoord, stCamada, stMsg, stAtalhos);
+status.append(stLog, stAtalhos, el('div', { class: 'espaco' }), stVersao, el('span', { class: 'st-sep' }, '·'), stDev);
+barraInfo.append(stCoord, stCamada, stMsg);
 atualizarStLog();
 let timerMsg = 0;
 
@@ -939,6 +1027,7 @@ function digitando(): boolean {
 }
 
 window.addEventListener('keydown', (e) => {
+  if (e.key === 'F1') { e.preventDefault(); guiaAtalhos.alternar(); return; }
   if (document.querySelector('.modal-fundo') || inicio.aberta || editorPersonagens.aberta || editorControles.aberta || painelCodigo.aberta || editorHud.aberta) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();

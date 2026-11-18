@@ -68,9 +68,17 @@ export class PainelCodigo {
   /** Declarações da API atualizadas com o contexto do projeto (nomes de objetos, ações…). */
   tipos: () => Promise<string> = async () => '';
 
-  constructor(private plat: Plataforma) {
-    this.raiz = el('div', { class: 'tela-codigo', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Código' });
+  /** Em janela própria (Electron): ocupa a janela inteira, pode ir para outro monitor. */
+  readonly janela: boolean;
+  private elAviso!: HTMLElement;
+  private timerAviso = 0;
+
+  constructor(private plat: Plataforma, opcoes: { janela?: boolean } = {}) {
+    this.janela = !!opcoes.janela;
+    this.raiz = el('div', { class: 'tela-codigo' + (this.janela ? ' janela' : ''), role: this.janela ? 'main' : 'dialog', 'aria-modal': this.janela ? 'false' : 'true', 'aria-label': 'Código' });
     this.raiz.hidden = true;
+    // Janela própria: avisa antes de fechar com algo não salvo
+    if (this.janela) window.addEventListener('beforeunload', (e) => { if (this.abas.some((a) => a.modelo.getAlternativeVersionId() !== a.salvo)) e.preventDefault(); });
     document.body.append(this.raiz);
     this.montar();
     LOG.ouvintes.add((l) => { if (this.aberta && (!l || l.cat === 'codigo' || l.cat === 'erro')) this.desenharSaida(); });
@@ -79,7 +87,7 @@ export class PainelCodigo {
       const ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && e.key.toLowerCase() === 's') { e.preventDefault(); void (e.shiftKey ? this.salvarTudo() : this.salvarAtual()); }
       else if (e.key === 'F5') { e.preventDefault(); void this.testar(); }
-      else if (e.key === 'Escape' && !this.raiz.querySelector('.suggest-widget.visible, .find-widget.visible')) {
+      else if (e.key === 'Escape' && !this.janela && !this.raiz.querySelector('.suggest-widget.visible, .find-widget.visible')) {
         if (!(e.target as HTMLElement).closest('.monaco-editor')) { e.preventDefault(); void this.fechar(); }
       }
     });
@@ -133,15 +141,34 @@ export class PainelCodigo {
 
   // ---------- Elementos (explorador) ----------
 
-  async atualizarElementos() {
+  /** Tudo o que as fontes listam agora (o editor também usa para mandar à janela do Código). */
+  async coletarElementos(): Promise<ElementoCodigo[]> {
     const listas = await Promise.all(this.fontes.map((f) => f().catch(() => [] as ElementoCodigo[])));
-    this.elementos = listas.flat();
+    const lista = listas.flat();
     // Quantos usam o mesmo arquivo
     const usos = new Map<string, number>();
-    for (const e of this.elementos) if (e.arquivo) usos.set(e.arquivo, (usos.get(e.arquivo) ?? 0) + 1);
-    for (const e of this.elementos) e.compartilhado = e.arquivo ? (usos.get(e.arquivo) ?? 1) - 1 : 0;
+    for (const e of lista) if (e.arquivo) usos.set(e.arquivo, (usos.get(e.arquivo) ?? 0) + 1);
+    for (const e of lista) e.compartilhado = e.arquivo ? (usos.get(e.arquivo) ?? 1) - 1 : 0;
+    return lista;
+  }
+
+  /** Atualiza a lista da esquerda (chamado sozinho quando a fase muda: objeto ou inimigo novo aparece na hora). */
+  async atualizarElementos() {
+    this.elementos = await this.coletarElementos();
     if (this.definirTipos) this.definirTipos(await this.tipos());
+    // O elemento selecionado pode ter ganhado um script por fora
+    const sel = this.selecionado ? this.elemento(this.selecionado) : undefined;
+    if (sel?.arquivo && !this.atual) await this.abrirArquivo(sel.arquivo, sel.dono, sel.nome);
     this.desenharExplorador();
+    if (!this.atual) this.desenharEditor();
+  }
+
+  /** Mensagem curta no topo do painel (janela própria, onde não há a barra de status do editor). */
+  avisar(texto: string) {
+    if (!this.elAviso) return;
+    this.elAviso.textContent = texto;
+    clearTimeout(this.timerAviso);
+    this.timerAviso = window.setTimeout(() => { this.elAviso.textContent = ''; }, 6000);
   }
 
   private elemento(chave: string) { return this.elementos.find((e) => e.chave === chave); }
@@ -232,7 +259,7 @@ export class PainelCodigo {
 
   private async testar() {
     await this.salvarTudo();
-    this.raiz.hidden = true;
+    if (!this.janela) this.raiz.hidden = true;
     this.aoTestar();
   }
 
@@ -309,6 +336,9 @@ export class PainelCodigo {
     dica(testar, 'Salvar e testar', 'Salva tudo e joga a fase com o código.', 'F5');
     testar.addEventListener('click', () => void this.testar());
     this.elTitulo = el('span', { class: 'cod-titulo-arquivo' });
+    this.elAviso = el('span', { class: 'cod-aviso', role: 'status' });
+    if (this.janela) fechar.hidden = true;
+    if (this.janela) dica(testar, 'Salvar e testar', 'Salva tudo e começa o ▶ Testar na janela do editor (a outra tela).', 'F5');
 
     this.elExplorador = el('nav', { class: 'cod-explorador', 'aria-label': 'Elementos do projeto' });
     this.elAbas = el('div', { class: 'cod-abas', role: 'tablist' });
@@ -318,7 +348,7 @@ export class PainelCodigo {
     this.elSaida = el('section', { class: 'cod-saida' });
 
     this.raiz.append(el('div', { class: 'cod-caixa' },
-      el('header', { class: 'pers-topo' }, el('h2', {}, 'Código'), this.elTitulo, el('div', { class: 'espaco' }), api, salvar, salvarTudo, testar, fechar),
+      el('header', { class: 'pers-topo' }, el('h2', {}, 'Código'), this.elTitulo, el('div', { class: 'espaco' }), this.elAviso, api, salvar, salvarTudo, testar, fechar),
       el('div', { class: 'cod-corpo' },
         this.elExplorador,
         el('div', { class: 'cod-centro' }, this.elAbas, el('div', { class: 'cod-area' }, this.elEditor, this.elVazio)),

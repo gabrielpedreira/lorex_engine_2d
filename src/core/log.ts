@@ -48,6 +48,13 @@ class RegistroLog {
     for (const f of this.ouvintes) f(linha);
   }
 
+  /** Linha vinda de outra janela (o editor manda o Log do teste para a janela do Código). */
+  importar(l: LinhaLog) {
+    this.linhas.push(l);
+    if (this.linhas.length > MAXIMO) this.linhas.splice(0, this.linhas.length - MAXIMO);
+    for (const f of this.ouvintes) f(l);
+  }
+
   limpar() {
     this.linhas = [];
     for (const f of this.ouvintes) f(null);

@@ -82,7 +82,8 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 - **Controles** (`B`): define as teclas de cada ação (andar, pular, interagir e as ações do personagem), com
   **tecla**, **combinação** (Shift + J) ou **sequência** (↓ › → › J). Base pronta: setas/A D andam, Espaço/W/↑ pulam,
   E interage, J/X atiram, R recarrega. Mostra conflitos, tem área para experimentar e salva em `jogo/projeto.json`.
-- **Código** (`O`): painel estilo VS Code. À esquerda, tudo o que pode ter código: o jogo (`jogo.js`), a fase, cada
+- **Código** (`O`): painel estilo VS Code, em **janela própria** (dá para levar ao segundo monitor; a posição fica salva).
+  A lista acompanha o editor em tempo real (colocou um inimigo, ele já aparece) e o ▶ Testar começa no editor. À esquerda, tudo o que pode ter código: o jogo (`jogo.js`), a fase, cada
   objeto (chave, porta…) e cada personagem (jogador e NPCs); à direita, o editor (Monaco, o mesmo do VS Code) com abas,
   autocompletar que conhece os nomes do projeto (objetos, ações, animações, fases, itens) e referência da API; embaixo,
   a **Saída** com `jogo.log()` e erros (clique leva à linha). Os scripts são JavaScript em `jogo/scripts/` e usam
@@ -102,6 +103,8 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
   tiro instantâneo (paredes param), recarga enche o pente ao fim da animação.
 - **HUD** (`U`): elementos de texto presos a cantos/bordas da tela do jogo (munição, inimigos vivos, `item:<nome>` ou
   chaves do código via `jogo.hud.definir`), com prévia arrastável.
+- **Rodapé:** Log, **Teclas de atalho** (guia com busca, também em `F1`), versão e desenvolvedor. Posição do mouse,
+  camada ativa e mensagens ficam na linha logo abaixo da barra de menu.
 - **Log** (`L`, ou o botão "Log" na barra de status): painel embaixo do cenário que registra, com o tempo do teste,
   as **teclas** (apertada/solta e a ação disparada), o **personagem** (estado parado/andando/pulando/caindo, animações,
   ações canceladas pelo código), o **mundo** (coletas, interações, alavancas, saídas, quedas), o **código** (ganchos que

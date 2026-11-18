@@ -335,6 +335,18 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   retornando false para o pronto não rodar. O explorador marca com ⚙ o que funciona por comportamento pronto.
 - **Ordem de desenho:** inimigo em ataque que agarra fica na frente do jogador (`ordenarAgarrao`).
 
+### 4.24 Janela do Código, rodapé e guia de atalhos
+
+- **Janela própria (Electron):** `codigo.html` + `src/codigo/janela.ts` abrem o `PainelCodigo` em modo `janela`
+  (BrowserWindow `janelaCodigo`; posição/tamanho salvos em `config.json` do app). Mensagens entre janelas pelo processo
+  principal (`ponte:enviar` → `ponte:mensagem`; `src/plataforma/ponte.ts`): o editor manda `elementos` (lista do
+  explorador serializada + tipos do autocompletar) a cada mudança da fase (debounce 250 ms), `foco`, `irPara` e as linhas
+  de Log de código/erro; a janela manda `pronto`, `testar`, `ligar` (o editor grava a ligação do script) e `aviso`.
+  No navegador o painel continua por cima do editor. O watcher avisa as duas janelas.
+- **Rodapé:** Log, Teclas de atalho (`ui/atalhos.ts`, F1; inclui as teclas atuais do ▶ Testar), versão, desenvolvedor
+  (link externo via `setWindowOpenHandler` → navegador). **Linha de informações** (`barra-info`, grid `info`) abaixo da
+  barra de menu: posição, camada, mensagem. REGRA: atalho novo entra no guia.
+
 ### 4.18 Legendas e recarregar por fora
 
 - `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas

@@ -20,6 +20,10 @@ contextBridge.exposeInMainWorld('lorex', {
   lerDados: (pasta, nome) => ipcRenderer.invoke('dados:ler', pasta, nome),
   salvarDados: (pasta, nome, conteudo) => ipcRenderer.invoke('dados:salvar', pasta, nome, conteudo),
   salvarLog: (nome, conteudo) => ipcRenderer.invoke('logs:salvar', nome, conteudo),
+  // Janela do Código (segundo monitor) e mensagens entre as janelas
+  abrirJanelaCodigo: () => ipcRenderer.invoke('codigo:abrir'),
+  ponteEnviar: (destino, msg) => ipcRenderer.send('ponte:enviar', destino, msg),
+  aoPonte: (fn) => { ipcRenderer.on('ponte:mensagem', (_e, msg) => fn(msg)); },
   limparNaoUsados: (emUsoAgora) => ipcRenderer.invoke('assets:limparNaoUsados', emUsoAgora),
   otimizarAsset: (fonteRaiz, largura, altura) => ipcRenderer.invoke('assets:otimizar', fonteRaiz, largura, altura),
   listarFases: () => ipcRenderer.invoke('fases:listar'),

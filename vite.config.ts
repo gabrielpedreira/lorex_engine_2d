@@ -16,6 +16,7 @@ export default defineConfig({
       input: {
         editor: resolve(import.meta.dirname, 'index.html'),
         splash: resolve(import.meta.dirname, 'splash.html'),
+        codigo: resolve(import.meta.dirname, 'codigo.html'),
       },
     },
   },
