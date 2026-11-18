@@ -82,6 +82,8 @@ export class EditorPersonagens {
   aoDefinirTeste: (arquivo: string) => void = () => {};
   /** Abrir a ferramenta Controles (para dar teclas às ações). */
   aoAbrirControles: () => void = () => {};
+  /** Abrir o painel de Código neste personagem (arquivo do personagem). */
+  aoAbrirCodigo: (arquivo: string) => void = () => {};
   /** Uma animação extra mudou de chave (o editor leva as teclas junto). */
   aoRenomearAcao: (antiga: string, nova: string) => void = () => {};
 
@@ -176,6 +178,10 @@ export class EditorPersonagens {
       for (let i = 2; existentes.has(nome); i++) nome = `${base}_${i}.json`;
       this.arquivo = nome;
     }
+    // O painel de Código pode ter ligado um script ao arquivo enquanto ele estava aberto aqui: não perder a ligação
+    if (!this.p.script) {
+      try { const no = JSON.parse(await this.plat.lerDados('personagens', this.arquivo)) as { script?: string }; if (no.script) this.p.script = no.script; } catch { /* arquivo novo */ }
+    }
     await this.plat.salvarDados('personagens', this.arquivo, JSON.stringify(this.p, null, 2));
     this.sujo = false;
     this.aoAvisar(`Personagem salvo em jogo/personagens/${this.arquivo}`);
@@ -222,6 +228,10 @@ export class EditorPersonagens {
     teste.disabled = !this.arquivo || this.p.tipo === 'npc';
     if (this.p.tipo === 'npc') dica(teste, 'Usar no ▶ Testar', 'Só personagens do tipo Jogador. NPCs vão para as fases com o módulo de inimigos/IA, e o código toca as animações deles por nome.');
     teste.addEventListener('click', () => { this.usarNoTeste(); void this.render(); });
+    const codigo = el('button', { type: 'button', class: 'secundario' }, this.p.script ? 'Código { }' : 'Código…');
+    dica(codigo, 'Código do personagem', 'Abre o painel de Código neste personagem (ganchos como aoAcao: munição, cancelar um tiro…). Salve o personagem antes.', 'O');
+    codigo.disabled = !this.arquivo;
+    codigo.addEventListener('click', async () => { if (this.sujo && !(await this.salvar())) return; if (this.arquivo) this.aoAbrirCodigo(this.arquivo); });
     const fechar = el('button', { type: 'button', class: 'secundario' }, 'Fechar');
     dica(fechar, 'Fechar', 'Volta ao editor de fases.', 'Esc');
     fechar.addEventListener('click', () => void this.fechar());
@@ -229,7 +239,7 @@ export class EditorPersonagens {
     const topo = el('header', { class: 'pers-topo' },
       el('h2', {}, 'Personagens'), seletor, novo,
       el('span', { class: 'sujo' }, this.sujo ? '● não salvo' : ''),
-      el('div', { class: 'espaco' }), teste, salvar, fechar);
+      el('div', { class: 'espaco' }), codigo, teste, salvar, fechar);
 
     this.canvas = el('canvas', { class: 'pers-previa', width: 560, height: 420 });
     this.canvas.addEventListener('click', (e) => this.cliqueNaPrevia(e));

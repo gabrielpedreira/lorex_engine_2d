@@ -82,6 +82,18 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 - **Controles** (`B`): define as teclas de cada ação (andar, pular, interagir e as ações do personagem), com
   **tecla**, **combinação** (Shift + J) ou **sequência** (↓ › → › J). Base pronta: setas/A D andam, Espaço/W/↑ pulam,
   E interage, J/X atiram, R recarrega. Mostra conflitos, tem área para experimentar e salva em `jogo/projeto.json`.
+- **Código** (`O`): painel estilo VS Code. À esquerda, tudo o que pode ter código: o jogo (`jogo.js`), a fase, cada
+  objeto (chave, porta…) e cada personagem (jogador e NPCs); à direita, o editor (Monaco, o mesmo do VS Code) com abas,
+  autocompletar que conhece os nomes do projeto (objetos, ações, animações, fases, itens) e referência da API; embaixo,
+  a **Saída** com `jogo.log()` e erros (clique leva à linha). Os scripts são JavaScript em `jogo/scripts/` e usam
+  **ganchos** (`aoIniciar`, `aoAtualizar`, `aoTocar`, `aoInteragir`, `aoColetar`, `aoAcionado`, `aoAcao`, `aoTrocarFase`).
+  Exemplo:
+  ```js
+  export function aoInteragir(eu, jogo) {
+    if (!jogo.inventario.tem('chave')) { jogo.aviso('Trancada.'); return false; }
+    eu.abrir();
+  }
+  ```
 - **Copiar/colar** (`Ctrl+C` / `Ctrl+X` / `Ctrl+V`): cola onde está o mouse, com o mesmo tamanho, efeitos e
   comportamento; o copiado continua guardado ao trocar de fase.
 - **Continuação (loop)**: botões ← ↑ ↓ → no painel (ou `Ctrl+Shift+setas`) criam uma cópia encostada exatamente na
@@ -119,7 +131,7 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 | Forma de colisão | `1` bloco · `2` rampa ◢ · `3` rampa ◣ · `4` polígono · `5` linha · `6` mão livre |
 | Sólido ↔ atravessável (modo Colisão) | `X` |
 | Polígono/linha: terminar · desfazer ponto · cancelar | `Enter` ou duplo clique · `Backspace` · `Esc` |
-| Personagens / Controles | `K` / `B` |
+| Personagens / Controles / Código | `K` / `B` / `O` |
 | ▶ Testar / voltar | `F5` / `Esc` (no teste: teclas da ferramenta Controles; `F6` reinicia) |
 | Mostrar colisões / prévia de efeitos | `Shift+C` / `Shift+E` |
 | Mostrar/ocultar caixa de ferramentas | `T` |

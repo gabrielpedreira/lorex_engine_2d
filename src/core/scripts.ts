@@ -1,0 +1,236 @@
+// Scripts (código do jogo): onde ficam, quais "ganchos" existem, o modelo de cada um, a compilação e os tipos
+// usados pelo autocompletar do painel de Código. Os scripts são módulos JavaScript em jogo/scripts/*.js:
+//
+//   export function aoInteragir(eu, jogo) { jogo.aviso('Olá!'); }
+//
+// Quem é dono de um script: o jogo inteiro (jogo.js), uma fase (<fase>.js), um objeto da fase
+// (<fase>.<id>.js) ou um personagem (personagem.<nome>.js). O dono guarda o nome do arquivo em "script".
+//
+// REGRA DA ENGINE: todo módulo novo (menus, HUD, inimigos…) que criar algo programável deve
+// (1) aparecer no explorador do painel de Código (fonte de elementos), (2) ganhar ganchos aqui em GANCHOS e
+// (3) expor a API dele em tiposApi(). Assim o código sempre acompanha o que existe no projeto.
+
+export type DonoScript = 'jogo' | 'fase' | 'objeto' | 'personagem';
+
+export interface Gancho {
+  nome: string;
+  donos: DonoScript[];
+  /** Parâmetros (texto JS), ex.: "eu, jogo". */
+  params: string;
+  texto: string;
+  /** Exemplo de corpo para o modelo. */
+  exemplo?: string;
+}
+
+export const GANCHOS: Gancho[] = [
+  { nome: 'aoIniciar', donos: ['jogo', 'fase', 'objeto', 'personagem'], params: 'eu, jogo', texto: 'Uma vez, quando a fase começa.' },
+  { nome: 'aoAtualizar', donos: ['jogo', 'fase', 'objeto', 'personagem'], params: 'eu, jogo, dt', texto: 'A cada quadro (dt = segundos desde o último). Use com moderação.' },
+  { nome: 'aoTocar', donos: ['objeto'], params: 'eu, jogo', texto: 'Quando o jogador encosta no objeto (uma vez por encostada).' },
+  { nome: 'aoInteragir', donos: ['objeto'], params: 'eu, jogo', texto: 'Quando o jogador aperta Interagir perto do objeto. Retorne false para cancelar o comportamento pronto (porta, alavanca…). Um objeto com este gancho vira interagível mesmo sem comportamento.' },
+  { nome: 'aoColetar', donos: ['objeto'], params: 'eu, jogo', texto: 'Antes de um coletável ir para o inventário. Retorne false para não pegar.' },
+  { nome: 'aoAcionado', donos: ['objeto'], params: 'eu, jogo, origem', texto: 'Quando uma alavanca ligada a este objeto é acionada (origem = a alavanca).' },
+  { nome: 'aoAcao', donos: ['personagem'], params: 'eu, jogo, acao', texto: 'Quando o jogador dispara uma ação (ex.: "tiro", "recarga"). Retorne false para cancelar a animação.' },
+  { nome: 'aoTrocarFase', donos: ['jogo'], params: 'eu, jogo, fase', texto: 'Quando o jogador chega numa fase ou área (fase = nome do arquivo).' },
+];
+
+export const gancho = (nome: string) => GANCHOS.find((g) => g.nome === nome);
+
+/** Parâmetros de um gancho para um dono (jogo e fase não têm "eu"). */
+export function paramsDe(g: Gancho, dono: DonoScript) {
+  return dono === 'jogo' || dono === 'fase' ? g.params.replace(/^eu, /, '') : g.params;
+}
+
+/** Nome de arquivo (sem acento/espaço) a partir de um texto. */
+export function slugScript(t: string) {
+  return t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'script';
+}
+
+export const arquivoScript = {
+  jogo: () => 'jogo.js',
+  fase: (arquivoFase: string) => `${slugScript(arquivoFase.replace(/\.json$/i, ''))}.js`,
+  objeto: (arquivoFase: string, idObjeto: string) => `${slugScript(arquivoFase.replace(/\.json$/i, ''))}.${slugScript(idObjeto)}.js`,
+  personagem: (arquivoPersonagem: string) => `personagem.${slugScript(arquivoPersonagem.replace(/\.json$/i, ''))}.js`,
+};
+
+const TIPO_EU: Record<DonoScript, string> = { jogo: 'Jogo', fase: 'Jogo', objeto: 'Objeto', personagem: 'Jogador' };
+
+/** Script novo, já com os ganchos daquele tipo de dono (comentados os que não são essenciais). */
+export function modeloScript(dono: DonoScript, nome: string, extra = ''): string {
+  const ganchos = GANCHOS.filter((g) => g.donos.includes(dono));
+  const principais: Record<DonoScript, string[]> = {
+    jogo: ['aoIniciar', 'aoTrocarFase'], fase: ['aoIniciar'], objeto: ['aoInteragir'], personagem: ['aoAcao'],
+  };
+  const linhas = [
+    `// Script de ${nome}${extra ? ` (${extra})` : ''}.`,
+    '// Ganchos: funções com nomes especiais que a engine chama sozinha. Apague as que não usar.',
+    "// Ctrl+Espaço sugere o que existe (objetos, ações, animações). Referência completa: botão \"API\" no topo.",
+    '',
+  ];
+  for (const g of ganchos) {
+    const ativo = principais[dono].includes(g.nome);
+    const params = paramsDe(g, dono);
+    const p = params.split(', ');
+    const doc = [`/**`, ` * ${g.texto}`, ...p.map((x) => ` * @param {${x === 'eu' ? TIPO_EU[dono] : x === 'jogo' ? 'Jogo' : x === 'dt' ? 'number' : x === 'origem' ? 'Objeto' : 'string'}} ${x}`), ' */'];
+    const corpo = ativo ? exemploPara(dono, g.nome) : '  ';
+    const bloco = [...doc, `export function ${g.nome}(${params}) {`, corpo, '}'];
+    linhas.push(...(ativo ? bloco : bloco.map((l) => '// ' + l)), '');
+  }
+  return linhas.join('\n');
+}
+
+function exemploPara(dono: DonoScript, nome: string) {
+  if (dono === 'objeto' && nome === 'aoInteragir') return "  jogo.aviso(`Você mexeu em ${eu.nome}`);\n  // return false; // descomente para cancelar o comportamento pronto";
+  if (dono === 'personagem' && nome === 'aoAcao') return '  // if (acao === "tiro") { ... }';
+  if (dono === 'jogo' && nome === 'aoTrocarFase') return '  // jogo.log("Entrou em", fase);';
+  return '  ';
+}
+
+// ---------- Compilação (módulo ES a partir de texto) ----------
+
+export interface ScriptCompilado {
+  arquivo: string;
+  url: string;
+  ganchos: Record<string, (...args: unknown[]) => unknown>;
+}
+
+/** Compila um script como módulo (via blob:). Lança SyntaxError se o código tiver erro. */
+export async function compilarScript(arquivo: string, codigo: string): Promise<ScriptCompilado> {
+  const url = URL.createObjectURL(new Blob([codigo + `\n//# sourceURL=lorex-script/${arquivo}`], { type: 'text/javascript' }));
+  const m = (await import(/* @vite-ignore */ url)) as Record<string, unknown>;
+  const ganchos: ScriptCompilado['ganchos'] = {};
+  for (const [k, v] of Object.entries(m)) if (typeof v === 'function') ganchos[k] = v as (...a: unknown[]) => unknown;
+  return { arquivo, url, ganchos };
+}
+
+/** Linha de um erro dentro de um script (pela pilha), se der para saber. */
+export function linhaDoErro(err: unknown, url: string): { linha: number; coluna: number } | null {
+  const pilha = err instanceof Error ? err.stack ?? '' : '';
+  const esc = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = new RegExp(esc + ':(\\d+):(\\d+)').exec(pilha) ?? /lorex-script\/[^:]+:(\d+):(\d+)/.exec(pilha);
+  return m ? { linha: Number(m[1]), coluna: Number(m[2]) } : null;
+}
+
+// ---------- Tipos para o autocompletar ----------
+
+export interface ContextoTipos {
+  objetos: string[];
+  acoes: string[];
+  animacoes: string[];
+  fases: string[];
+  itens: string[];
+}
+
+const uniao = (l: string[]) => (l.length ? [...new Set(l)].map((x) => JSON.stringify(x)).join(' | ') : 'string');
+
+/** Declarações da API (mudam conforme o projeto: nomes de objetos, ações, animações, fases e itens). */
+export function tiposApi(c: ContextoTipos): string {
+  return `
+/** Nome (ou id) de um objeto desta fase. */
+type NomeObjeto = ${uniao(c.objetos)} | (string & {});
+/** Ação dos Controles (teclas). */
+type NomeAcao = ${uniao(c.acoes)} | (string & {});
+/** Animação do personagem. */
+type NomeAnimacao = ${uniao(c.animacoes)} | (string & {});
+/** Arquivo de fase ou área. */
+type NomeFase = ${uniao(c.fases)} | (string & {});
+/** Item do inventário. */
+type NomeItem = ${uniao(c.itens)} | (string & {});
+
+/** Um objeto da fase, durante o jogo. */
+interface Objeto {
+  readonly id: string;
+  readonly nome: string;
+  /** Posição (canto superior esquerdo). Mudar move o objeto. */
+  x: number;
+  y: number;
+  readonly largura: number;
+  readonly altura: number;
+  /** Aparece no jogo? */
+  visivel: boolean;
+  /** Portas: aberta ou fechada. */
+  aberta: boolean;
+  /** Guarde aqui o que quiser deste objeto (vale durante a partida). */
+  dados: Record<string, any>;
+  mostrar(): void;
+  esconder(): void;
+  abrir(): void;
+  fechar(): void;
+  /** Move somando dx, dy (px). */
+  mover(dx: number, dy: number): void;
+  /** O jogador está encostando neste objeto? */
+  readonly tocandoJogador: boolean;
+  /** Distância (px) entre os centros do objeto e do jogador. */
+  distanciaDoJogador(): number;
+  /** Faz a mesma coisa que o jogador apertar Interagir nele. */
+  interagir(): void;
+}
+
+/** O jogador (personagem do teste). */
+interface Jogador {
+  /** Posição dos pés. */
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  readonly noChao: boolean;
+  readonly olhandoDireita: boolean;
+  /** Nome do personagem (ex.: "Lorena"). */
+  readonly nome: string;
+  /** Toca uma animação extra (ex.: "tiro_sem_bala"). Retorna false se não existir. */
+  tocar(animacao: NomeAnimacao): boolean;
+  /** Animação extra tocando agora (ou null). */
+  readonly acaoAtual: string | null;
+  /** Leva o jogador para (x, y), parado. */
+  teleportar(x: number, y: number): void;
+  /** Dá um impulso (px/s), ex.: empurrar(0, -400) para um pulo extra. */
+  empurrar(vx: number, vy: number): void;
+  /** Guarde aqui o que quiser do jogador (ex.: munição). */
+  dados: Record<string, any>;
+}
+
+interface Inventario {
+  tem(item: NomeItem, quantidade?: number): boolean;
+  quantidade(item: NomeItem): number;
+  dar(item: NomeItem, quantidade?: number): void;
+  tirar(item: NomeItem, quantidade?: number): boolean;
+  /** Todos os itens: { "chave vermelha": 1, ... } */
+  lista(): Record<string, number>;
+}
+
+interface Hud {
+  /** Mostra (ou atualiza) uma linha no canto da tela, ex.: hud.definir("Munição", "7/7"). */
+  definir(rotulo: string, valor: string | number): void;
+  remover(rotulo: string): void;
+}
+
+/** Tudo o que o código pode usar durante o jogo. */
+interface Jogo {
+  readonly jogador: Jogador;
+  readonly inventario: Inventario;
+  readonly hud: Hud;
+  /** Variáveis livres que seguem de uma fase para outra (ex.: jogo.variaveis.portaoAberto = true). */
+  variaveis: Record<string, any>;
+  /** Arquivo da fase atual. */
+  readonly fase: string;
+  /** Segundos desde que a fase começou. */
+  readonly tempo: number;
+  objeto(nomeOuId: NomeObjeto): Objeto | null;
+  /** Objetos cujo nome contém o texto (ou todos). */
+  objetos(nomeContem?: string): Objeto[];
+  /** Aviso rápido na tela. */
+  aviso(texto: string): void;
+  /** Caixa de mensagem (pausa o jogo até fechar). */
+  mensagem(texto: string): void;
+  /** Vai para outra fase ou área. */
+  irPara(fase: NomeFase): void;
+  /** A ação foi apertada neste quadro? */
+  apertou(acao: NomeAcao): boolean;
+  /** A ação está segurada? */
+  segurando(acao: NomeAcao): boolean;
+  /** Chama a função depois de alguns segundos. */
+  esperar(segundos: number, fn: () => void): void;
+  /** Escreve na Saída do painel de Código. */
+  log(...valores: any[]): void;
+}
+`;
+}

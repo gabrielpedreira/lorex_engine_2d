@@ -91,6 +91,8 @@ export class Viewport {
 
   /** Durante o ▶ Testar: visibilidade de cada objeto no jogo (itens pegos e portas abertas somem). */
   visibilidadeTeste: Map<string, boolean> | null = null;
+  /** Objetos movidos pelo código durante o ▶ Testar (id → deslocamento). */
+  deslocamentoTeste: Map<string, { dx: number; dy: number }> | null = null;
 
   /** Reconstrói a cena (ex.: depois que algo mudou no jogo de teste). */
   atualizarCena() { this.sincronizar(); }
@@ -411,7 +413,8 @@ export class Viewport {
     const th = sp.texture === Texture.EMPTY ? o.h : sp.texture.height;
     const ex = (o.escala * o.w / tw) * r.escala, ey = (o.escala * o.h / th) * r.escala;
     sp.scale.set(ex * (o.espelharX ? -1 : 1), ey * (o.espelharY ? -1 : 1));
-    sp.position.set(o.x + (o.w * o.escala) / 2, o.y + (o.h * o.escala) / 2 + r.dy);
+    const desl = this.deslocamentoTeste?.get(o.id);
+    sp.position.set(o.x + (o.w * o.escala) / 2 + (desl?.dx ?? 0), o.y + (o.h * o.escala) / 2 + r.dy + (desl?.dy ?? 0));
     sp.angle = o.rotacao;
     sp.alpha = o.opacidade * r.alpha;
     sp.visible = o.visivel && (this.visibilidadeTeste?.get(o.id) ?? true);

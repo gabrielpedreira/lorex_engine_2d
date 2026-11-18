@@ -16,6 +16,9 @@ export interface Ferramenta {
 }
 
 /** Configuração do projeto inteiro (jogo/projeto.json). Vale para as fases novas. */
+/** Pastas de dados em jogo/: personagens (.json) e scripts de código (.js). */
+export type PastaDados = 'personagens' | 'scripts';
+
 export interface ConfigProjeto {
   /** Pastas da caixa de ferramentas. */
   ferramentas?: Ferramenta[];
@@ -48,7 +51,7 @@ export interface Plataforma {
   pronto(): void;
   recentes(): Promise<InfoProjeto[]>;
   /** Avisa quando algo em jogo/ muda fora do editor (ex.: o Claude editou uma fase). */
-  aoMudarProjeto(fn: (m: { tipo: 'fase' | 'config' | 'assets' | 'personagem'; nome: string }) => void): void;
+  aoMudarProjeto(fn: (m: { tipo: 'fase' | 'config' | 'assets' | 'personagem' | 'script'; nome: string }) => void): void;
   abrirCaminho(caminho: string): Promise<InfoProjeto | null>;
   lerConfigProjeto(): Promise<ConfigProjeto | null>;
   salvarConfigProjeto(c: ConfigProjeto): Promise<void>;
@@ -60,10 +63,10 @@ export interface Plataforma {
   listarAssets(): Promise<string[]>;
   /** Garante que o asset esteja em jogo/assets e devolve o caminho relativo a jogo/. categoria: subpasta (ex.: "personagens/lorena"). */
   garantirEmUso(caminhoRaiz: string, categoria?: string): Promise<string>;
-  /** Dados em JSON de jogo/<pasta>/ (por enquanto: "personagens"). */
-  listarDados(pasta: 'personagens'): Promise<string[]>;
-  lerDados(pasta: 'personagens', nome: string): Promise<string>;
-  salvarDados(pasta: 'personagens', nome: string, conteudo: string): Promise<void>;
+  /** Dados de jogo/<pasta>/: personagens (.json) e scripts (.js). */
+  listarDados(pasta: PastaDados): Promise<string[]>;
+  lerDados(pasta: PastaDados, nome: string): Promise<string>;
+  salvarDados(pasta: PastaDados, nome: string, conteudo: string): Promise<void>;
   /** Manda para a Lixeira os arquivos de jogo/assets sem uso em nenhuma fase. Retorna os removidos. */
   limparNaoUsados(emUsoAgora: string[]): Promise<string[]>;
   /** Gera cópia reduzida em jogo/assets (só Electron). null = indisponível. */

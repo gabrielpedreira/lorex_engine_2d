@@ -750,7 +750,7 @@
       ],
       "comportamentos": [],
       "conexoes": {},
-      "script": null,
+      "script": "demonstracao.obj_031.js",
       "tipo": "interativo"
     }
   ],

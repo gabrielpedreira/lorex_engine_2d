@@ -9,6 +9,8 @@ import { el } from './dom';
 
 export interface AcoesObjeto {
   duplicar(): void;
+  /** Abre o painel de Código no objeto (id) ou na fase (null). */
+  abrirCodigo(id: string | null): void;
   copiar(): void;
   /** Cópia encostada exatamente ao lado (continuação/loop). */
   continuar(lado: 'direita' | 'esquerda' | 'cima' | 'baixo'): void;
@@ -349,6 +351,7 @@ export class PainelPropriedades {
         botao('Enviar p/ trás', () => this.acoes.ordem('tras')),
         botao('Duplicar', () => this.acoes.duplicar()),
         botao('Copiar', () => this.acoes.copiar()),
+        botao(o.script ? 'Código { }' : 'Código…', () => this.acoes.abrirCodigo(o.id)),
         botao('Excluir', () => this.acoes.excluir(), 'perigo'),
       ),
     );
@@ -454,6 +457,17 @@ export class PainelPropriedades {
         el('span', { class: 'dica-campo' }, 'Posição dos pés da personagem. Arraste a bandeira no cenário ou use a ferramenta Início (I).'),
         el('div', { class: 'dica' }, `${f.objetos.length} objeto(s) · ${f.colisoes.length} colisão(ões). Selecione algo no cenário para editar.`),
       ),
+      this.secaoCodigoFase(),
     );
+  }
+
+  private secaoCodigoFase() {
+    const f = this.estado.fase;
+    const comCodigo = f.objetos.filter((o) => o.script).length;
+    const b = el('button', { type: 'button', class: 'secundario' }, f.script ? 'Abrir código da fase { }' : 'Código da fase…');
+    dica(b, 'Código da fase', 'Abre o painel de Código. A fase tem ganchos como aoIniciar e aoAtualizar; cada objeto também pode ter o seu código.', 'O');
+    b.addEventListener('click', () => this.acoes.abrirCodigo(null));
+    return el('div', { class: 'secao' }, el('h3', {}, 'Código'), b,
+      el('span', { class: 'dica-campo' }, `${f.script ? 'A fase tem script. ' : ''}${comCodigo} objeto(s) com código.`));
   }
 }

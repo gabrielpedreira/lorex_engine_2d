@@ -4,6 +4,8 @@ import { Animador, ancoraPes, estadoDoJogador, extras, retanguloQuadro, type Per
 import { EntradaJogo, TECLAS_RESERVADAS, controlesPadrao, normalizarCodigo, textoAtalho, type Controles } from '../core/controles';
 import { Jogador, JOGADOR_PADRAO, montarSegmentos, type ConfigJogador, type Entrada, type Segmento } from '../core/fisica';
 import { MundoInterativo, type ResultadoInteracao } from '../core/comportamentos';
+import { MotorScripts, type FontesScripts } from './motorScripts';
+import type { ObjetoFase } from '../core/tipos';
 import { el } from '../ui/dom';
 import { dica } from '../ui/legenda';
 import type { Estado } from './estado';
@@ -58,6 +60,68 @@ export class ModoTeste {
   set controles(c: Controles) { this.entradaJogo.controles = c; if (this.ativo) this.montarHud(); }
   get controles() { return this.entradaJogo.controles; }
 
+  /** Código (jogo/scripts). null = sem scripts. */
+  private motor: MotorScripts | null = null;
+  private elHudJogo: HTMLElement;
+  private hudJogo = new Map<string, string>();
+  /** Variáveis do código levadas para a próxima área. */
+  private levarCodigo: { variaveis: Record<string, unknown>; jogador: Record<string, unknown> } | null = null;
+
+  /** Compila os scripts desta partida (chame antes de iniciar). */
+  async prepararScripts(fontes: FontesScripts | null) {
+    if (!fontes || (!fontes.jogo && !fontes.fase && !fontes.personagem && !fontes.objetos.length)) { this.motor = null; return; }
+    const motor = new MotorScripts(this.ponte());
+    await motor.carregar(fontes);
+    if (this.levarCodigo) { motor.variaveis = this.levarCodigo.variaveis; motor.dadosJogador = this.levarCodigo.jogador; }
+    this.levarCodigo = null;
+    this.motor = motor;
+  }
+
+  /** O que o código pode mexer no teste. */
+  private ponte() {
+    const t = this;
+    return {
+      get arquivoFase() { return t.estado.arquivoFase ?? ''; },
+      objetos: () => t.estado.fase.objetos,
+      mundo: () => t.mundo!,
+      jogador: () => (t.jogador ? { x: t.jogador.x, y: t.jogador.y, vx: t.jogador.vx, vy: t.jogador.vy, noChao: t.jogador.noChao, olhandoDireita: t.jogador.olhandoDireita, caixa: t.caixaJogador() } : null),
+      nomeJogador: () => t.pers?.dados.nome ?? 'Jogador',
+      tocarAnimacao: (chave: string) => {
+        const a = t.pers?.dados.animacoes[chave];
+        if (!t.pers || !a) return false;
+        const ok = t.pers.animador.tocar(chave, a.repetir);
+        if (ok) t.mostrarAcao(a.nome ?? chave);
+        return ok;
+      },
+      acaoAtual: () => t.pers?.animador.acaoAtual ?? null,
+      teleportar: (x: number, y: number) => { if (t.jogador) { t.jogador.x = x; t.jogador.y = y; t.jogador.vx = 0; t.jogador.vy = 0; } },
+      empurrar: (vx: number, vy: number) => { if (t.jogador) { t.jogador.vx += vx; t.jogador.vy += vy; } },
+      aviso: (x: string) => t.toast(x),
+      mensagem: (x: string) => t.tratar({ mensagem: x }),
+      irPara: (f: string) => t.tratar({ irPara: f }),
+      apertou: (a: string) => t.entradaJogo.apertou(a),
+      segurando: (a: string) => t.entradaJogo.segurando(a),
+      hudDefinir: (r: string, v: string) => { t.hudJogo.set(r, v); t.desenharHudJogo(); },
+      hudRemover: (r: string) => { t.hudJogo.delete(r); t.desenharHudJogo(); },
+      mudouCena: () => { t.cenaMudou = true; },
+      interagir: (o: ObjetoFase) => t.interagirCom(o),
+    };
+  }
+  private cenaMudou = false;
+
+  private desenharHudJogo() {
+    this.elHudJogo.replaceChildren(...[...this.hudJogo].map(([r, v]) => el('div', {}, el('span', {}, r), el('strong', {}, v))));
+    this.elHudJogo.hidden = !this.hudJogo.size;
+  }
+
+  /** Interagir com um objeto: primeiro o código (aoInteragir), depois o comportamento pronto. */
+  private interagirCom(o: ObjetoFase) {
+    const m = this.mundo;
+    if (!m) return;
+    if (this.motor && !this.motor.interagir(o)) { this.aplicarVisibilidade(); this.atualizarInventario(); return; }
+    this.tratar(m.interagir(o), o);
+  }
+
   /** Saída para outra fase/área: o editor abre o destino e recomeça o teste lá. */
   aoIrPara: (destino: string) => void = () => {};
 
@@ -73,7 +137,8 @@ export class ModoTeste {
     this.elInventario = el('div', { class: 'teste-inventario' });
     this.elToast = el('div', { class: 'teste-toast', role: 'status' });
     this.elMensagem = el('div', { class: 'teste-mensagem', role: 'dialog' });
-    for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem]) { x.hidden = true; centro.append(x); }
+    this.elHudJogo = el('div', { class: 'teste-hud-jogo' });
+    for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem, this.elHudJogo]) { x.hidden = true; centro.append(x); }
     centro.append(this.hud);
   }
 
@@ -129,7 +194,9 @@ export class ModoTeste {
     window.removeEventListener('keyup', this.soltarTecla, true);
     window.removeEventListener('blur', this.perderFoco);
     this.hud.hidden = true;
-    for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem]) x.hidden = true;
+    for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem, this.elHudJogo]) x.hidden = true;
+    this.hudJogo.clear();
+    this.viewport.deslocamentoTeste = null;
     this.mensagemAberta = false;
     this.jogador = null;
     this.mundo = null;
@@ -146,6 +213,13 @@ export class ModoTeste {
     this.mundo = new MundoInterativo(this.estado.fase);
     if (this.inventarioLevado) for (const [k, v] of this.inventarioLevado) this.mundo.inventario.set(k, v);
     this.inventarioLevado = null;
+    this.hudJogo.clear();
+    this.desenharHudJogo();
+    if (this.motor) {
+      this.motor.prepararMundo(this.mundo);
+      this.motor.iniciar();
+      this.motor.trocouFase(this.estado.arquivoFase ?? '');
+    }
     this.aplicarVisibilidade();
     this.atualizarInventario();
   }
@@ -154,6 +228,7 @@ export class ModoTeste {
     const m = this.mundo;
     if (!m) return;
     this.viewport.visibilidadeTeste = new Map(this.estado.fase.objetos.map((o) => [o.id, m.visivel(o.id)]));
+    this.viewport.deslocamentoTeste = m.deslocamentos;
     this.viewport.atualizarCena();
   }
 
@@ -172,7 +247,8 @@ export class ModoTeste {
     this.timerToast = window.setTimeout(() => { this.elToast.hidden = true; }, 2600);
   }
 
-  private tratar(r: ResultadoInteracao) {
+  private tratar(r: ResultadoInteracao, origem?: ObjetoFase) {
+    if (r.acionado && origem && this.motor) this.motor.acionado(r.acionado, origem);
     if (r.aviso) this.toast(r.aviso);
     if (r.mensagem) {
       this.mensagemAberta = true;
@@ -181,6 +257,7 @@ export class ModoTeste {
     }
     if (r.irPara) {
       this.inventarioLevado = this.mundo ? new Map(this.mundo.inventario) : null;
+      this.levarCodigo = this.motor ? { variaveis: this.motor.variaveis, jogador: this.motor.dadosJogador } : null;
       const destino = r.irPara;
       setTimeout(() => this.aoIrPara(destino));
     }
@@ -269,7 +346,9 @@ export class ModoTeste {
     // Ações do personagem (animações extras): tiro, recarga…
     if (this.pers) {
       for (const [chave, anim] of extras(this.pers.dados)) {
-        if (ent.apertou(chave) && this.pers.animador.tocar(chave, anim.repetir)) this.mostrarAcao(anim.nome ?? chave);
+        if (!ent.apertou(chave)) continue;
+        if (this.motor && !this.motor.acao(chave)) continue; // o código (aoAcao) cancelou
+        if (this.pers.animador.tocar(chave, anim.repetir)) this.mostrarAcao(anim.nome ?? chave);
       }
     }
     const [fw, fh] = this.estado.fase.tamanho;
@@ -286,6 +365,8 @@ export class ModoTeste {
         return;
       }
     }
+    // Código: aoAtualizar, aoTocar, temporizadores
+    if (this.motor) this.motor.atualizar(ms / 1000);
     // Coletáveis tocados
     const pegos = m.coletar(this.caixaJogador());
     if (pegos.length) { this.toast(pegos.join(' · ')); this.aplicarVisibilidade(); this.atualizarInventario(); }
@@ -293,18 +374,21 @@ export class ModoTeste {
     const prox = m.proximo(this.caixaJogador());
     if (this.interagirApertado) {
       this.interagirApertado = false;
-      if (prox) this.tratar(m.interagir(prox.o));
+      if (prox) this.interagirCom(prox.o);
     }
+    if (this.cenaMudou) { this.cenaMudou = false; this.aplicarVisibilidade(); this.atualizarInventario(); }
     this.posicionarCamera(false, ms / 1000);
     this.desenharJogador(ms / 1000);
     this.mostrarPrompt(prox);
   }
 
-  private mostrarPrompt(prox: { o: { x: number; y: number; w: number; escala: number; camada: string }; acao: string } | null) {
-    if (!prox || this.mensagemAberta) { this.elPrompt.hidden = true; return; }
+  private mostrarPrompt(prox: { o: ObjetoFase; acao: string } | null) {
+    if (!prox || this.mensagemAberta || !this.mundo) { this.elPrompt.hidden = true; return; }
     const o = prox.o;
-    const p = this.viewport.camadaParaTela(o.x + (o.w * o.escala) / 2, o.y, o.camada);
-    this.elPrompt.replaceChildren(el('kbd', {}, 'E'), el('span', {}, prox.acao));
+    const b = this.mundo.caixa(o);
+    const p = this.viewport.camadaParaTela(b.x + b.w / 2, b.y, o.camada);
+    const tecla = this.controles.acoes.interagir?.[0];
+    this.elPrompt.replaceChildren(el('kbd', {}, tecla ? textoAtalho(tecla) : 'E'), el('span', {}, prox.acao));
     this.elPrompt.style.left = `${Math.round(p.x)}px`;
     this.elPrompt.style.top = `${Math.round(p.y - 10)}px`;
     this.elPrompt.hidden = false;

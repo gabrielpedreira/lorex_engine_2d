@@ -71,6 +71,8 @@ export interface Personagem {
    * as extras têm chave livre (ex.: "tiro", "recarga", "ataque1") e são tocadas por ação/código: tocar("tiro").
    */
   animacoes: Record<string, Animacao>;
+  /** Script do personagem (arquivo em jogo/scripts/), se houver. */
+  script?: string;
 }
 
 const IDS_BASICOS = new Set<string>(ESTADOS.map((e) => e.id));

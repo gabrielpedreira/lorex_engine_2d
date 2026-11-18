@@ -20,7 +20,11 @@ import { PainelPropriedades } from './ui/propriedades';
 import { ModoTeste } from './editor/testar';
 import { EditorPersonagens } from './ui/personagens';
 import { EditorControles } from './ui/controles';
-import { normalizarControles } from './core/controles';
+import { ACOES_SISTEMA, normalizarControles } from './core/controles';
+import { PainelCodigo, type ElementoCodigo } from './ui/codigo/painel';
+import { arquivoScript, tiposApi } from './core/scripts';
+import { NOMES_COMPORTAMENTO, comportamentoDe } from './core/comportamentos';
+import type { FontesScripts } from './editor/motorScripts';
 import { normalizarPersonagem, type Personagem } from './core/personagem';
 import { JOGADOR_PADRAO } from './core/fisica';
 import { TelaInicio } from './ui/inicio';
@@ -167,6 +171,7 @@ function moverSelecionado(dx: number, dy: number) {
 
 new PainelPropriedades(painelProps, estado, {
   duplicar: duplicarSelecionado,
+  abrirCodigo: (id) => void abrirCodigo(id ? 'obj:' + id : 'fase'),
   copiar: () => copiarSelecionado(),
   continuar,
   excluir: excluirSelecionado,
@@ -451,6 +456,7 @@ teste.aoIrPara = async (destino) => {
   teste.config = { ...JOGADOR_PADRAO, ...(config.jogador ?? {}) };
   teste.controles = normalizarControles(config.controles);
   await prepararPersonagemTeste();
+  await teste.prepararScripts(await fontesScripts());
   teste.levarInventario(inv);
   teste.iniciar();
   estado.avisar(`Chegou em ${estado.fase.nome}.`);
@@ -463,7 +469,114 @@ async function alternarTeste() {
   teste.config = { ...JOGADOR_PADRAO, ...(config.jogador ?? {}) };
   teste.controles = normalizarControles(config.controles);
   await prepararPersonagemTeste();
+  await teste.prepararScripts(await fontesScripts());
   teste.iniciar();
+}
+
+/** Código desta partida: jogo.js, o da fase, o do personagem e o de cada objeto. */
+async function fontesScripts(): Promise<FontesScripts> {
+  const existentes = new Set(await plat.listarDados('scripts'));
+  const ler = async (arquivo?: string | null) => {
+    if (!arquivo || !existentes.has(arquivo)) return undefined;
+    try { return { arquivo, codigo: await plat.lerDados('scripts', arquivo) }; } catch { return undefined; }
+  };
+  const objetos: FontesScripts['objetos'] = [];
+  for (const o of estado.fase.objetos) {
+    const f = await ler(o.script);
+    if (f) objetos.push({ id: o.id, ...f });
+    else if (o.script) estado.avisar(`O script ${o.script} de ${o.nome} não existe mais.`);
+  }
+  return { jogo: await ler('jogo.js'), fase: await ler(estado.fase.script), personagem: await ler(personagemDoTeste?.script), objetos };
+}
+
+// ---------- Código (painel estilo VS Code) ----------
+const painelCodigo = new PainelCodigo(plat);
+painelCodigo.aoAvisar = (m) => estado.avisar(m);
+painelCodigo.aoTestar = () => void alternarTeste();
+
+/** Arquivo da fase atual (salva antes, se for nova). */
+async function garantirFaseSalva(): Promise<string | null> {
+  if (estado.arquivoFase && !estado.sujo) return estado.arquivoFase;
+  return (await salvar()) ? estado.arquivoFase : null;
+}
+
+// Fonte 1: o jogo inteiro (jogo.js)
+painelCodigo.registrarFonte(async () => {
+  const existe = (await plat.listarDados('scripts')).includes('jogo.js');
+  return [{ chave: 'jogo', grupo: 'Jogo', nome: 'Jogo (global)', detalhe: 'vale em todas as fases', dono: 'jogo', arquivo: existe ? 'jogo.js' : null, arquivoNovo: arquivoScript.jogo() }];
+});
+// Fonte 2: a fase aberta e seus objetos
+painelCodigo.registrarFonte(async () => {
+  const f = estado.fase;
+  const arqFase = estado.arquivoFase ?? nomeArquivoFase(f.nome);
+  const grupo = `${f.tipo === 'area' ? 'Área' : 'Fase'}: ${f.nome}`;
+  const lista: ElementoCodigo[] = [{
+    chave: 'fase', grupo, nome: f.nome, detalhe: f.tipo === 'area' ? 'script da área' : 'script da fase', dono: 'fase',
+    arquivo: f.script ?? null, arquivoNovo: arquivoScript.fase(arqFase),
+    ligar: async (a) => { estado.alterar((x) => { x.script = a; }); return !!(await garantirFaseSalva()); },
+  }];
+  for (const o of [...f.objetos].sort((a, b) => a.nome.localeCompare(b.nome))) {
+    const c = comportamentoDe(o);
+    lista.push({
+      chave: 'obj:' + o.id, grupo, nome: o.nome,
+      detalhe: `${o.tipo === 'interativo' ? (c ? NOMES_COMPORTAMENTO[c.tipo].nome : 'interativo') : 'estático'} · ${estado.camada(o.camada)?.nome ?? o.camada}`,
+      dono: 'objeto', arquivo: o.script, arquivoNovo: arquivoScript.objeto(arqFase, o.id),
+      ligar: async (a) => { estado.alterar(() => { o.script = a; }); return !!(await garantirFaseSalva()); },
+    });
+  }
+  return lista;
+});
+// Fonte 3: personagens (jogador e NPCs)
+painelCodigo.registrarFonte(async () => {
+  const lista: ElementoCodigo[] = [];
+  for (const arq of await plat.listarDados('personagens')) {
+    try {
+      const p = normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', arq)));
+      lista.push({
+        chave: 'pers:' + arq, grupo: 'Personagens', nome: p.nome, detalhe: p.tipo === 'npc' ? 'NPC' : 'Jogador', dono: 'personagem',
+        arquivo: p.script ?? null, arquivoNovo: arquivoScript.personagem(arq),
+        ligar: async (a) => {
+          const atual = normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', arq)));
+          atual.script = a;
+          await plat.salvarDados('personagens', arq, JSON.stringify(atual, null, 2));
+          return true;
+        },
+      });
+    } catch { /* personagem ilegível: fica de fora */ }
+  }
+  return lista;
+});
+// Fonte 4: scripts que não pertencem a nada aberto agora (de outras fases ou sem dono)
+painelCodigo.registrarFonte(async () => {
+  const usados = new Set<string>(['jogo.js']);
+  if (estado.fase.script) usados.add(estado.fase.script);
+  for (const o of estado.fase.objetos) if (o.script) usados.add(o.script);
+  for (const arq of await plat.listarDados('personagens')) {
+    try { const p = JSON.parse(await plat.lerDados('personagens', arq)) as { script?: string }; if (p.script) usados.add(p.script); } catch { /* ignora */ }
+  }
+  return (await plat.listarDados('scripts')).filter((a) => !usados.has(a)).map((a) => ({
+    chave: 'arq:' + a, grupo: 'Outros scripts', nome: a, detalhe: /\./.test(a.replace(/\.js$/, '')) ? `de ${a.split('.')[0]}` : 'sem dono',
+    dono: 'objeto' as const, arquivo: a, arquivoNovo: a,
+  }));
+});
+// Autocompletar com o que existe no projeto
+painelCodigo.tipos = async () => {
+  const f = estado.fase;
+  const pers = await lerPersonagemTeste(false);
+  const itens = f.objetos.flatMap((o) => { const c = comportamentoDe(o); return c?.tipo === 'coletavel' ? [c.item] : c?.tipo === 'porta' && c.requer ? [c.requer] : []; });
+  return tiposApi({
+    objetos: f.objetos.map((o) => o.nome),
+    acoes: [...ACOES_SISTEMA.map((a) => a.id), ...Object.keys(normalizarControles(config.controles).acoes)],
+    animacoes: pers ? Object.keys(pers.animacoes) : [],
+    fases: await plat.listarFases(),
+    itens,
+  });
+};
+async function abrirCodigo(foco?: string) {
+  if (estado.testando) teste.parar();
+  if (editorPersonagens.aberta) await editorPersonagens.fechar();
+  if (editorControles.aberta) editorControles.fechar();
+  await painelCodigo.abrir(foco);
 }
 
 /** Lê o personagem do ▶ Testar (null = retângulo provisório). */
@@ -474,8 +587,10 @@ async function lerPersonagemTeste(avisar = true): Promise<Personagem | null> {
 }
 
 /** Carrega o personagem animado escolhido para o teste (se houver). */
+let personagemDoTeste: Personagem | null = null;
 async function prepararPersonagemTeste() {
   const dados = await lerPersonagemTeste();
+  personagemDoTeste = dados;
   try { await teste.definirPersonagem(dados, (folha) => viewport.textura(folha)); }
   catch (err) { estado.avisar(`Não consegui carregar as animações: ${String(err)}`); await teste.definirPersonagem(null, (f) => viewport.textura(f)); }
 }
@@ -491,6 +606,7 @@ async function abrirPersonagens() {
   await editorPersonagens.abrir(biblioteca.caminhos, config.personagemTeste ?? '');
 }
 editorPersonagens.aoAbrirControles = () => void abrirControles();
+editorPersonagens.aoAbrirCodigo = (arquivo) => void abrirCodigo('pers:' + arquivo);
 // Renomear uma animação extra leva junto as teclas dela
 editorPersonagens.aoRenomearAcao = (antiga, nova) => {
   const c = normalizarControles(config.controles);
@@ -543,6 +659,8 @@ const itensTrilho: (ItemTrilho | 'sep')[] = [
     texto: 'Clique no cenário onde ficam os pés da personagem quando a fase começa. A bandeira verde marca esse lugar.' },
   { id: 'personagens', ico: 'personagem', titulo: 'Personagens', atalho: 'K', acao: () => void abrirPersonagens(),
     texto: 'Monta personagens animados a partir dos spritesheets (parado, andando, pulando, caindo…), marca os pés e a caixa de colisão, e escolhe quem é o jogador no ▶ Testar.' },
+  { id: 'codigo', ico: 'codigo', titulo: 'Código', atalho: 'O', acao: () => void abrirCodigo(),
+    texto: 'Painel de código estilo VS Code: à esquerda o jogo, a fase, cada objeto e cada personagem; à direita o editor. Programe o que os comportamentos prontos não cobrem.' },
   { id: 'controles', ico: 'controle', titulo: 'Controles', atalho: 'B', acao: () => void abrirControles(),
     texto: 'Define qual tecla faz cada ação no ▶ Testar: andar, pular, interagir e as ações do personagem (tiro, recarga…). Aceita tecla, combinação (Shift + J) e sequência (↓ › → › J).' },
   'sep',
@@ -677,7 +795,7 @@ function digitando(): boolean {
 }
 
 window.addEventListener('keydown', (e) => {
-  if (document.querySelector('.modal-fundo') || inicio.aberta || editorPersonagens.aberta || editorControles.aberta) return;
+  if (document.querySelector('.modal-fundo') || inicio.aberta || editorPersonagens.aberta || editorControles.aberta || painelCodigo.aberta) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (ctrl && k === 's') { e.preventDefault(); void salvar(); return; }
@@ -725,6 +843,7 @@ window.addEventListener('keydown', (e) => {
       else if (k === 'h') estado.definirModo('mao');
       else if (k === 'k') void abrirPersonagens();
       else if (k === 'b') void abrirControles();
+      else if (k === 'o') void abrirCodigo();
       else if (k === 'x' && estado.modo === 'colisao') { estado.comportamentoNovo = estado.comportamentoNovo === 'solido' ? 'atravessavel' : 'solido'; atualizarOpcoesColisao(); }
       else if (k === 'c' && e.shiftKey) { estado.mostrarColisoes = !estado.mostrarColisoes; estado.emit('opcoes'); sincronizarAlternadores(); }
       else if (k === 'c') estado.definirModo(estado.modo === 'colisao' ? 'selecionar' : 'colisao');
@@ -755,7 +874,8 @@ plat.aoMudarProjeto(async (m) => {
     recarregandoBib = window.setTimeout(async () => { await biblioteca.recarregar(); ferramentas.definir(ferramentasAtuais, biblioteca.caminhos); }, 300);
     return;
   }
-  if (m.tipo === 'personagem') { await editorPersonagens.mudouPorFora(m.nome); return; }
+  if (m.tipo === 'personagem') { await editorPersonagens.mudouPorFora(m.nome); if (painelCodigo.aberta) await painelCodigo.atualizarElementos(); return; }
+  if (m.tipo === 'script') { await painelCodigo.mudouPorFora(m.nome); return; }
   if (m.tipo === 'config') {
     config = { ...CONFIG_PADRAO, ...((await plat.lerConfigProjeto()) ?? {}) };
     ferramentasAtuais = config.ferramentas ?? [];

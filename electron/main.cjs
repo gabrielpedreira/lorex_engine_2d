@@ -63,6 +63,7 @@ function observarProjeto() {
         avisosPendentes.delete(rel);
         const tipo = rel.startsWith('fases/') && rel.endsWith('.json') ? 'fase'
           : rel.startsWith('personagens/') && rel.endsWith('.json') ? 'personagem'
+          : rel.startsWith('scripts/') && rel.endsWith('.js') ? 'script'
           : rel === 'projeto.json' ? 'config' : rel.startsWith('assets/') ? 'assets' : 'outro';
         if (tipo !== 'outro' && janelaEditor && !janelaEditor.isDestroyed()) {
           janelaEditor.webContents.send('projeto:mudou', { tipo, nome: path.basename(rel) });
@@ -247,15 +248,16 @@ function registrarIpc() {
     return removidos;
   });
 
-  // Outros dados do jogo em JSON (por enquanto: personagens) → jogo/<pasta>/<nome>.json
-  const PASTAS_DADOS = new Set(['personagens']);
+  // Outros dados do jogo → jogo/<pasta>/<nome>: personagens (.json) e scripts (.js)
+  const PASTAS_DADOS = new Set(['personagens', 'scripts']);
+  const EXT_DADOS = { personagens: '.json', scripts: '.js' };
   const pastaDados = (pasta) => {
     if (!PASTAS_DADOS.has(pasta)) throw new Error('Pasta de dados não permitida: ' + pasta);
     return resolverDentroDoProjeto('jogo/' + pasta);
   };
   ipcMain.handle('dados:listar', async (_e, pasta) => {
     if (!raizProjeto) return [];
-    try { return (await fsp.readdir(pastaDados(pasta))).filter((n) => n.toLowerCase().endsWith('.json')).sort(); } catch { return []; }
+    try { return (await fsp.readdir(pastaDados(pasta))).filter((n) => n.toLowerCase().endsWith(EXT_DADOS[pasta])).sort(); } catch { return []; }
   });
   ipcMain.handle('dados:ler', async (_e, pasta, nome) => fsp.readFile(path.join(pastaDados(pasta), path.basename(nome)), 'utf-8'));
   ipcMain.handle('dados:salvar', async (_e, pasta, nome, conteudo) => {

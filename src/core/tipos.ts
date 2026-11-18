@@ -54,6 +54,7 @@ export interface ObjetoFase {
   /** Comportamento do objeto interativo (por enquanto, um só). */
   comportamentos: Comportamento[];
   conexoes: Record<string, string>;
+  /** Script do objeto (arquivo em jogo/scripts/, ex.: "fase_01.obj_003.js"), ou null. */
   script: string | null;
 }
 
@@ -74,4 +75,6 @@ export interface Fase {
   colisoes: Colisao[];
   /** Onde ficam os PÉS do jogador ao começar (espaço do mundo). */
   spawnJogador: [number, number];
+  /** Script da fase (arquivo em jogo/scripts/), se houver. */
+  script?: string;
 }

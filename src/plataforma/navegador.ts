@@ -1,8 +1,8 @@
 // Modo navegador: usa o projeto de demonstração em public/demo-projeto (assets genéricos).
 // Fases salvas ficam no armazenamento do navegador. Serve para testar a engine sem o Electron.
-import { codificarCaminho, normalizarCaminho, type ConfigProjeto, type InfoProjeto, type Plataforma } from './plataforma';
+import { codificarCaminho, normalizarCaminho, type ConfigProjeto, type InfoProjeto, type Plataforma, type PastaDados } from './plataforma';
 
-interface Manifesto { nome: string; arquivos: string[]; fases: string[]; personagens?: string[]; config?: ConfigProjeto }
+interface Manifesto { nome: string; arquivos: string[]; fases: string[]; personagens?: string[]; scripts?: string[]; config?: ConfigProjeto }
 
 const BASE = './demo-projeto/';
 const CHAVE = 'lorex.demo.fases';
@@ -57,16 +57,18 @@ export class PlataformaNavegador implements Plataforma {
   private dadosSalvos(pasta: string): Record<string, string> {
     try { return JSON.parse(localStorage.getItem(`lorex.demo.${pasta}`) ?? '{}'); } catch { return {}; }
   }
-  async listarDados(pasta: 'personagens') {
+  async listarDados(pasta: PastaDados) {
     const m = await this.carregarManifesto();
     return [...new Set([...(m[pasta] ?? []), ...Object.keys(this.dadosSalvos(pasta))])].sort();
   }
-  async lerDados(pasta: 'personagens', nome: string) {
+  async lerDados(pasta: PastaDados, nome: string) {
     const s = this.dadosSalvos(pasta)[nome];
     if (s) return s;
-    return (await fetch(BASE + `jogo/${pasta}/` + encodeURIComponent(nome))).text();
+    const r = await fetch(BASE + `jogo/${pasta}/` + encodeURIComponent(nome));
+    if (!r.ok) throw new Error(`não achei jogo/${pasta}/${nome}`);
+    return r.text();
   }
-  async salvarDados(pasta: 'personagens', nome: string, conteudo: string) {
+  async salvarDados(pasta: PastaDados, nome: string, conteudo: string) {
     const s = this.dadosSalvos(pasta);
     s[nome] = conteudo;
     try { localStorage.setItem(`lorex.demo.${pasta}`, JSON.stringify(s)); } catch { /* armazenamento indisponível */ }

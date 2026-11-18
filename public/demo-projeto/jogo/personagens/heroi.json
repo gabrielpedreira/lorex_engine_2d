@@ -65,5 +65,6 @@
       "travaMovimento": true
     }
   },
-  "tipo": "jogador"
+  "tipo": "jogador",
+  "script": "personagem.heroi.js"
 }

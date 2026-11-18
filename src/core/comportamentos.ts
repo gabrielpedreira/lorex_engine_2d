@@ -52,7 +52,7 @@ export function caixaObjeto(o: ObjetoFase) {
 }
 
 type Caixa = { x: number; y: number; w: number; h: number };
-const toca = (a: Caixa, b: Caixa, folga = 0) =>
+export const toca = (a: Caixa, b: Caixa, folga = 0) =>
   a.x < b.x + b.w + folga && a.x + a.w > b.x - folga && a.y < b.y + b.h + folga && a.y + a.h > b.y - folga;
 
 export interface EstadoObjeto { visivel: boolean; aberta: boolean; usado: boolean }
@@ -61,12 +61,22 @@ export interface ResultadoInteracao {
   aviso?: string;
   mensagem?: string;
   irPara?: string;
+  /** Uma alavanca acionou este objeto (o código dele recebe aoAcionado). */
+  acionado?: string;
 }
 
 /** Estado do mundo durante o jogo: inventário, portas abertas, itens pegos. */
 export class MundoInterativo {
   readonly estados = new Map<string, EstadoObjeto>();
   readonly inventario = new Map<string, number>();
+  /** Deslocamento de cada objeto movido pelo código durante o jogo. */
+  readonly deslocamentos = new Map<string, { dx: number; dy: number }>();
+  /** Objetos sem comportamento que viram interagíveis porque o código deles tem aoInteragir (id → texto do botão). */
+  readonly interagiveisPorCodigo = new Map<string, string>();
+  /** Objetos cujo código tem aoAcionado: a alavanca não mostra/esconde sozinha, quem decide é o código. */
+  readonly acionadosPorCodigo = new Set<string>();
+  /** Pergunta ao código se pode coletar (aoColetar retornando false impede). */
+  podeColetar: (o: ObjetoFase) => boolean = () => true;
   private mudou = true;
   private segsPortas: Segmento[] = [];
 
@@ -79,6 +89,23 @@ export class MundoInterativo {
 
   private objeto(id: string) { return this.fase.objetos.find((o) => o.id === id); }
 
+  /** Caixa do objeto no jogo (com o deslocamento feito pelo código). */
+  caixa(o: ObjetoFase) {
+    const b = caixaObjeto(o);
+    const d = this.deslocamentos.get(o.id);
+    return d ? { ...b, x: b.x + d.dx, y: b.y + d.dy } : b;
+  }
+
+  /** O código moveu ou mudou algo que afeta as portas. */
+  marcarMudanca() { this.mudou = true; }
+
+  deslocar(id: string, dx: number, dy: number) {
+    const d = this.deslocamentos.get(id) ?? { dx: 0, dy: 0 };
+    d.dx += dx; d.dy += dy;
+    this.deslocamentos.set(id, d);
+    this.mudou = true;
+  }
+
   /** Portas fechadas viram paredes sólidas (a caixa da imagem). */
   segmentosPortas(): Segmento[] {
     if (!this.mudou) return this.segsPortas;
@@ -88,7 +115,7 @@ export class MundoInterativo {
       const c = comportamentoDe(o);
       const e = this.estados.get(o.id);
       if (c?.tipo !== 'porta' || !e || e.aberta || !e.visivel) continue;
-      const b = caixaObjeto(o);
+      const b = this.caixa(o);
       const [x0, y0, x1, y1] = [b.x, b.y, b.x + b.w, b.y + b.h];
       this.segsPortas.push(
         { ax: x0, ay: y0, bx: x1, by: y0, tipo: 'chao', umaVia: false },
@@ -116,7 +143,9 @@ export class MundoInterativo {
     for (const o of this.fase.objetos) {
       const c = comportamentoDe(o);
       const e = this.estados.get(o.id);
-      if (c?.tipo !== 'coletavel' || !e || !e.visivel || !toca(jogador, caixaObjeto(o))) continue;
+      if (c?.tipo !== 'coletavel' || !e || !e.visivel || !toca(jogador, this.caixa(o))) continue;
+      if (!this.podeColetar(o)) continue;
+      if (!e.visivel) continue; // o código escondeu ao coletar
       e.visivel = false;
       this.inventario.set(c.item, (this.inventario.get(c.item) ?? 0) + c.quantidade);
       avisos.push(`Pegou: ${c.item}${c.quantidade > 1 ? ` ×${c.quantidade}` : ''}`);
@@ -131,9 +160,16 @@ export class MundoInterativo {
     for (const o of this.fase.objetos) {
       const c = comportamentoDe(o);
       const e = this.estados.get(o.id);
-      if (!c || c.tipo === 'coletavel' || !e || !e.visivel) continue;
-      const b = caixaObjeto(o);
+      const porCodigo = this.interagiveisPorCodigo.get(o.id);
+      if ((!c || c.tipo === 'coletavel') && !porCodigo) continue;
+      if (!e || !e.visivel) continue;
+      const b = this.caixa(o);
       if (!toca(jogador, b, 14)) continue;
+      if (!c || c.tipo === 'coletavel') {
+        const d = Math.abs(b.x + b.w / 2 - cx);
+        if (!melhor || d < melhor.d) melhor = { o, acao: porCodigo!, d };
+        continue;
+      }
       if (c.tipo === 'alavanca' && c.umaVez && e.usado) continue;
       if (c.tipo === 'porta' && e.aberta) continue;
       const acao = c.tipo === 'porta' ? (c.requer && !this.inventario.get(c.requer) ? `Abrir (precisa de: ${c.requer})` : 'Abrir')
@@ -165,9 +201,10 @@ export class MundoInterativo {
         const ea = alvo ? this.estados.get(alvo.id) : undefined;
         if (!alvo || !ea) return { aviso: 'Esta alavanca não está ligada a nada (escolha um alvo no editor).' };
         const ca = comportamentoDe(alvo);
-        if (ca?.tipo === 'porta') { ea.aberta = !ea.aberta; this.mudou = true; return { aviso: `${alvo.nome}: ${ea.aberta ? 'aberta' : 'fechada'}` }; }
+        if (ca?.tipo === 'porta') { ea.aberta = !ea.aberta; this.mudou = true; return { aviso: `${alvo.nome}: ${ea.aberta ? 'aberta' : 'fechada'}`, acionado: alvo.id }; }
+        if (this.acionadosPorCodigo.has(alvo.id)) return { acionado: alvo.id }; // o código do alvo (aoAcionado) decide
         ea.visivel = !ea.visivel; this.mudou = true;
-        return { aviso: `${alvo.nome}: ${ea.visivel ? 'apareceu' : 'sumiu'}` };
+        return { aviso: `${alvo.nome}: ${ea.visivel ? 'apareceu' : 'sumiu'}`, acionado: alvo.id };
       }
       case 'saida':
         return c.destino ? { irPara: c.destino } : { aviso: 'Esta saída ainda não tem destino (escolha no editor).' };

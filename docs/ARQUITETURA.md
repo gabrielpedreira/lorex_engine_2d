@@ -280,6 +280,23 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   pode deixar posição fracionária para a continuação ser exata. Copiar/colar e continuação ficam em `main.ts`.
 - **Rolagem do cenário:** barras DOM sobre o canvas; faixa navegável = fase + meia tela de folga em cada lado.
 
+### 4.21 Código (etapa 4b): scripts, ganchos e painel
+
+- **Arquivos:** `jogo/scripts/*.js` (módulos ES). Donos: `jogo.js` (global), `<fase>.js` (`fase.script`),
+  `<fase>.<idObjeto>.js` (`objeto.script`), `personagem.<nome>.js` (`personagem.script`). Objetos copiados
+  compartilham o script (o explorador mostra "compartilhado com N").
+- **`core/scripts.ts`:** lista de GANCHOS (nome, donos, parâmetros, texto), modelo de script, compilação por
+  `import()` de um `blob:` (CSP `script-src 'self' blob:`; sem eval) e `tiposApi(contexto)` — declarações que mudam com o
+  projeto (uniões de nomes de objetos, ações, animações, fases e itens) para o autocompletar.
+- **`editor/motorScripts.ts`:** roda no ▶ Testar. API `jogo` (jogador, inventário, hud, variáveis, objeto(), objetos(),
+  aviso, mensagem, irPara, apertou/segurando, esperar, log) e `eu` (objeto ou jogador). Erros vão para `SAIDA` com a
+  linha (pela pilha do blob) e desligam só o gancho que falhou. `MundoInterativo` ganhou deslocamentos (objetos movidos
+  pelo código), interagíveis por código (`aoInteragir`), `podeColetar` (`aoColetar`) e `acionado` (alavanca → `aoAcionado`).
+- **`ui/codigo/`:** `painel.ts` (explorador por **fontes** registradas em `main.ts`, abas, API, Saída) e `monaco.ts`
+  (Monaco carregado sob demanda; workers via `?worker`; tema Lorex; checkJs).
+- **REGRA:** todo módulo novo que crie algo programável registra uma fonte no painel (`painelCodigo.registrarFonte`),
+  acrescenta seus ganchos em `GANCHOS` e sua API em `tiposApi()`/`motorScripts`. Assim o código acompanha o projeto.
+
 ### 4.18 Legendas e recarregar por fora
 
 - `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas
