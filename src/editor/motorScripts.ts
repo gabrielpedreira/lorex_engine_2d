@@ -36,6 +36,9 @@ export interface PonteTeste {
   pente(): number;
   recarregar(): void;
   danoInimigo(ini: InimigoVivo, n: number): void;
+  disparar(): InimigoVivo | null;
+  duracaoAnim(nome: string): number;
+  agarrado(): boolean;
 }
 
 interface ScriptAtivo { dono: DonoScript; idDono: string | null; c: ScriptCompilado; desligados: Set<string> }
@@ -123,7 +126,12 @@ export class MotorScripts {
     const prontos = this.timers.filter((t) => t.quando <= this.tempo);
     if (prontos.length) {
       this.timers = this.timers.filter((t) => t.quando > this.tempo);
-      for (const t of prontos) this.protegido(t.arquivo, 'esperar', () => t.fn());
+      for (const t of prontos) {
+        const antes = this.arquivoAtual;
+        this.arquivoAtual = t.arquivo;
+        this.protegido(t.arquivo, 'esperar', () => t.fn());
+        this.arquivoAtual = antes;
+      }
     }
     for (const s of this.scripts) if (s.c.ganchos.aoAtualizar) this.chamar(s, 'aoAtualizar', dt);
     // Encostar no objeto (borda: só quando começa a tocar)
@@ -163,8 +171,28 @@ export class MotorScripts {
     return r;
   }
 
+  /** O tipo deste inimigo decide o comportamento no código (exporta aoPensar)? */
+  pensaPorCodigo(ini: InimigoVivo) {
+    return this.scripts.some((s) => s.dono === 'inimigo' && s.idDono === ini.id && s.c.ganchos.aoPensar && !s.desligados.has('aoPensar'));
+  }
+
+  /** aoPensar(eu, jogo, dt) do inimigo: a decisão do passo (andar, parar, atacar, mudar de estado). */
+  pensar(ini: InimigoVivo, dt: number) {
+    for (const s of this.scripts) if (s.dono === 'inimigo' && s.idDono === ini.id) this.chamar(s, 'aoPensar', dt);
+  }
+
   /** aoLevarDano do inimigo: false = cancelar o dano. */
   inimigoLevouDano(ini: InimigoVivo, dano: number) { return this.inimigo(ini, 'aoLevarDano', dano) !== false; }
+
+  /** O personagem cuida da arma no código (exporta aoUsarArma)? */
+  usaArmaPorCodigo() {
+    return this.scripts.some((s) => s.dono === 'personagem' && s.c.ganchos.aoUsarArma && !s.desligados.has('aoUsarArma'));
+  }
+
+  /** aoUsarArma(eu, jogo, acao): o código decide o tiro/recarga. */
+  usarArma(acao: string) {
+    for (const s of this.scripts) if (s.dono === 'personagem') this.chamar(s, 'aoUsarArma', acao);
+  }
 
   /** aoAtirar do personagem (alvo = inimigo acertado ou null). */
   atirou(alvo: InimigoVivo | null) {
@@ -200,7 +228,7 @@ export class MotorScripts {
     this.arquivoAtual = s.c.arquivo;
     const r = this.protegido(s.c.arquivo, nome, () => fn(...todos), s);
     this.arquivoAtual = antes;
-    if (nome !== 'aoAtualizar') {
+    if (nome !== 'aoAtualizar' && nome !== 'aoPensar') {
       const quem = s.dono === 'objeto' && s.idDono ? this.objeto(s.idDono)?.nome ?? s.idDono : ini ? `${ini.nome} (${ini.id})` : s.dono;
       const extra = args.length && typeof args[0] === 'string' ? `("${args[0]}")` : '';
       LOG.add({ cat: 'codigo', texto: `${nome}${extra} de ${quem}${r === false ? ' → retornou false (cancelou)' : ''}`, arquivo: s.c.arquivo });
@@ -269,6 +297,8 @@ export class MotorScripts {
     const h = this.handlesInimigo.get(ini.id);
     if (h) return h;
     const ponte = this.ponte;
+    const ia = ini.ia;
+    const dir = (d: number) => (d < 0 ? -1 : 1) as -1 | 1;
     const novo = {
       get id() { return ini.id; },
       get nome() { return ini.nome; },
@@ -277,20 +307,41 @@ export class MotorScripts {
       set x(v: number) { ini.corpo.x = v; },
       get y() { return ini.corpo.y; },
       set y(v: number) { ini.corpo.y = v; },
-      get vida() { return ini.ia.vida; },
-      set vida(v: number) { ini.ia.vida = v; },
-      get vidaMax() { return ini.ia.cfg.vida; },
-      get estado() { return ini.ia.estado; },
+      get vida() { return ia.vida; },
+      set vida(v: number) { ia.vida = v; },
+      get vidaMax() { return ia.cfg.vida; },
+      get estado() { return ia.estado; },
+      set estado(v: string) { ia.irPara(v); },
+      get tempoNoEstado() { return ia.tempo; },
       get vivo() { return ini.vivo; },
       get olhandoDireita() { return ini.corpo.olhandoDireita; },
       get dados() { return ini.dados; },
-      get config() { return ini.ia.cfg; },
+      get config() { return ia.cfg; },
+      // Percepção
+      get vendo() { return ia.vendo; },
+      get dx() { return ia.dx; },
+      get vao() { return ia.vao; },
+      get mesmaAltura() { return ia.mesmaAltura; },
+      get ladoJogador() { return ia.ladoJogador; },
+      get ocupado() { return ia.ocupado; },
+      get podeAtacar() { return ia.podeAtacar; },
+      get alerta() { return ia.alerta; },
+      podeAndar: (d: number) => ia.podeAndar(dir(d)),
       distanciaDoJogador() { const j = ponte.jogador(); return j ? Math.hypot(j.x - ini.corpo.x, j.y - ini.corpo.y) : Infinity; },
-      perseguir() { ini.ia.forcar = 'perseguir'; },
-      parar() { ini.ia.forcar = 'parar'; },
-      liberar() { ini.ia.forcar = null; },
+      // Comandos (use dentro de aoPensar)
+      andar: (d: number, velocidade?: number) => ia.andar(dir(d), velocidade),
+      parar: () => ia.parar(),
+      olhar: (d: number) => ia.olhar(dir(d)),
+      olharParaJogador: () => ia.olhar(ia.ladoJogador),
+      atacar: (nome?: string) => ia.atacar(nome),
+      alertar: (x: number) => ia.alertar(x),
+      aleatorio: (min: number, max: number) => ia.aleatorio(min, max),
+      // Sem código de comportamento (IA pronta): forçar perseguir / ficar parado / voltar ao normal
+      forcarPerseguir() { ia.forcar = 'perseguir'; },
+      ficarParado() { ia.forcar = 'parar'; },
+      liberar() { ia.forcar = null; },
       dano(n = 1) { ponte.danoInimigo(ini, n); },
-      matar() { ponte.danoInimigo(ini, ini.ia.vida); },
+      matar() { ponte.danoInimigo(ini, ia.vida); },
     };
     this.handlesInimigo.set(ini.id, novo);
     return novo;
@@ -323,7 +374,12 @@ export class MotorScripts {
         set municao(n: number) { ponte.definirMunicao(n); },
         get pente() { return ponte.pente(); },
         recarregar: () => ponte.recarregar(),
+        /** Tiro instantâneo (dano e alcance da seção Arma). Devolve o inimigo acertado ou null. */
+        disparar: () => { const a = ponte.disparar(); return a ? motor.handleInimigo(a) : null; },
       },
+      /** Duração (s) de uma animação do personagem. */
+      duracao: (nome: string) => ponte.duracaoAnim(nome),
+      get agarrado() { return ponte.agarrado(); },
     };
     this.api = {
       jogador,
@@ -361,7 +417,7 @@ export class MotorScripts {
       irPara: (f: string) => ponte.irPara(String(f)),
       apertou: (a: string) => ponte.apertou(a),
       segurando: (a: string) => ponte.segurando(a),
-      esperar: (seg: number, fn: () => void) => { motor.timers.push({ quando: motor.tempo + Math.max(0, Number(seg) || 0), fn, arquivo: 'esperar' }); },
+      esperar: (seg: number, fn: () => void) => { motor.timers.push({ quando: motor.tempo + Math.max(0, Number(seg) || 0), fn, arquivo: motor.arquivoAtual || 'esperar' }); },
       log: (...v: unknown[]) => LOG.add({ cat: 'codigo', arquivo: motor.arquivoAtual || ponte.arquivoFase, texto: v.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') }),
     };
     return this.api;

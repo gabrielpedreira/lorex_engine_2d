@@ -612,3 +612,4 @@ textarea:focus { border-color: var(--acento); outline: none; }
 .teste-hud-tela[hidden] { display: none; }
 
 .teste-hud-jogo[hidden] { display: none; }
+.cod-pronto { color: var(--acento); background: var(--acento-suave); border: 1px solid var(--acento); border-radius: 6px; padding: 8px 10px; }

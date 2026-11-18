@@ -140,6 +140,9 @@ export class ModoTeste {
       definirMunicao: (n: number) => { const a = t.pers?.dados.arma; if (a) t.municao = Math.max(0, Math.min(a.pente, Math.round(n))); },
       pente: () => t.pers?.dados.arma?.pente ?? 0,
       recarregar: () => { const a = t.pers?.dados.arma; if (a) t.tratarArma(a.acaoRecarga); },
+      disparar: () => { const a = t.pers?.dados.arma; return a && t.jogador ? t.disparar(a.dano, a.alcance, a.alturaTiro) : null; },
+      duracaoAnim: (nome: string) => t.duracaoAnim(nome),
+      agarrado: () => t.tempoJogo < t.agarradoAte,
       danoInimigo: (ini: InimigoVivo, n: number) => { ini.atingido(); t.tratarEventosInimigo(ini, ini.ia.levarDano(n, t.jogador?.x ?? ini.corpo.x, { duracao: ini.duracao })); },
       mudouCena: () => { t.cenaMudou = true; },
       interagir: (o: ObjetoFase) => t.interagirCom(o),
@@ -451,7 +454,12 @@ export class ModoTeste {
     }
     // Inimigos: IA (uma vez por quadro)
     const segsInimigos = m.segmentosPortas().length ? this.segs.concat(m.segmentosPortas()) : this.segs;
-    for (const ini of this.inimigos) this.tratarEventosInimigo(ini, ini.pensar(dtQ, { x: j.x, y: j.y, largura: j.cfg.largura }, segsInimigos));
+    for (const ini of this.inimigos) {
+      // Com aoPensar no código do tipo, é o código que decide (perambular, perseguir…); sem ele, a IA pronta
+      const motor = this.motor;
+      const externo = motor?.pensaPorCodigo(ini) ? () => motor.pensar(ini, dtQ) : undefined;
+      this.tratarEventosInimigo(ini, ini.pensar(dtQ, { x: j.x, y: j.y, largura: j.cfg.largura }, segsInimigos, externo));
+    }
     this.acumulado = Math.min(this.acumulado + ms / 1000, 0.25);
     while (this.acumulado >= PASSO) {
       const segs = m.segmentosPortas().length ? this.segs.concat(m.segmentosPortas()) : this.segs;
@@ -487,6 +495,7 @@ export class ModoTeste {
     this.posicionarCamera(false, ms / 1000);
     this.desenharJogador(ms / 1000);
     for (const ini of this.inimigos) ini.desenhar(dtQ);
+    this.ordenarAgarrao();
     this.desenharRastro(dtQ);
     this.atualizarHudTela();
     this.mostrarPrompt(prox);
@@ -578,6 +587,8 @@ export class ModoTeste {
     const arma = pers?.dados.arma;
     if (!pers || !arma || (chave !== arma.acaoTiro && chave !== arma.acaoRecarga)) return false;
     const animador = pers.animador;
+    // Com aoUsarArma no código do personagem, as regras da arma são do código (pente, sem bala, recarga)
+    if (this.motor?.usaArmaPorCodigo()) { this.motor.usarArma(chave); return true; }
     if (animador.acaoAtual || this.tempoJogo < this.agarradoAte) {
       LOG.add({ cat: 'personagem', texto: `"${chave}" ignorada: ${animador.acaoAtual ? `ainda em "${animador.acaoAtual}"` : 'agarrada'}` });
       return true;
@@ -611,8 +622,8 @@ export class ModoTeste {
     return a ? a.quadros / a.fps : 0;
   }
 
-  /** Tiro instantâneo na direção em que o jogador olha. */
-  private disparar(dano: number, alcance: number, alturaTiro: number) {
+  /** Tiro instantâneo na direção em que o jogador olha. Devolve o inimigo acertado. */
+  private disparar(dano: number, alcance: number, alturaTiro: number): InimigoVivo | null {
     const j = this.jogador!;
     const dir = (j.olhandoDireita ? 1 : -1) as -1 | 1;
     const ox = j.x + dir * (j.cfg.largura / 2);
@@ -624,11 +635,12 @@ export class ModoTeste {
     // O barulho do tiro chama a atenção de quem estiver perto
     for (const i of this.inimigos) if (i !== alvo && i.vivo) this.tratarEventosInimigo(i, ouvir(i, j.x));
     if (alvo) {
-      if (this.motor && !this.motor.inimigoLevouDano(alvo, dano)) { LOG.add({ cat: 'inimigo', texto: `${alvo.nome}: dano cancelado pelo código (aoLevarDano)` }); this.motor.atirou(alvo); return; }
+      if (this.motor && !this.motor.inimigoLevouDano(alvo, dano)) { LOG.add({ cat: 'inimigo', texto: `${alvo.nome}: dano cancelado pelo código (aoLevarDano)` }); this.motor.atirou(alvo); return alvo; }
       alvo.atingido();
       this.tratarEventosInimigo(alvo, alvo.ia.levarDano(dano, j.x, { duracao: alvo.duracao }));
     }
     this.motor?.atirou(alvo);
+    return alvo;
   }
 
   // ---------- Inimigos ----------
@@ -684,6 +696,19 @@ export class ModoTeste {
       LOG.add({ cat: 'personagem', texto: `${nome} levou ${ataque.animacao} de ${ini.nome} (dano ${ataque.dano}; sem barra de vida por enquanto)` });
     }
     this.pers?.animador.tocar('dano');
+  }
+
+  /** Inimigos no agarrão (ataque que agarra) ficam NA FRENTE do jogador, para o braço aparecer por cima. */
+  private ordenarAgarrao() {
+    const cont = this.spritePers.parent;
+    if (!cont) return;
+    for (const ini of this.inimigos) {
+      const frente = ini.ia.estado === 'atacar' && !!ini.ia.ataque?.agarra;
+      if (ini.sprite.parent !== cont) continue;
+      const idxIni = cont.getChildIndex(ini.sprite), idxJog = cont.getChildIndex(this.spritePers);
+      if (frente && idxIni < idxJog) cont.addChildAt(ini.sprite, idxJog);
+      else if (!frente && idxIni > idxJog) cont.addChildAt(ini.sprite, idxJog);
+    }
   }
 
   private desenharRastro(dt: number) {

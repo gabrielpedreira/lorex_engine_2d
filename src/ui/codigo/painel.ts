@@ -26,6 +26,10 @@ export interface ElementoCodigo {
   ligar?: (arquivo: string) => Promise<boolean>;
   /** Quantos outros elementos usam o mesmo arquivo. */
   compartilhado?: number;
+  /** Texto do script novo (ex.: o comportamento pronto escrito em código). Sem ele, o modelo genérico. */
+  modelo?: string;
+  /** Comportamento que já funciona sem script (explicado no painel antes de criar). */
+  pronto?: string;
 }
 
 export type FonteCodigo = () => Promise<ElementoCodigo[]>;
@@ -157,7 +161,7 @@ export class PainelCodigo {
     let arquivo = e.arquivoNovo;
     if (existentes.has(arquivo) && !e.ligar) { /* jogo.js já existe: só abre */ }
     else for (let i = 2; existentes.has(arquivo); i++) arquivo = e.arquivoNovo.replace(/\.js$/, `_${i}.js`);
-    if (!existentes.has(arquivo)) await this.plat.salvarDados('scripts', arquivo, modeloScript(e.dono, e.nome, e.detalhe));
+    if (!existentes.has(arquivo)) await this.plat.salvarDados('scripts', arquivo, e.modelo ?? modeloScript(e.dono, e.nome, e.detalhe));
     if (e.ligar && !(await e.ligar(arquivo))) return;
     this.aoAvisar(`Script criado: jogo/scripts/${arquivo}`);
     await this.atualizarElementos();
@@ -337,12 +341,12 @@ export class PainelCodigo {
       filhos.push(el('h3', {}, g));
       for (const e of lista) {
         const b = el('button', { type: 'button', class: 'cod-item' + (e.chave === this.selecionado ? ' ativo' : '') + (e.arquivo ? ' tem' : '') },
-          el('span', { class: 'cod-ico' }, e.arquivo ? '{ }' : '+'),
+          el('span', { class: 'cod-ico' }, e.arquivo ? '{ }' : e.pronto ? '⚙' : '+'),
           el('span', { class: 'cod-nome' }, e.nome),
           e.detalhe ? el('span', { class: 'cod-det' }, e.detalhe) : null);
         dica(b, e.nome, e.arquivo
           ? `Script: jogo/scripts/${e.arquivo}${e.compartilhado ? ` (compartilhado com mais ${e.compartilhado})` : ''}.`
-          : 'Ainda sem código. Clique para ver os ganchos e criar o script.');
+          : e.pronto ? `Comportamento pronto (${e.pronto}). Clique para vê-lo em código.` : 'Ainda sem código. Clique para ver os ganchos e criar o script.');
         b.addEventListener('click', () => void this.selecionar(e.chave));
         filhos.push(b);
       }
@@ -373,13 +377,16 @@ export class PainelCodigo {
     if (!temArquivo) {
       const e = this.selecionado ? this.elemento(this.selecionado) : null;
       if (e && !e.arquivo) {
-        const criar = el('button', { type: 'button', class: 'primario' }, `Criar script de ${e.nome}`);
-        dica(criar, 'Criar script', `Cria jogo/scripts/${e.arquivoNovo} com os ganchos de ${e.nome} prontos para preencher.`);
+        const criar = el('button', { type: 'button', class: 'primario' }, e.pronto ? `Mostrar o comportamento de ${e.nome} em código` : `Criar script de ${e.nome}`);
+        dica(criar, 'Criar script', e.pronto
+          ? `Cria jogo/scripts/${e.arquivoNovo} com o comportamento atual escrito em JavaScript. A partir daí, é esse código que manda.`
+          : `Cria jogo/scripts/${e.arquivoNovo} com os ganchos de ${e.nome} prontos para preencher.`);
         criar.addEventListener('click', () => void this.criarScript(e));
         const ganchos = GANCHOS.filter((g) => g.donos.includes(e.dono));
         this.elVazio.replaceChildren(
           el('h3', {}, e.nome), e.detalhe ? el('p', { class: 'dica-campo' }, e.detalhe) : '',
-          el('p', {}, 'Ainda sem código. Ganchos disponíveis:'),
+          e.pronto ? el('p', { class: 'cod-pronto' }, `Já funciona com o comportamento pronto da engine: ${e.pronto}. Clique no botão abaixo para ver e editar esse comportamento em código.`) : '',
+          el('p', {}, e.pronto ? 'Ganchos disponíveis:' : 'Ainda sem código. Ganchos disponíveis:'),
           el('ul', {}, ...ganchos.map((g) => el('li', {}, el('code', {}, `${g.nome}(${paramsDe(g, e.dono)})`), ' — ', g.texto))),
           criar);
       } else {

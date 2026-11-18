@@ -326,6 +326,14 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   personagem ganha aoAtirar/aoSerAtingido; API `jogo.inimigos()/inimigo(id)`, `Inimigo` (vida, estado, perseguir,
   parar, liberar, dano, matar, dados), `jogador.arma`; autocompletar com ids dos inimigos e chaves do HUD.
 - **Log:** categoria `inimigo`.
+- **Comportamento em código (regra):** o que a engine faz pronto também existe ESCRITO em JavaScript no painel de Código.
+  IA: a mecânica (ataque em andamento, dano, morte, contagem do alerta) é sempre da engine; a DECISÃO vem do gancho
+  `aoPensar(eu, jogo, dt)` do tipo, que usa a percepção (`vendo`, `dx`, `vao`, `ladoJogador`, `alerta`, `podeAndar`)
+  e comandos (`andar`, `parar`, `olhar`, `atacar`, `estado = …`); sem `aoPensar`, a IA pronta (`pensarZumbi`) decide.
+  Arma: `aoUsarArma(eu, jogo, acao)` substitui as regras prontas (primitivas `eu.arma.disparar()`, `eu.duracao()`).
+  Objetos com comportamento pronto: "Criar script" gera o mesmo comportamento em código (`core/modelosScript.ts`),
+  retornando false para o pronto não rodar. O explorador marca com ⚙ o que funciona por comportamento pronto.
+- **Ordem de desenho:** inimigo em ataque que agarra fica na frente do jogador (`ordenarAgarrao`).
 
 ### 4.18 Legendas e recarregar por fora
 

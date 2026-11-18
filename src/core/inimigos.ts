@@ -45,7 +45,7 @@ export interface ConfigInimigo {
 
 export function inimigoPadrao(): ConfigInimigo {
   return {
-    comportamento: 'zumbi', vida: 3, visao: 150, perderVisao: 260, velocidadeAndar: 22, velocidadePerseguir: 40,
+    comportamento: 'zumbi', vida: 3, visao: 210, perderVisao: 330, velocidadeAndar: 30, velocidadePerseguir: 55,
     alcanceAtaque: 16, intervaloAtaque: 0.9,
     ataques: [
       { animacao: 'golpe', peso: 60, dano: 1, agarra: false },
@@ -85,10 +85,11 @@ export function sortearAtaque(ataques: AtaqueInimigo[], rnd = Math.random): Ataq
 
 // ---------- IA ----------
 
-export type EstadoIA = 'perambular' | 'perseguir' | 'alerta' | 'atacar' | 'dano' | 'morto';
+/** Estados da engine; o código do inimigo pode criar outros (ex.: "fugir"). */
+export type EstadoIA = 'perambular' | 'perseguir' | 'alerta' | 'atacar' | 'dano' | 'morto' | (string & {});
 
 export type EventoIA =
-  | { tipo: 'estado'; de: EstadoIA; para: EstadoIA }
+  | { tipo: 'estado'; de: string; para: string }
   | { tipo: 'viu' } | { tipo: 'perdeu' }
   | { tipo: 'atacou'; ataque: AtaqueInimigo }
   | { tipo: 'acertou'; ataque: AtaqueInimigo; segurar: number }
@@ -123,6 +124,7 @@ export class IAInimigo {
   /** Tempo no estado atual / da animação do ataque ou dano. */
   tempo = 0;
   private dir: -1 | 0 | 1 = 0;
+  /** Tempo livre do perambular (contagem regressiva). */
   private timer = 0;
   private recarga = 0;
   private danoAplicado = false;
@@ -141,6 +143,9 @@ export class IAInimigo {
 
   private mudar(para: EstadoIA) {
     if (para === this.estado) return;
+    const de = this.estado;
+    if (para === 'perseguir' && de !== 'atacar' && de !== 'dano') this.eventos.push({ tipo: 'viu' });
+    if (de === 'perseguir' && (para === 'perambular' || para === 'alerta')) this.eventos.push({ tipo: 'perdeu' });
     this.eventos.push({ tipo: 'estado', de: this.estado, para });
     this.estado = para;
     this.tempo = 0;
@@ -179,83 +184,113 @@ export class IAInimigo {
 
   private coletar() { const e = this.eventos; this.eventos = []; return e; }
 
-  /** Um passo da IA. Devolve a decisão de movimento e os eventos do passo. */
-  passo(dt: number, ctx: ContextoIA): { decisao: DecisaoIA; eventos: EventoIA[] } {
+  // ---------- Situação (o que o inimigo percebe neste passo) ----------
+  private ctx: ContextoIA | null = null;
+  private decisao: DecisaoIA = { mover: 0, velocidade: 0, olhar: null };
+
+  /** Distância horizontal até o jogador (positiva = jogador à direita). */
+  get dx() { return this.ctx ? this.ctx.jogadorX - this.ctx.x : 0; }
+  /** Espaço entre os corpos (borda a borda). */
+  get vao() { return Math.max(0, Math.abs(this.dx) - (this.ctx?.corpos ?? 0)); }
+  /** Jogador mais ou menos na mesma altura (não está num andar de cima/baixo). */
+  get mesmaAltura() { return this.ctx ? Math.abs(this.ctx.jogadorY - this.ctx.y) <= 96 : false; }
+  /** O jogador está dentro da visão? */
+  get vendo() { return (Math.abs(this.dx) <= this.cfg.visao && this.mesmaAltura) || this.forcar === 'perseguir'; }
+  /** Lado em que o jogador está: -1 esquerda, 1 direita. */
+  get ladoJogador(): -1 | 1 { return this.dx >= 0 ? 1 : -1; }
+  /** Ocupado com algo que o código não interrompe (atacando, levando dano, morto). */
+  get ocupado() { return this.estado === 'atacar' || this.estado === 'dano' || this.estado === 'morto'; }
+  /** Pode começar um ataque agora (terminou o intervalo entre ataques)? */
+  get podeAtacar() { return this.recarga <= 0 && !this.ocupado; }
+  /** Ponto para onde o tiro chamou a atenção (x) e quantos segundos ainda de alerta. */
+  get alerta() { return { x: this.alvoX, restante: Math.max(0, this.alertaAte) }; }
+
+  podeAndar(dir: -1 | 1) { return this.ctx ? this.ctx.podeAndar(dir) : false; }
+
+  // ---------- Comandos (usados pela IA pronta e pelo código do inimigo) ----------
+  andar(dir: -1 | 1, velocidade = this.cfg.velocidadeAndar) { this.decisao = { mover: dir, velocidade, olhar: dir }; }
+  parar() { this.decisao = { mover: 0, velocidade: 0, olhar: this.decisao.olhar }; }
+  olhar(dir: -1 | 1) { this.decisao.olhar = dir; }
+  /** Muda o estado (ex.: "perambular", "perseguir", "alerta" ou um seu, como "fugir"). */
+  irPara(estado: string) { if (!this.ocupado || estado === 'morto') this.mudar(estado as EstadoIA); }
+  /** Começa um ataque (sorteado pelos pesos se não disser qual). false = não pode agora. */
+  atacar(nome?: string): boolean {
+    if (!this.podeAtacar) return false;
+    const a = nome ? this.cfg.ataques.find((x) => x.animacao === nome) ?? null : sortearAtaque(this.cfg.ataques, this.rnd);
+    if (!a) return false;
+    this.ataque = a; this.danoAplicado = false;
+    this.mudar('atacar');
+    this.eventos.push({ tipo: 'atacou', ataque: a });
+    this.decisao = { mover: 0, velocidade: 0, olhar: this.ladoJogador };
+    return true;
+  }
+  /** Número aleatório entre min e max (o mesmo sorteio da IA, útil no código). */
+  aleatorio(min: number, max: number) { return min + this.rnd() * (max - min); }
+
+  /**
+   * Um passo da IA. A "mecânica" (ataque em andamento, dano, morte, alerta correndo) é sempre da engine;
+   * a DECISÃO (perambular, perseguir…) é do código do inimigo (aoPensar) ou, sem código, da IA pronta abaixo.
+   */
+  passo(dt: number, ctx: ContextoIA, pensarExterno?: (ia: IAInimigo) => void): { decisao: DecisaoIA; eventos: EventoIA[] } {
+    this.ctx = ctx;
     this.tempo += dt;
     this.recarga = Math.max(0, this.recarga - dt);
+    this.alertaAte = Math.max(0, this.alertaAte - dt);
+    this.decisao = { mover: 0, velocidade: 0, olhar: null };
     const c = this.cfg;
-    const dx = ctx.jogadorX - ctx.x;
-    const dy = ctx.jogadorY - ctx.y;
-    const dist = Math.abs(dx);
-    /** Espaço entre os corpos (borda a borda): é com ele que o alcance do ataque é comparado. */
-    const vao = Math.max(0, dist - (ctx.corpos ?? 0));
-    const mesmaAltura = Math.abs(dy) <= 96;
-    const vendo = (dist <= c.visao && mesmaAltura) || this.forcar === 'perseguir';
-    const lado = (dx >= 0 ? 1 : -1) as -1 | 1;
-    let d: DecisaoIA = { mover: 0, velocidade: 0, olhar: null };
 
-    if (this.estado === 'morto') return { decisao: d, eventos: this.coletar() };
-    if (this.forcar === 'parar' || c.comportamento === 'parado') {
-      if (this.estado !== 'atacar' && this.estado !== 'dano') return { decisao: d, eventos: this.coletar() };
+    if (this.estado === 'morto') return { decisao: this.decisao, eventos: this.coletar() };
+    if (this.estado === 'dano') {
+      if (this.tempo >= Math.max(0.15, ctx.duracao('dano'))) this.mudar(this.vendo ? 'perseguir' : this.alertaAte > 0 ? 'alerta' : 'perambular');
+      return { decisao: this.decisao, eventos: this.coletar() };
+    }
+    if (this.estado === 'atacar') {
+      const a = this.ataque!;
+      const dur = Math.max(0.2, ctx.duracao(a.animacao));
+      this.decisao.olhar = this.ladoJogador;
+      if (!this.danoAplicado && this.tempo >= dur * c.momentoDano) {
+        this.danoAplicado = true;
+        if (this.vao <= c.alcanceAtaque + 12 && this.mesmaAltura) this.eventos.push({ tipo: 'acertou', ataque: a, segurar: a.agarra ? Math.max(0, dur - this.tempo) : 0 });
+        else this.eventos.push({ tipo: 'errou', ataque: a });
+      }
+      if (this.tempo >= dur) { this.recarga = c.intervaloAtaque; this.ataque = null; this.mudar(this.vendo ? 'perseguir' : 'perambular'); }
+      return { decisao: this.decisao, eventos: this.coletar() };
     }
 
+    if (pensarExterno) pensarExterno(this);
+    else if (this.forcar !== 'parar' && c.comportamento !== 'parado') this.pensarZumbi(dt);
+    return { decisao: this.decisao, eventos: this.coletar() };
+  }
+
+  /** IA pronta "Zumbi" (usada quando o inimigo não tem aoPensar no código). O modelo do script faz o mesmo em JavaScript. */
+  private pensarZumbi(dt: number) {
+    const c = this.cfg;
     switch (this.estado) {
-      case 'dano':
-        if (this.tempo >= Math.max(0.15, ctx.duracao('dano'))) this.mudar(vendo ? 'perseguir' : this.alertaAte > 0 ? 'alerta' : 'perambular');
-        break;
-
-      case 'atacar': {
-        const a = this.ataque!;
-        const dur = Math.max(0.2, ctx.duracao(a.animacao));
-        d.olhar = lado;
-        if (!this.danoAplicado && this.tempo >= dur * c.momentoDano) {
-          this.danoAplicado = true;
-          if (vao <= c.alcanceAtaque + 12 && mesmaAltura) this.eventos.push({ tipo: 'acertou', ataque: a, segurar: a.agarra ? Math.max(0, dur - this.tempo) : 0 });
-          else this.eventos.push({ tipo: 'errou', ataque: a });
-        }
-        if (this.tempo >= dur) { this.recarga = c.intervaloAtaque; this.ataque = null; this.mudar(vendo ? 'perseguir' : 'perambular'); }
-        break;
-      }
-
       case 'perseguir':
-        if (!vendo && dist > c.perderVisao) { this.eventos.push({ tipo: 'perdeu' }); this.mudar('perambular'); this.timer = 1 + this.rnd() * 2; this.dir = 0; break; }
-        d.olhar = lado;
-        if (vao <= c.alcanceAtaque && mesmaAltura) {
-          if (this.recarga <= 0) {
-            const a = sortearAtaque(c.ataques, this.rnd);
-            if (a) { this.ataque = a; this.danoAplicado = false; this.mudar('atacar'); this.eventos.push({ tipo: 'atacou', ataque: a }); }
-          }
-        } else if (ctx.podeAndar(lado)) d = { mover: lado, velocidade: c.velocidadePerseguir, olhar: lado };
+        if (!this.vendo && Math.abs(this.dx) > c.perderVisao) { this.irPara('perambular'); this.timer = 1 + this.rnd() * 2; this.dir = 0; break; }
+        this.olhar(this.ladoJogador);
+        if (this.vao <= c.alcanceAtaque && this.mesmaAltura) this.atacar();
+        else if (this.podeAndar(this.ladoJogador)) this.andar(this.ladoJogador, c.velocidadePerseguir);
         break;
-
       case 'alerta': {
-        this.alertaAte -= dt;
-        if (vendo) { this.eventos.push({ tipo: 'viu' }); this.mudar('perseguir'); break; }
-        const ax = this.alvoX - ctx.x;
+        if (this.vendo) { this.irPara('perseguir'); break; }
+        const ax = this.alvoX - (this.ctx?.x ?? 0);
         const dirA = (ax >= 0 ? 1 : -1) as -1 | 1;
-        if (this.alertaAte <= 0 || Math.abs(ax) < 8 || !ctx.podeAndar(dirA)) { this.mudar('perambular'); this.dir = 0; this.timer = 1 + this.rnd() * 2; break; }
-        d = { mover: dirA, velocidade: (c.velocidadeAndar + c.velocidadePerseguir) / 2, olhar: dirA };
+        if (this.alertaAte <= 0 || Math.abs(ax) < 8 || !this.podeAndar(dirA)) { this.irPara('perambular'); this.dir = 0; this.timer = 1 + this.rnd() * 2; break; }
+        this.andar(dirA, (c.velocidadeAndar + c.velocidadePerseguir) / 2);
         break;
       }
-
-      case 'perambular':
       default:
-        if (vendo) { this.eventos.push({ tipo: 'viu' }); this.mudar('perseguir'); break; }
+        if (this.vendo) { this.irPara('perseguir'); break; }
         this.timer -= dt;
         if (this.timer <= 0) {
-          // Alterna entre parado e andando para um lado aleatório
           if (this.dir === 0) { this.dir = this.rnd() < 0.5 ? -1 : 1; this.timer = 1 + this.rnd() * 2.5; }
           else { this.dir = 0; this.timer = 1.2 + this.rnd() * 3; }
         }
-        if (this.dir !== 0 && !ctx.podeAndar(this.dir)) {
-          // Beira ou parede: vira (às vezes para antes)
-          this.dir = this.rnd() < 0.5 ? (-this.dir as -1 | 1) : 0;
-          this.timer = 0.8 + this.rnd() * 1.5;
-        }
-        if (this.dir !== 0) d = { mover: this.dir, velocidade: c.velocidadeAndar, olhar: this.dir };
+        if (this.dir !== 0 && !this.podeAndar(this.dir)) { this.dir = this.rnd() < 0.5 ? (-this.dir as -1 | 1) : 0; this.timer = 0.8 + this.rnd() * 1.5; }
+        if (this.dir !== 0) this.andar(this.dir, c.velocidadeAndar);
         break;
     }
-    return { decisao: d, eventos: this.coletar() };
   }
 }
 

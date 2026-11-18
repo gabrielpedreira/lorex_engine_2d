@@ -28,6 +28,15 @@ import { LOG, capturarErrosGlobais } from './core/log';
 import { ACOES_SISTEMA, normalizarControles } from './core/controles';
 import { PainelCodigo, type ElementoCodigo } from './ui/codigo/painel';
 import { arquivoScript, tiposApi } from './core/scripts';
+import { modeloArma, modeloComportamento, modeloInimigoZumbi } from './core/modelosScript';
+import type { Personagem as DadosPersonagem } from './core/personagem';
+
+/** Modelo de script de um personagem: arma (jogador) ou cérebro do inimigo (NPC). */
+function modeloPersonagem(p: DadosPersonagem): { modelo?: string; pronto?: string } {
+  if (p.tipo === 'npc' && p.inimigo?.comportamento === 'zumbi') return { modelo: modeloInimigoZumbi(p.nome, p.inimigo), pronto: 'IA de Zumbi (perambular, perseguir, atacar, alerta por tiro)' };
+  if (p.tipo !== 'npc' && p.arma) return { modelo: modeloArma(p.nome, p.arma), pronto: `arma (pente ${p.arma.pente}, sem bala, recarga)` };
+  return {};
+}
 import { NOMES_COMPORTAMENTO, comportamentoDe } from './core/comportamentos';
 import type { FontesScripts } from './editor/motorScripts';
 import { normalizarPersonagem, type Personagem } from './core/personagem';
@@ -562,7 +571,9 @@ painelCodigo.registrarFonte(async () => {
   }];
   for (const o of [...f.objetos].sort((a, b) => a.nome.localeCompare(b.nome))) {
     const c = comportamentoDe(o);
+    const alvoAlavanca = c?.tipo === 'alavanca' && c.alvo ? f.objetos.find((x) => x.id === c.alvo) : undefined;
     lista.push({
+      ...(c ? { modelo: modeloComportamento(o.nome, c, alvoAlavanca ? { nome: alvoAlavanca.nome, porta: comportamentoDe(alvoAlavanca)?.tipo === 'porta' } : undefined), pronto: NOMES_COMPORTAMENTO[c.tipo].nome } : {}),
       chave: 'obj:' + o.id, grupo, nome: o.nome,
       detalhe: `${o.tipo === 'interativo' ? (c ? NOMES_COMPORTAMENTO[c.tipo].nome : 'interativo') : 'estático'} · ${estado.camada(o.camada)?.nome ?? o.camada}`,
       dono: 'objeto', arquivo: o.script, arquivoNovo: arquivoScript.objeto(arqFase, o.id),
@@ -573,6 +584,7 @@ painelCodigo.registrarFonte(async () => {
   for (const i of f.inimigos) {
     const t = tiposInimigo.get(i.personagem);
     lista.push({
+      ...(t ? modeloPersonagem(t.p) : {}),
       chave: 'ini:' + i.id, grupo, nome: `${t?.p.nome ?? i.personagem} (${i.id})`, detalhe: `inimigo · código do tipo ${i.personagem}`,
       dono: 'inimigo', arquivo: t?.p.script ?? null, arquivoNovo: arquivoScript.inimigo(i.personagem),
       ligar: async (a) => {
@@ -593,6 +605,7 @@ painelCodigo.registrarFonte(async () => {
     try {
       const p = normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', arq)));
       lista.push({
+        ...modeloPersonagem(p),
         chave: 'pers:' + arq, grupo: 'Personagens', nome: p.nome, detalhe: p.tipo === 'npc' ? (p.inimigo ? 'NPC · inimigo' : 'NPC') : 'Jogador', dono: p.tipo === 'npc' ? 'inimigo' : 'personagem',
         arquivo: p.script ?? null, arquivoNovo: arquivoScript.personagem(arq),
         ligar: async (a) => {

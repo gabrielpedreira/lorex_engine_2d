@@ -52,7 +52,7 @@ export class InimigoVivo {
   duracao = (chave: string) => { const a = this.tipo.p.animacoes[chave]; return a ? duracao(a) : 0; };
 
   /** IA: decide e devolve os eventos. */
-  pensar(dt: number, jogador: { x: number; y: number; largura: number }, segs: Segmento[]): EventoIA[] {
+  pensar(dt: number, jogador: { x: number; y: number; largura: number }, segs: Segmento[], externo?: () => void): EventoIA[] {
     if (this.removido) return [];
     const c = this.corpo;
     const { decisao, eventos } = this.ia.passo(dt, {
@@ -60,7 +60,7 @@ export class InimigoVivo {
       podeAndar: (dir) => podeAndar(segs, c.x, c.y, c.cfg.largura, c.cfg.altura, dir),
       duracao: this.duracao,
       corpos: (c.cfg.largura + jogador.largura) / 2,
-    });
+    }, externo);
     c.cfg.velocidade = decisao.velocidade;
     this.entrada = { esquerda: decisao.mover < 0, direita: decisao.mover > 0, pulo: false, puloApertado: false };
     if (decisao.olhar) c.olhandoDireita = decisao.olhar > 0;

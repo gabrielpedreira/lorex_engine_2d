@@ -30,8 +30,10 @@ export const GANCHOS: Gancho[] = [
   { nome: 'aoColetar', donos: ['objeto'], params: 'eu, jogo', texto: 'Antes de um coletável ir para o inventário. Retorne false para não pegar.' },
   { nome: 'aoAcionado', donos: ['objeto'], params: 'eu, jogo, origem', texto: 'Quando uma alavanca ligada a este objeto é acionada (origem = a alavanca).' },
   { nome: 'aoAcao', donos: ['personagem'], params: 'eu, jogo, acao', texto: 'Quando o jogador dispara uma ação (ex.: "tiro", "recarga"). Retorne false para cancelar a animação.' },
+  { nome: 'aoUsarArma', donos: ['personagem'], params: 'eu, jogo, acao', texto: 'Regras da arma: chamado quando o jogador aperta a ação de tiro ou de recarga (seção Arma em Personagens). Com este gancho, quem decide é o código (pente, sem bala, recarga); sem ele, a engine usa as regras prontas.' },
   { nome: 'aoAtirar', donos: ['personagem'], params: 'eu, jogo, alvo', texto: 'Depois de cada tiro da arma (alvo = inimigo acertado, ou null se errou).' },
   { nome: 'aoSerAtingido', donos: ['personagem'], params: 'eu, jogo, ataque, inimigo, dano', texto: 'Quando um inimigo acerta o jogador (ataque = "golpe", "mordida"…). Retorne false para ignorar o golpe.' },
+  { nome: 'aoPensar', donos: ['inimigo'], params: 'eu, jogo, dt', texto: 'O CÉREBRO do inimigo, a cada quadro: decide andar, parar, perseguir, atacar (eu.andar, eu.atacar, eu.estado = "perseguir"…). Ataque, dano e morte em andamento são da engine (eu.ocupado). Sem este gancho, a engine usa a IA pronta.' },
   { nome: 'aoVer', donos: ['inimigo'], params: 'eu, jogo', texto: 'O inimigo viu o jogador e começou a perseguir.' },
   { nome: 'aoPerder', donos: ['inimigo'], params: 'eu, jogo', texto: 'O jogador se afastou e o inimigo desistiu da perseguição.' },
   { nome: 'aoAtacar', donos: ['inimigo'], params: 'eu, jogo, ataque', texto: 'O inimigo vai atacar (ataque = "golpe", "mordida"…). Retorne false para cancelar.' },
@@ -206,8 +208,20 @@ interface Jogador {
   empurrar(vx: number, vy: number): void;
   /** Guarde aqui o que quiser do jogador. */
   dados: Record<string, any>;
-  /** Arma (configurada no editor de Personagens): munição no pente e recarga. */
-  readonly arma: { municao: number; readonly pente: number; recarregar(): void };
+  /** Arma (seção Arma em Personagens). */
+  readonly arma: {
+    /** Balas no pente (pode mudar). */
+    municao: number;
+    readonly pente: number;
+    /** Recarga pelas regras prontas da engine. */
+    recarregar(): void;
+    /** Tiro instantâneo com o dano e o alcance da arma; devolve o inimigo acertado ou null. */
+    disparar(): Inimigo | null;
+  };
+  /** Duração (s) de uma animação do personagem. */
+  duracao(animacao: NomeAnimacao): number;
+  /** Está preso num agarrão? */
+  readonly agarrado: boolean;
 }
 
 /** Um inimigo da fase durante o jogo. */
@@ -221,20 +235,51 @@ interface Inimigo {
   y: number;
   vida: number;
   readonly vidaMax: number;
-  /** "perambular" | "perseguir" | "alerta" | "atacar" | "dano" | "morto" */
-  readonly estado: string;
+  /** "perambular" | "perseguir" | "alerta" | "atacar" | "dano" | "morto" ou um estado seu (ex.: "fugir"). Mudar troca o estado. */
+  estado: string;
+  /** Segundos no estado atual. */
+  readonly tempoNoEstado: number;
   readonly vivo: boolean;
   readonly olhandoDireita: boolean;
-  /** Configuração da IA (visão, velocidades, ataques…), editável durante o jogo. */
-  readonly config: Record<string, any>;
-  /** Guarde aqui o que quiser deste inimigo. */
+  /** Configuração do tipo (Personagens → Inimigo): visao, perderVisao, velocidadeAndar, velocidadePerseguir, alcanceAtaque, ataques… */
+  readonly config: { visao: number; perderVisao: number; velocidadeAndar: number; velocidadePerseguir: number; alcanceAtaque: number; intervaloAtaque: number; alertaTiro: number; audicaoTiro: number; [k: string]: any };
+  /** Guarde aqui o que quiser deste inimigo (cada inimigo tem o seu). */
   dados: Record<string, any>;
+
+  // ----- Percepção (atualizada a cada quadro) -----
+  /** O jogador está dentro da visão (config.visao) e na mesma altura? */
+  readonly vendo: boolean;
+  /** Distância horizontal até o jogador (positiva = jogador à direita). */
+  readonly dx: number;
+  /** Espaço entre os corpos, borda a borda (compare com config.alcanceAtaque). */
+  readonly vao: number;
+  readonly mesmaAltura: boolean;
+  /** -1 = jogador à esquerda, 1 = à direita. */
+  readonly ladoJogador: -1 | 1;
+  /** Atacando, levando dano ou morto (a engine está cuidando; aoPensar nem é chamado). */
+  readonly ocupado: boolean;
+  /** Já passou o intervalo entre ataques? */
+  readonly podeAtacar: boolean;
+  /** Para onde um tiro chamou a atenção e quantos segundos de alerta restam. */
+  readonly alerta: { x: number; restante: number };
+  /** Tem chão e nenhuma parede nessa direção? */
+  podeAndar(direcao: -1 | 1): boolean;
   distanciaDoJogador(): number;
-  /** Persegue o jogador mesmo de longe (até liberar()). */
-  perseguir(): void;
-  /** Fica parado (até liberar()). */
+
+  // ----- Comandos (use em aoPensar) -----
+  /** Anda para -1 (esquerda) ou 1 (direita) neste quadro. */
+  andar(direcao: -1 | 1, velocidade?: number): void;
   parar(): void;
-  /** Volta ao comportamento normal. */
+  olhar(direcao: -1 | 1): void;
+  olharParaJogador(): void;
+  /** Ataca (sorteia pelos pesos se não disser qual). false = não pode agora. */
+  atacar(nome?: NomeAnimacao): boolean;
+  /** Chama a atenção para o ponto x (como um tiro). */
+  alertar(x: number): void;
+  aleatorio(min: number, max: number): number;
+  /** Sem aoPensar (IA pronta): forçar perseguição / ficar parado / voltar ao normal. */
+  forcarPerseguir(): void;
+  ficarParado(): void;
   liberar(): void;
   dano(quantidade?: number): void;
   matar(): void;
