@@ -212,8 +212,15 @@ ${alvo?.porta ? `  alvo.aberta = !alvo.aberta;                    // porta: abre
 }
 `;
     case 'saida':
-      return cab + doc('Entrar na saída.') + `export function aoInteragir(eu, jogo) {
-  jogo.irPara(${js(c.destino || '')});
+      return cab + doc('Passar pela passagem. Para onde leva e o que acontece no caminho (tela de loading, som) estão no Mapa (M).') + `export function aoInteragir(eu, jogo) {
+${c.requer ? `  // Trancada até ter "${c.requer}" (depois de destrancada, fica livre)
+  if (!eu.dados.destrancada) {
+    if (!jogo.inventario.tem(${js(c.requer)})) { jogo.aviso('Trancada. Precisa de: ' + ${js(c.requer)}); return false; }
+${c.consome ? `    jogo.inventario.tirar(${js(c.requer)});
+` : ''}    eu.dados.destrancada = true;
+  }
+` : ''}${c.destino ? `  if (!jogo.destinoDe(eu)) { jogo.irPara(${js(c.destino)}); return false; }   // sem conexão no Mapa: destino simples
+` : ''}  jogo.passar(eu);   // vai para onde o Mapa manda, com a transição do ◆
   return false;
 }
 `;

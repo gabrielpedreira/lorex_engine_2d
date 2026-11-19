@@ -12,6 +12,7 @@ interface ApiLorex {
   abrirProjeto(): Promise<InfoProjeto | null>;
   projetoAtual(): Promise<InfoProjeto | null>;
   listarAssets(): Promise<string[]>;
+  listarSons(): Promise<string[]>;
   garantirEmUso(relRaiz: string, categoria?: string): Promise<string>;
   listarDados(pasta: string): Promise<string[]>;
   lerDados(pasta: string, nome: string): Promise<string>;
@@ -47,6 +48,7 @@ export class PlataformaElectron implements Plataforma {
   abrirProjeto() { return this.api.abrirProjeto(); }
   projetoAtual() { return this.api.projetoAtual(); }
   listarAssets() { return this.api.listarAssets(); }
+  listarSons() { return this.api.listarSons(); }
   garantirEmUso(c: string, categoria?: string) { return this.api.garantirEmUso(c, categoria); }
   listarDados(p: PastaDados) { return this.api.listarDados(p); }
   lerDados(p: PastaDados, n: string) { return this.api.lerDados(p, n); }

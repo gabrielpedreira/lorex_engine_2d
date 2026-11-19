@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('lorex', {
   salvarConfigProjeto: (dados) => ipcRenderer.invoke('projeto:salvarConfig', dados),
 
   listarAssets: () => ipcRenderer.invoke('assets:listar'),
+  listarSons: () => ipcRenderer.invoke('assets:listarSons'),
   garantirEmUso: (relRaiz, categoria) => ipcRenderer.invoke('assets:garantirEmUso', relRaiz, categoria),
   listarDados: (pasta) => ipcRenderer.invoke('dados:listar', pasta),
   lerDados: (pasta, nome) => ipcRenderer.invoke('dados:ler', pasta, nome),

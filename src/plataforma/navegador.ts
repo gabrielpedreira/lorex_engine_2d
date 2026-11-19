@@ -46,6 +46,7 @@ export class PlataformaNavegador implements Plataforma {
     return { nome: m.nome };
   }
   async listarAssets() { return (await this.carregarManifesto()).arquivos; }
+  async listarSons() { return [] as string[]; }
 
   async garantirEmUso(c: string) {
     // Sem acesso ao disco: aponta para o arquivo de apoio a partir de jogo/

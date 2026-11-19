@@ -1,6 +1,7 @@
 // Área do cenário: desenha a fase com PixiJS e trata mouse (selecionar, mover, redimensionar, zoom, pan).
 import 'pixi.js/unsafe-eval';
-import { Application, Assets, BlurFilter, ColorMatrixFilter, Container, Graphics, Sprite, Texture, TextureStyle } from 'pixi.js';
+import { Application, Assets, BlurFilter, ColorMatrixFilter, Container, Graphics, Rectangle, Sprite, Texture, TextureStyle } from 'pixi.js';
+import { quadroDaFolha, retanguloFolha, type AnimFolha } from '../core/folha';
 import { calcularEfeitos, faseDoId, type EfeitoBrilhar, type ResultadoEfeitos } from '../core/efeitos';
 import type { InimigoFase, ObjetoFase } from '../core/tipos';
 import { ancoraPes } from '../core/personagem';
@@ -459,9 +460,43 @@ export class Viewport {
     return b ? { ...SEM_EFEITO, brilho: b.intensidade } : SEM_EFEITO;
   }
 
+  /** Quadros recortados de cada spritesheet usado por objetos animados. */
+  private quadrosFolha = new Map<string, Texture[]>();
+  /** No ▶ Testar: quadro atual de cada objeto animado (quem decide é o modo Teste). */
+  quadroTeste: ((o: ObjetoFase) => number) | null = null;
+
+  private quadrosDe(tex: Texture, asset: string, a: AnimFolha): Texture[] {
+    const chave = `${asset}|${a.quadros}|${a.colunas}|${a.folha.join('x')}`;
+    let q = this.quadrosFolha.get(chave);
+    if (q) return q;
+    // A folha pode ter sido otimizada (outro tamanho): recorta na proporção
+    const fx = tex.width / a.folha[0], fy = tex.height / a.folha[1];
+    q = [];
+    for (let i = 0; i < a.quadros; i++) {
+      const r = retanguloFolha(a, i);
+      const fr = new Rectangle(Math.floor(r.x * fx), Math.floor(r.y * fy), Math.max(1, Math.floor(r.w * fx)), Math.max(1, Math.floor(r.h * fy)));
+      if (fr.x + fr.width > tex.width || fr.y + fr.height > tex.height) break;
+      q.push(new Texture({ source: tex.source, frame: fr }));
+    }
+    if (!q.length) q.push(tex);
+    this.quadrosFolha.set(chave, q);
+    return q;
+  }
+
+  /** Quadro de um objeto animado agora: no teste, o que o jogo decidir; no editor, "Repetir sempre" anima na prévia. */
+  private quadroObjeto(o: ObjetoFase): number {
+    if (!o.anim) return 0;
+    if (this.quadroTeste) return this.quadroTeste(o);
+    if (o.anim.modo === 'loop' && this.estado.previaEfeitos) return quadroDaFolha(o.anim, performance.now() / 1000, true);
+    return 0;
+  }
+
   private aplicarObjeto(sp: Sprite, o: ObjetoFase, r: ResultadoEfeitos = this.efeitoEstatico(o)) {
     const tex = this.texturas.get(o.asset);
-    if (tex) sp.texture = tex;
+    if (tex && o.anim) {
+      const q = this.quadrosDe(tex, o.asset, o.anim);
+      sp.texture = q[Math.min(q.length - 1, this.quadroObjeto(o))];
+    } else if (tex) sp.texture = tex;
     else {
       sp.texture = Texture.EMPTY;
       // Carrega uma vez só (antes, a animação dos efeitos pedia a mesma imagem a cada quadro)
@@ -505,7 +540,7 @@ export class Viewport {
     const a = this.arraste;
     const arrastando = a && (a.tipo === 'mover' || a.tipo === 'escala') ? a.id : null;
     for (const o of this.estado.fase.objetos) {
-      if (!o.efeitos.length) continue;
+      if (!o.efeitos.length && !o.anim) continue;
       const sp = this.sprites.get(o.id);
       if (!sp) continue;
       const r = this.estado.previaEfeitos && o.id !== arrastando ? calcularEfeitos(o.efeitos, t, faseDoId(o.id)) : this.efeitoEstatico(o);

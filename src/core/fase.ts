@@ -1,6 +1,7 @@
 import type { Camada, Colisao, Fase, ObjetoFase, TipoCena } from './tipos';
 import { normalizarEfeitos } from './efeitos';
 import { normalizarComportamentos } from './comportamentos';
+import { normalizarAnim } from './folha';
 
 export const VERSAO_FASE = 1;
 
@@ -78,7 +79,9 @@ export function normalizarFase(dados: unknown): Fase {
 }
 
 function normalizarObjeto(o: Partial<ObjetoFase>, camadaPadrao: string): ObjetoFase {
+  const anim = normalizarAnim(o.anim);
   return {
+    ...(anim ? { anim } : {}),
     id: String(o.id ?? 'obj_sem_id'),
     tipo: o.tipo === 'interativo' ? 'interativo' : 'estatico',
     nome: String(o.nome ?? o.id ?? 'objeto'),

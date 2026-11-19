@@ -1,6 +1,7 @@
 // Tela inicial: projeto, recentes, fases do projeto e criação de fase com o "formato de pixels" do jogo.
 import { normalizarFase, type OpcoesFase } from '../core/fase';
 import { CONFIG_PADRAO, type ConfigProjeto, type InfoProjeto, type Plataforma } from '../plataforma/plataforma';
+import { dica } from './legenda';
 import { el } from './dom';
 
 export interface AcoesInicio {
@@ -8,6 +9,8 @@ export interface AcoesInicio {
   abrirRecente(caminho: string): Promise<void>;
   abrirFase(arquivo: string): Promise<boolean>;
   criarFase(nome: string, opcoes: OpcoesFase): Promise<boolean>;
+  /** Abre o Mapa (salas e passagens). */
+  abrirMapa(): void;
 }
 
 interface Preset { res: [number, number]; rotulo: string; dica: string }
@@ -96,7 +99,9 @@ export class TelaInicio {
     return Promise.all(arquivos.map(async (arquivo) => {
       try {
         const f = normalizarFase(JSON.parse(await this.plat.lerFase(arquivo)));
-        return { arquivo, nome: f.nome, tipo: f.tipo, regiao: f.regiao, info: `${f.tamanho[0]} × ${f.tamanho[1]} px · ${f.objetos.length} objeto(s) · ${f.colisoes.length ? `${f.colisoes.length} colisão(ões)` : 'sem colisão'}` };
+        const passagens = f.objetos.filter((o) => o.tipo === 'interativo' && o.comportamentos[0]?.tipo === 'saida').length;
+        const animados = f.objetos.filter((o) => o.anim).length;
+        return { arquivo, nome: f.nome, tipo: f.tipo, regiao: f.regiao, info: `${f.tamanho[0]} × ${f.tamanho[1]} px · ${f.objetos.length} objeto(s)${animados ? ` (${animados} animado(s))` : ''} · ${f.colisoes.length ? `${f.colisoes.length} colisão(ões)` : 'sem colisão'}${passagens ? ` · ${passagens} passagem(ns)` : ''}` };
       } catch {
         return { arquivo, nome: arquivo, tipo: 'fase' as const, regiao: '', info: 'não consegui ler este arquivo' };
       }
@@ -166,6 +171,9 @@ export class TelaInicio {
       }
       col.append(lista);
     }
+    const mapa = this.botao('Mapa das salas (M)', () => { this.esconder(); this.acoes.abrirMapa(); }, 'secundario largo');
+    dica(mapa, 'Mapa', 'Diagrama das salas: conecte as passagens (portas, escadas) e escolha a transição entre elas (tela de loading animada, som).', 'M');
+    col.append(mapa);
     return col;
   }
 

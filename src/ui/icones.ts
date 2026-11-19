@@ -33,6 +33,7 @@ export const ICONES = {
   linha: svg('<path d="M2 12l4-5 3 3 5-6"/><circle cx="2" cy="12" r="1"/><circle cx="6" cy="7" r="1"/><circle cx="9" cy="10" r="1"/><circle cx="14" cy="4" r="1"/>'),
   maoLivre: svg('<path d="M2 11c1.5-3 3-4 4-2s1.5 3 3 1 2-5 5-4"/>'),
   personagem: svg('<circle cx="8" cy="3.8" r="2"/><path d="M8 6v4.5M8 10.5l-2.5 3.5M8 10.5l2.5 3.5M4.5 8l3.5-1.5 3.5 1.5"/>'),
+  mapa: svg('<rect x="1.5" y="2" width="5.5" height="3.5" rx=".5"/><rect x="9" y="10.5" width="5.5" height="3.5" rx=".5"/><path d="M7 3.75h1.5a1.5 1.5 0 0 1 1.5 1.5v1.25M10 9.5v1"/><path d="M10 6.5l1.25 1.5L10 9.5 8.75 8z"/>'),
   codigo: svg('<path d="M5.5 4L2 8l3.5 4M10.5 4L14 8l-3.5 4M9 2.5l-2 11"/>'),
   controle: svg('<path d="M4.5 4.5h7a3 3 0 0 1 3 3v1.5a2.5 2.5 0 0 1-4.4 1.6l-.6-.6H6.5l-.6.6A2.5 2.5 0 0 1 1.5 9V7.5a3 3 0 0 1 3-3z"/><path d="M4.5 6.5v2.5M3.25 7.75h2.5"/><circle cx="10.5" cy="7" r=".4"/><circle cx="12" cy="8.5" r=".4"/>'),
   salvar: svg('<path d="M3 2h8l3 3v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M5 2v3.5h5V2M5 14V9.5h6V14"/>'),

@@ -40,6 +40,7 @@ export const GANCHOS: Gancho[] = [
   { nome: 'aoLevarDano', donos: ['inimigo'], params: 'eu, jogo, dano', texto: 'O inimigo levou um tiro. Retorne false para ignorar o dano.' },
   { nome: 'aoMorrer', donos: ['inimigo'], params: 'eu, jogo', texto: 'O inimigo morreu.' },
   { nome: 'aoTrocarFase', donos: ['jogo'], params: 'eu, jogo, fase', texto: 'Quando o jogador chega numa fase ou área (fase = nome do arquivo).' },
+  { nome: 'aoPassar', donos: ['jogo', 'fase'], params: 'eu, jogo, passagem, destino', texto: 'Antes de passar por uma passagem para outra sala (Mapa, M). destino = { fase, chegada, transicao } e pode ser mudado aqui (ex.: destino.transicao.efeito = "corte"). Retorne false para não passar.' },
 ];
 
 export const gancho = (nome: string) => GANCHOS.find((g) => g.nome === nome);
@@ -81,7 +82,7 @@ export function modeloScript(dono: DonoScript, nome: string, extra = ''): string
     const params = paramsDe(g, dono);
     const p = params.split(', ');
     const tipoParam = (x: string) => x === 'eu' ? TIPO_EU[dono] : x === 'jogo' ? 'Jogo' : x === 'dt' || x === 'dano' ? 'number'
-      : x === 'origem' ? 'Objeto' : x === 'inimigo' ? 'Inimigo' : x === 'alvo' ? 'Inimigo | null' : 'string';
+      : x === 'origem' || x === 'passagem' ? 'Objeto' : x === 'destino' ? 'Destino' : x === 'inimigo' ? 'Inimigo' : x === 'alvo' ? 'Inimigo | null' : 'string';
     const doc = [`/**`, ` * ${g.texto}`, ...p.map((x) => ` * @param {${tipoParam(x)}} ${x}`), ' */'];
     const corpo = ativo ? exemploPara(dono, g.nome) : '  ';
     const bloco = [...doc, `export function ${g.nome}(${params}) {`, corpo, '}'];
@@ -94,6 +95,7 @@ function exemploPara(dono: DonoScript, nome: string) {
   if (dono === 'objeto' && nome === 'aoInteragir') return "  jogo.aviso(`Você mexeu em ${eu.nome}`);\n  // return false; // descomente para cancelar o comportamento pronto";
   if (dono === 'personagem' && nome === 'aoAcao') return '  // if (acao === "tiro") { ... }';
   if (dono === 'jogo' && nome === 'aoTrocarFase') return '  // jogo.log("Entrou em", fase);';
+  if (nome === 'aoPassar') return '  // if (destino.fase === "laboratorio.json" && !jogo.variaveis.energia) { jogo.aviso("Sem energia."); return false; }';
   if (dono === 'inimigo' && nome === 'aoVer') return '  // jogo.log(`${eu.nome} viu o jogador`);';
   if (dono === 'inimigo' && nome === 'aoMorrer') return '  // jogo.inventario.dar("pontos", 10);';
   return '  ';
@@ -185,6 +187,18 @@ interface Objeto {
   distanciaDoJogador(): number;
   /** Faz a mesma coisa que o jogador apertar Interagir nele. */
   interagir(): void;
+  // ----- Objeto animado (Propriedades › Animação) -----
+  /** A imagem é um spritesheet animado? */
+  readonly animado: boolean;
+  /** Toca a animação do começo (repetir = true fica em loop). */
+  tocar(repetir?: boolean): void;
+  /** Para no quadro atual. */
+  parar(): void;
+  /** Quadro mostrado agora (0 = primeiro). Mudar para nele. */
+  quadro: number;
+  readonly quadros: number;
+  /** Está tocando agora? */
+  readonly tocando: boolean;
 }
 
 /** O jogador (personagem do teste). */
@@ -300,6 +314,29 @@ interface Hud {
   remover(chave: ChaveHud): void;
 }
 
+type EfeitoTransicao = "corte" | "escurecer" | "tela";
+/** O que acontece entre uma sala e outra (Mapa › losango). */
+interface Transicao {
+  efeito: EfeitoTransicao;
+  /** Spritesheet da tela cheia (relativo a jogo/). */
+  animacao: string;
+  /** Tempo mínimo (s). */
+  duracao: number;
+  cor: string;
+  texto: string;
+  /** Som (relativo a jogo/), "" = nenhum. */
+  som: string;
+  volume: number;
+}
+/** Destino de uma passagem (aoPassar pode mudar). */
+interface Destino {
+  /** Arquivo da sala de destino. */
+  fase: NomeFase;
+  /** Id da passagem onde o jogador aparece ("" = início do jogador). */
+  chegada: string;
+  transicao: Transicao;
+}
+
 /** Tudo o que o código pode usar durante o jogo. */
 interface Jogo {
   readonly jogador: Jogador;
@@ -321,8 +358,12 @@ interface Jogo {
   aviso(texto: string): void;
   /** Caixa de mensagem (pausa o jogo até fechar). */
   mensagem(texto: string): void;
-  /** Vai para outra fase ou área. */
-  irPara(fase: NomeFase): void;
+  /** Vai para outra sala. chegada = id da passagem onde aparece (vazio = início do jogador); transicao = "corte" | "escurecer" | "tela" ou { efeito, animacao, som, duracao, cor, texto }. */
+  irPara(fase: NomeFase, opcoes?: { chegada?: string; transicao?: EfeitoTransicao | Partial<Transicao> }): void;
+  /** Passa pela passagem como se o jogador apertasse Interagir nela (destino e efeito vêm do Mapa). */
+  passar(passagem: NomeObjeto | Objeto): void;
+  /** Para onde a passagem leva pelo Mapa (null = não conectada). */
+  destinoDe(passagem: NomeObjeto | Objeto): Destino | null;
   /** A ação foi apertada neste quadro? */
   apertou(acao: NomeAcao): boolean;
   /** A ação está segurada? */

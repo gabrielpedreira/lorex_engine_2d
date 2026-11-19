@@ -1,6 +1,7 @@
 // Formato de dados de uma fase (salvo como JSON em jogo/fases/). Versão 1.
 import type { Efeito } from './efeitos';
 import type { Comportamento } from './comportamentos';
+import type { AnimFolha } from './folha';
 
 /** Forma de colisão desenhada no cenário (espaço do mundo, parallax 1). */
 export interface Colisao {
@@ -56,6 +57,8 @@ export interface ObjetoFase {
   conexoes: Record<string, string>;
   /** Script do objeto (arquivo em jogo/scripts/, ex.: "fase_01.obj_003.js"), ou null. */
   script: string | null;
+  /** Objeto animado: a imagem é um spritesheet (w/h passam a ser o tamanho de UM quadro). */
+  anim?: AnimFolha;
 }
 
 /** Um inimigo colocado na fase. O tipo (animações, IA, vida) vem do personagem NPC. */

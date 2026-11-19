@@ -67,8 +67,8 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
   gravidade e tamanho se ajustam ao vivo e ficam salvos no projeto.
 - **Comportamentos** (objetos interativos, painel de propriedades): **coletável** (vai para o inventário),
   **porta** (sólida enquanto fechada; pode exigir e gastar um item), **alavanca/botão** (aciona outro objeto,
-  escolhido com um clique no cenário; a ligação aparece como linha tracejada), **saída** (leva para outra fase ou área,
-  levando o inventário) e **mensagem/nota** (texto na tela). No ▶ Testar: `E` interage, com aviso "E Abrir/Ler/Entrar"
+  escolhido com um clique no cenário; a ligação aparece como linha tracejada), **passagem** (porta, escada ou saída para outra sala, pode
+  ser trancada por um item; para onde leva fica no **Mapa**) e **mensagem/nota** (texto na tela). No ▶ Testar: `E` interage, com aviso "E Abrir/Ler/Entrar"
   sobre o objeto e inventário no canto.
 - **Personagens** (`K`): monte um personagem a partir de spritesheets, um por estado (Parado, Andando, Pulando,
   Caindo, Aterrissando, Dano, Morte). O editor detecta os quadros pela folha (inclusive quadros não quadrados e
@@ -95,6 +95,18 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
     eu.abrir();
   }
   ```
+- **Objetos animados**: um spritesheet colocado no cenário (nome com `spritesheet` ou `_8fps`, ou uma tira larga)
+  entra **animado**, mostrando um quadro. Em Propriedades › Animação: quadros, quadros por linha, FPS e quando toca
+  (**repetir sempre**, **uma vez ao começar** ou **parado até mandar**). Uma **porta animada** toca a animação ao abrir e
+  fica aberta no último quadro. No código: `eu.tocar()`, `eu.parar()`, `eu.quadro`.
+- **Mapa** (`M`): diagrama das salas do jogo (fases e áreas) com as **passagens** (▭) de cada uma. Arraste de uma
+  passagem até a de outra sala para conectar (ou até o meio da sala, para chegar no início dela); a conexão pode ser de
+  mão dupla. No meio de cada ligação há um **losango** (◆) que define o que acontece ao passar: **corte seco**,
+  **escurecer** ou **tela cheia animada** (um spritesheet tocando enquanto a próxima sala carrega, estilo Resident Evil
+  clássico), com cor, tempo mínimo, texto e **som**. Pré-visualização em tela cheia. Salvo em `jogo/projeto.json`.
+  No ▶ Testar, a passagem leva à outra sala com a transição, chegando na passagem de destino, com inventário, munição e
+  variáveis do código; salas já visitadas lembram portas abertas, itens pegos e inimigos mortos. O código pode mudar ou
+  cancelar a passagem (`aoPassar`) e viajar (`jogo.passar`, `jogo.irPara(fase, { chegada, transicao })`).
 - **Inimigos** (`N`): coloque inimigos na fase (escolha o tipo, clique no cenário; ele pisa no chão abaixo), arraste
   e exclua. Os tipos são personagens **NPC** com a seção **Inimigo**: comportamento (ex.: **Zumbi** — perambula ao
   acaso, visão curta, persegue e desiste quando o jogador se afasta, ataques sorteados por peso como golpe 60% e
@@ -147,7 +159,7 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 | Forma de colisão | `1` bloco · `2` rampa ◢ · `3` rampa ◣ · `4` polígono · `5` linha · `6` mão livre |
 | Sólido ↔ atravessável (modo Colisão) | `X` |
 | Polígono/linha: terminar · desfazer ponto · cancelar | `Enter` ou duplo clique · `Backspace` · `Esc` |
-| Personagens / Inimigos / HUD / Controles / Código / Log | `K` / `N` / `U` / `B` / `O` / `L` |
+| Personagens / Inimigos / HUD / Mapa / Controles / Código / Log | `K` / `N` / `U` / `M` / `B` / `O` / `L` |
 | ▶ Testar / voltar | `F5` / `Esc` (no teste: teclas da ferramenta Controles; `F6` reinicia) |
 | Mostrar colisões / prévia de efeitos | `Shift+C` / `Shift+E` |
 | Mostrar/ocultar caixa de ferramentas | `T` |

@@ -4,7 +4,8 @@ import { Animador, ancoraPes, estadoDoJogador, extras, retanguloQuadro, type Per
 import { EntradaJogo, TECLAS_RESERVADAS, controlesPadrao, nomeTecla, normalizarCodigo, textoAtalho, type Controles } from '../core/controles';
 import { LOG } from '../core/log';
 import { Jogador, JOGADOR_PADRAO, montarSegmentos, type ConfigJogador, type Entrada, type Segmento } from '../core/fisica';
-import { MundoInterativo, type ResultadoInteracao } from '../core/comportamentos';
+import { MundoInterativo, type EstadoObjeto, type ResultadoInteracao } from '../core/comportamentos';
+import { mapaVazio, resumoTransicao, transicaoPadrao, viagemDe, type Mapa, type Transicao, type Viagem } from '../core/mapa';
 import { MotorScripts, type FontesScripts } from './motorScripts';
 import type { ObjetoFase } from '../core/tipos';
 import { InimigoVivo, raioTiro, type TipoInimigo } from './inimigosTeste';
@@ -127,7 +128,12 @@ export class ModoTeste {
       empurrar: (vx: number, vy: number) => { if (t.jogador) { t.jogador.vx += vx; t.jogador.vy += vy; } },
       aviso: (x: string) => { LOG.add({ cat: 'mundo', texto: `aviso (código): ${x}` }); t.toast(x); },
       mensagem: (x: string) => t.tratar({ mensagem: x }),
-      irPara: (f: string) => t.tratar({ irPara: f }),
+      irPara: (f: string, op?: { chegada?: string; transicao?: Partial<Transicao> | string }) => t.viajar(t.viagemDoCodigo(f, op)),
+      passar: (o: ObjetoFase) => {
+        const v = viagemDe(t.mapa, t.estado.arquivoFase ?? '', o.id);
+        if (v) t.viajar(v, o); else t.toast(`${o.nome} não está conectada no Mapa (M).`);
+      },
+      destinoDe: (o: ObjetoFase) => viagemDe(t.mapa, t.estado.arquivoFase ?? '', o.id),
       apertou: (a: string) => t.entradaJogo.apertou(a),
       segurando: (a: string) => t.entradaJogo.segurando(a),
       hudDefinir: (r: string, v: string) => {
@@ -169,8 +175,17 @@ export class ModoTeste {
   private ultimoEstado = '';
   private ultimoProx = '';
 
-  /** Saída para outra fase/área: o editor abre o destino e recomeça o teste lá. */
-  aoIrPara: (destino: string) => void = () => {};
+  /** Passagem para outra sala: o editor faz a transição, abre o destino e continua o teste lá. */
+  aoIrPara: (v: Viagem) => void = () => {};
+  /** Mapa do projeto (ferramenta Mapa): para onde cada passagem leva. */
+  mapa: Mapa = mapaVazio();
+  /** Trocando de sala: o teste continua (mesmo log, mesma memória das salas). */
+  private viajando = false;
+  /** Já passou por uma passagem e está esperando o editor trocar de sala (o jogo congela). */
+  private saindo = false;
+  private chegadaPendente = '';
+  /** O que mudou em cada sala já visitada nesta partida (portas, itens pegos, inimigos mortos). */
+  private memoriaSalas = new Map<string, { estados: Map<string, EstadoObjeto>; mortos: Set<string> }>();
 
   /** Configuração do jogador (lida/salva no projeto). */
   config: ConfigJogador = { ...JOGADOR_PADRAO };
@@ -203,10 +218,18 @@ export class ModoTeste {
     e.mostrarColisoes = false;
     this.cameraAntes = { ...e.camera };
     this.segs = montarSegmentos(e.fase.colisoes);
-    LOG.iniciarTeste(`${e.fase.nome}${e.arquivoFase ? ` (${e.arquivoFase})` : ''} · jogador: ${this.pers?.dados.nome ?? 'retângulo provisório'}${this.motor ? ' · com código' : ''}`);
+    const continuando = this.viajando;
+    if (continuando) LOG.add({ cat: 'mundo', texto: `chegou em ${e.fase.nome}${e.arquivoFase ? ` (${e.arquivoFase})` : ''}${this.chegadaPendente ? ` · na passagem ${e.objeto(this.chegadaPendente)?.nome ?? this.chegadaPendente}` : ' · no início do jogador'}` });
+    else {
+      LOG.iniciarTeste(`${e.fase.nome}${e.arquivoFase ? ` (${e.arquivoFase})` : ''} · jogador: ${this.pers?.dados.nome ?? 'retângulo provisório'}${this.motor ? ' · com código' : ''}`);
+      this.memoriaSalas.clear();
+    }
     this.ultimoEstado = ''; this.ultimoProx = '';
+    this.saindo = false;
     this.reiniciarJogador();
-    this.reiniciarMundo();
+    this.reiniciarMundo(continuando);
+    this.posicionarChegada();
+    this.viajando = false;
     this.entradaJogo.limpar();
 
     // Zoom para a tela do jogo caber inteira (inteiro, para a pixel art ficar nítida)
@@ -236,7 +259,7 @@ export class ModoTeste {
     const e = this.estado;
     e.testando = false;
     e.mostrarColisoes = this.colisoesAntes;
-    this.aoTerminarLog(LOG.terminarTeste());
+    if (!this.viajando) this.aoTerminarLog(LOG.terminarTeste());
     Object.assign(e.camera, this.cameraAntes);
     this.viewport.aoQuadro = null;
     this.viewport.aposSincronizar = null;
@@ -258,22 +281,44 @@ export class ModoTeste {
     this.jogador = null;
     this.mundo = null;
     this.viewport.visibilidadeTeste = null;
+    this.viewport.quadroTeste = null;
     this.viewport.atualizarCena();
     e.emit('camera');
     e.emit('opcoes');
-    e.avisar('De volta ao editor.');
+    if (!this.viajando) e.avisar('De volta ao editor.');
     this.aoMudarEstado();
   }
 
+  /** O editor vai trocar de sala: o próximo parar/iniciar continua a mesma partida. */
+  prepararViagem(v: Viagem) { this.viajando = true; this.chegadaPendente = v.chegada; }
+  /** A troca de sala não aconteceu (ex.: cancelou o "salvar alterações"): o jogo segue. */
+  cancelarViagem() { this.viajando = false; this.saindo = false; this.chegadaPendente = ''; }
+
   /** Itens, portas e alavancas voltam ao estado inicial (o inventário vem da área anterior, se houver). */
-  private reiniciarMundo() {
+  private reiniciarMundo(lembrar = false) {
     this.mundo = new MundoInterativo(this.estado.fase);
+    const mundo = this.mundo;
+    // Voltando a uma sala já visitada: portas, itens e inimigos mortos ficam como estavam
+    const arquivo = this.estado.arquivoFase ?? '';
+    const mem = lembrar ? this.memoriaSalas.get(arquivo) : undefined;
+    if (!lembrar) this.memoriaSalas.delete(arquivo);
+    if (mem) {
+      for (const [id, est] of mem.estados) {
+        mundo.estados.set(id, { ...est });
+        const o = this.estado.objeto(id);
+        if (o?.anim && est.aberta) mundo.definirQuadro(id, o.anim.quadros - 1);
+      }
+      mundo.marcarMudanca();
+      LOG.add({ cat: 'mundo', texto: `sala já visitada: estado anterior restaurado${mem.mortos.size ? ` (${mem.mortos.size} inimigo(s) continuam mortos)` : ''}` });
+    }
+    this.viewport.quadroTeste = (o) => mundo.quadroAnim(o);
     this.tempoJogo = 0;
     this.agarradoAte = 0;
     this.recargaAte = 0;
     for (const i of this.inimigos) i.remover();
     this.inimigos = [];
     for (const def of this.estado.fase.inimigos) {
+      if (mem?.mortos.has(def.id)) continue;
       const tipo = this.tiposInimigo.get(def.personagem);
       if (!tipo) { LOG.add({ cat: 'erro', texto: `Inimigo ${def.id}: o personagem ${def.personagem} não existe ou não carregou` }); continue; }
       this.inimigos.push(new InimigoVivo(def, tipo, this.config.gravidade));
@@ -326,7 +371,6 @@ export class ModoTeste {
     if (r.acionado && origem) LOG.add({ cat: 'mundo', texto: `${origem.nome} acionou ${this.estado.objeto(r.acionado)?.nome ?? r.acionado}` });
     if (r.aviso) LOG.add({ cat: 'mundo', texto: `aviso: ${r.aviso}` });
     if (r.mensagem) LOG.add({ cat: 'mundo', texto: `mensagem: ${r.mensagem}` });
-    if (r.irPara) LOG.add({ cat: 'mundo', texto: `saída para ${r.irPara}` });
     if (r.acionado && origem && this.motor) this.motor.acionado(r.acionado, origem);
     if (r.aviso) this.toast(r.aviso);
     if (r.mensagem) {
@@ -334,15 +378,41 @@ export class ModoTeste {
       this.elMensagem.replaceChildren(el('p', {}, r.mensagem), el('span', { class: 'teste-fechar' }, 'E ou Enter para fechar'));
       this.elMensagem.hidden = false;
     }
-    if (r.irPara) {
-      this.inventarioLevado = this.mundo ? new Map(this.mundo.inventario) : null;
-      this.municaoLevada = this.pers?.dados.arma ? this.municao : null;
-      this.levarCodigo = this.motor ? { variaveis: this.motor.variaveis, jogador: this.motor.dadosJogador } : null;
-      const destino = r.irPara;
-      setTimeout(() => this.aoIrPara(destino));
+    if (r.passagem || r.irPara) {
+      const arquivo = this.estado.arquivoFase ?? '';
+      const v = (r.passagem ? viagemDe(this.mapa, arquivo, r.passagem) : null)
+        ?? (r.irPara ? { fase: r.irPara, chegada: '', transicao: transicaoPadrao('corte'), deFase: arquivo, dePassagem: r.passagem ?? '' } : null);
+      if (v) this.viajar(v, origem);
+      else { LOG.add({ cat: 'mundo', texto: `${origem?.nome ?? 'passagem'}: não leva a lugar nenhum (sem conexão no Mapa)` }); this.toast('Esta passagem ainda não leva a lugar nenhum: conecte-a no Mapa (M).'); }
     }
     this.aplicarVisibilidade();
     this.atualizarInventario();
+  }
+
+  /** Vai para outra sala (passagem, jogo.irPara ou jogo.passar). O código (aoPassar) pode mudar ou cancelar. */
+  private viajar(v: Viagem, origem?: ObjetoFase) {
+    if (this.saindo) return;
+    if (this.motor && !this.motor.passar(origem, v)) { LOG.add({ cat: 'mundo', texto: `passagem para ${v.fase} cancelada pelo código (aoPassar)` }); return; }
+    LOG.add({ cat: 'mundo', texto: `passagem${origem ? ` ${origem.nome}` : ''} → ${v.fase}${v.chegada ? ` (chega em ${v.chegada})` : ''} · ${resumoTransicao(v.transicao)}` });
+    this.saindo = true;
+    // Memória da sala que fica para trás (portas abertas, itens pegos, inimigos mortos)
+    if (this.mundo) {
+      this.memoriaSalas.set(v.deFase || (this.estado.arquivoFase ?? ''), {
+        estados: new Map([...this.mundo.estados].map(([id, e]) => [id, { ...e }])),
+        mortos: new Set([...this.estado.fase.inimigos.map((d) => d.id)].filter((id) => !this.inimigos.some((i) => i.id === id && i.vivo))),
+      });
+    }
+    this.inventarioLevado = this.mundo ? new Map(this.mundo.inventario) : null;
+    this.municaoLevada = this.pers?.dados.arma ? this.municao : null;
+    this.levarCodigo = this.motor ? { variaveis: this.motor.variaveis, jogador: this.motor.dadosJogador } : null;
+    setTimeout(() => this.aoIrPara(v));
+  }
+
+  /** Viagem pedida pelo código: jogo.irPara(fase, { chegada, transicao }). */
+  private viagemDoCodigo(fase: string, op?: { chegada?: string; transicao?: Partial<Transicao> | string }): Viagem {
+    const arquivo = this.estado.arquivoFase ?? '';
+    const tr = typeof op?.transicao === 'string' ? transicaoPadrao(op.transicao as Transicao['efeito']) : { ...transicaoPadrao('corte'), ...(op?.transicao ?? {}) };
+    return { fase: fase.endsWith('.json') ? fase : fase + '.json', chegada: op?.chegada ?? '', transicao: tr, deFase: arquivo, dePassagem: '' };
   }
 
   /** Inventário que deve seguir para a próxima área (usado pelo editor ao trocar de fase). */
@@ -356,6 +426,20 @@ export class ModoTeste {
     this.jogador = new Jogador(cfg, sx, sy);
     this.aterrissouHa = 9;
     this.pers?.animador.parar();
+  }
+
+  /** Chegando por uma passagem: o jogador aparece nela (pés na base), olhando para o meio da sala. */
+  private posicionarChegada() {
+    const id = this.chegadaPendente;
+    this.chegadaPendente = '';
+    if (!id || !this.jogador || !this.mundo) return;
+    const o = this.estado.objeto(id);
+    if (!o) { LOG.add({ cat: 'erro', texto: `Mapa: a passagem de chegada ${id} não existe em ${this.estado.arquivoFase} (o jogador foi para o início)` }); return; }
+    const b = this.mundo.caixa(o);
+    this.jogador.x = b.x + b.w / 2;
+    this.jogador.y = b.y + b.h;
+    this.jogador.vx = 0; this.jogador.vy = 0;
+    this.jogador.olhandoDireita = this.jogador.x < this.estado.fase.tamanho[0] / 2;
   }
 
   /** O jogador é desenhado dentro da camada "Objetos" (atrás do primeiro plano, na frente do cenário). */
@@ -427,7 +511,7 @@ export class ModoTeste {
     const j = this.jogador;
     const m = this.mundo;
     if (!j || !m) return;
-    if (this.mensagemAberta) { this.desenharJogador(0); return; } // jogo pausado lendo a mensagem
+    if (this.mensagemAberta || this.saindo) { this.desenharJogador(0); return; } // pausado: lendo a mensagem ou trocando de sala
     const ent = this.entradaJogo;
     ent.atualizar(performance.now() / 1000);
     for (const a of ent.disparadasAgora) LOG.add({ cat: 'entrada', texto: `dispara a ação "${a}"` });
@@ -446,6 +530,7 @@ export class ModoTeste {
     const [fw, fh] = this.estado.fase.tamanho;
     const dtQ = Math.min(ms / 1000, 0.1);
     this.tempoJogo += dtQ;
+    m.tempo = this.tempoJogo; // relógio das animações dos objetos
     // Recarga termina quando a animação acaba: pente cheio
     if (this.recargaAte && this.tempoJogo >= this.recargaAte) {
       this.recargaAte = 0;

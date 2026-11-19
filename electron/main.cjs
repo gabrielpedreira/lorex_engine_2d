@@ -8,6 +8,7 @@ const { pathToFileURL } = require('node:url');
 const VERSAO = require('../package.json').version;
 const PASTAS_IGNORADAS = new Set(['lorex_engine_2d', '.git', 'node_modules', 'dist']);
 const EXTENSOES_IMAGEM = new Set(['.png', '.jpg', '.jpeg']);
+const EXTENSOES_SOM = new Set(['.ogg', '.mp3', '.wav']);
 const MAX_RECENTES = 6;
 const SPLASH_MINIMO_MS = 1800; // tempo mínimo da splash na tela, para não "piscar"
 
@@ -93,7 +94,7 @@ async function abrirProjeto(raiz) {
   return infoProjeto();
 }
 
-async function listarImagens(dirAbs, relBase, saida) {
+async function listarImagens(dirAbs, relBase, saida, exts = EXTENSOES_IMAGEM) {
   let entradas;
   try { entradas = await fsp.readdir(dirAbs, { withFileTypes: true }); } catch { return; }
   for (const e of entradas) {
@@ -101,8 +102,8 @@ async function listarImagens(dirAbs, relBase, saida) {
     const rel = relBase ? relBase + '/' + e.name : e.name;
     if (e.isDirectory()) {
       if (!relBase && PASTAS_IGNORADAS.has(e.name)) continue;
-      await listarImagens(path.join(dirAbs, e.name), rel, saida);
-    } else if (EXTENSOES_IMAGEM.has(path.extname(e.name).toLowerCase())) {
+      await listarImagens(path.join(dirAbs, e.name), rel, saida, exts);
+    } else if (exts.has(path.extname(e.name).toLowerCase())) {
       saida.push(rel);
     }
   }
@@ -183,6 +184,13 @@ function registrarIpc() {
     return lista.sort((a, b) => a.localeCompare(b, 'pt-BR'));
   });
 
+  ipcMain.handle('assets:listarSons', async () => {
+    if (!raizProjeto) return [];
+    const lista = [];
+    await listarImagens(raizProjeto, '', lista, EXTENSOES_SOM);
+    return lista.sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  });
+
   // Se o asset é do material de apoio, copia para jogo/assets/<categoria>/ (o original fica onde está).
   ipcMain.handle('assets:garantirEmUso', async (_e, relRaiz, categoriaPedida) => {
     if (relRaiz.startsWith('jogo/')) return relRaiz.slice('jogo/'.length);
@@ -233,6 +241,19 @@ function registrarIpc() {
         for (const o of f.objetos ?? []) if (o.asset) usados.add(o.asset);
       } catch { /* fase ilegível: por segurança, não apaga nada */ return []; }
     }
+    // Folhas dos personagens e animações das transições do Mapa também estão em uso
+    const dirPers = path.join(raizProjeto, 'jogo', 'personagens');
+    for (const n of await fsp.readdir(dirPers).catch(() => [])) {
+      if (!n.toLowerCase().endsWith('.json')) continue;
+      try {
+        const p = JSON.parse(await fsp.readFile(path.join(dirPers, n), 'utf-8'));
+        for (const a of Object.values(p.animacoes ?? {})) if (a && a.folha) usados.add(a.folha);
+      } catch { return []; }
+    }
+    try {
+      const cfg = JSON.parse(await fsp.readFile(path.join(raizProjeto, 'jogo', 'projeto.json'), 'utf-8'));
+      for (const c of cfg.mapa?.conexoes ?? []) { if (c.transicao?.animacao) usados.add(c.transicao.animacao); }
+    } catch { /* sem projeto.json */ }
     const arquivos = [];
     const percorrer = async (dir, rel) => {
       for (const e of await fsp.readdir(dir, { withFileTypes: true }).catch(() => [])) {
@@ -314,7 +335,7 @@ function registrarIpc() {
 
 // projeto://raiz/<caminho relativo> → arquivo dentro da pasta do projeto
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'projeto', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
+  { scheme: 'projeto', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ]);
 
 function criarEditor() {

@@ -1,5 +1,6 @@
 // Lorex Engine 2D: Construtor de Fases (etapa 1)
 import './estilo.css';
+import { palpiteAnim, pareceFolha, tamanhoQuadro } from './core/folha';
 import { criarFase, nomeArquivoFase, nomeDoArquivo, normalizarFase, novoIdObjeto, type OpcoesFase } from './core/fase';
 import type { ObjetoFase } from './core/tipos';
 import { Estado } from './editor/estado';
@@ -45,7 +46,10 @@ import type { FontesScripts } from './editor/motorScripts';
 import { normalizarPersonagem, type Personagem } from './core/personagem';
 import { JOGADOR_PADRAO } from './core/fisica';
 import { TelaInicio } from './ui/inicio';
-import { CONFIG_PADRAO } from './plataforma/plataforma';
+import { CONFIG_PADRAO, urlAsset } from './plataforma/plataforma';
+import { EditorMapa, type InfoSala } from './ui/mapa';
+import { TelaTransicao } from './editor/transicao';
+import { conexaoDaPassagem, limparMapa, normalizarMapa, resumoTransicao } from './core/mapa';
 
 const plat: Plataforma = temElectron() ? new PlataformaElectron() : new PlataformaNavegador();
 const estado = new Estado();
@@ -212,6 +216,16 @@ new PainelPropriedades(painelProps, estado, {
   otimizar: plat.tipo === 'electron' ? () => void otimizarSelecionado() : null,
   aoEscalar: (o) => viewport.aoEscalar(o),
   listarFases: () => plat.listarFases(),
+  destinoNoMapa: (id) => {
+    const c = conexaoDaPassagem(normalizarMapa(config.mapa), estado.arquivoFase ?? '', id);
+    if (!c) return null;
+    const ehA = c.a.fase === estado.arquivoFase && c.a.passagem === id;
+    const outra = ehA ? c.b : c.a;
+    if (!ehA && !c.maoDupla) return `chegada de ${outra.fase} (só ida: não leva de volta)`;
+    return `${outra.fase}${outra.passagem ? ` (passagem ${outra.passagem})` : ' (início)'} · ${resumoTransicao(c.transicao)}${c.maoDupla ? '' : ' · só ida'}`;
+  },
+  abrirMapa: () => void abrirMapa(),
+  tamanhoImagem: async (o) => { const t = await viewport.textura(o.asset); return { w: t.width, h: t.height }; },
   escolherAlvo: () => new Promise((resolve) => {
     if (estado.modo !== 'selecionar') estado.definirModo('selecionar');
     const origem = estado.selecionado;
@@ -245,17 +259,21 @@ async function adicionarAsset(caminhoRaiz: string, sx?: number, sy?: number, tip
   try {
     // Tamanho original (pela imagem de origem) e escala desejada
     const original = await viewport.texturaRaiz(caminhoRaiz);
-    let esc = escala || config.escalas?.[caminhoRaiz] || viewport.escalaInicial(original.width, original.height);
+    // Spritesheet (nome com "spritesheet"/"_8fps" ou tira larga): entra como objeto ANIMADO, mostrando um quadro
+    const anim = pareceFolha(nomeDoArquivo(caminhoRaiz), original.width, original.height)
+      ? palpiteAnim(nomeDoArquivo(caminhoRaiz), original.width, original.height) : undefined;
+    const quadro = anim ? tamanhoQuadro(anim) : { w: original.width, h: original.height };
+    let esc = escala || config.escalas?.[caminhoRaiz] || viewport.escalaInicial(quadro.w, quadro.h);
     const reduzidaAuto = !escala && !config.escalas?.[caminhoRaiz] && esc < 1;
 
     // Se já existe uma cópia otimizada exatamente nesse tamanho, usa ela (leve) em vez do original
     let asset: string, w: number, h: number;
-    const otim = config.otimizados?.[caminhoRaiz];
+    const otim = anim ? undefined : config.otimizados?.[caminhoRaiz];
     if (otim && otim.w === Math.round(original.width * esc) && otim.h === Math.round(original.height * esc)) {
       asset = otim.asset; w = otim.w; h = otim.h; esc = 1;
     } else {
       asset = await plat.garantirEmUso(caminhoRaiz);
-      w = original.width; h = original.height;
+      w = quadro.w; h = quadro.h;
     }
     await viewport.textura(asset);
 
@@ -273,8 +291,10 @@ async function adicionarAsset(caminhoRaiz: string, sx?: number, sy?: number, tip
       w, h,
       escala: esc, rotacao: 0, espelharX: false, espelharY: false, opacidade: 1, visivel: true,
       efeitos: [], comportamentos: [], conexoes: {}, script: null,
+      ...(anim ? { anim } : {}),
     };
     estado.alterar((f) => { f.objetos.push(obj); });
+    if (anim) LOG.add({ cat: 'sistema', texto: `${obj.nome}: spritesheet colocado como objeto animado (${anim.quadros} quadros, ${anim.fps} fps) — ajuste em Propriedades › Animação` });
     estado.selecionar(obj.id);
     estado.avisar(`"${obj.nome}" (${tipo === 'interativo' ? 'interativo' : 'estático'}) adicionado em ${camada.nome}`
       + (reduzidaAuto ? `: a imagem era maior que a tela do jogo e entrou com ${formatarPct(esc)}. Ajuste pelas alças.` : ''));
@@ -303,7 +323,8 @@ if (plat.tipo === 'electron') {
 viewport.aoEscalar = (o) => {
   if (!o.origem) return;
   const base = viewport.tamanhoOriginal(o.origem);
-  config.escalas = { ...(config.escalas ?? {}), [o.origem]: base ? (o.w * o.escala) / base.w : o.escala };
+  const baseW = base ? (o.anim ? base.w * tamanhoQuadro(o.anim).w / o.anim.folha[0] : base.w) : 0;
+  config.escalas = { ...(config.escalas ?? {}), [o.origem]: baseW ? (o.w * o.escala) / baseW : o.escala };
   salvarConfigDepois();
 };
 
@@ -331,6 +352,7 @@ ferramentas.aoMudar = (lista) => {
 async function otimizarSelecionado() {
   const o = estado.objetoSelecionado();
   if (!o) return;
+  if (o.anim) { estado.avisar('Objetos animados não são otimizados: reduzir a folha borra e desalinha os quadros da pixel art.'); return; }
   const fonte = o.origem ?? 'jogo/' + o.asset;
   const original = await viewport.texturaRaiz(fonte);
   const w = Math.round(o.w * o.escala), h = Math.round(o.h * o.escala);
@@ -385,9 +407,9 @@ async function criarNovaFase(nome: string, opcoes: OpcoesFase): Promise<boolean>
   return ok;
 }
 
-async function abrirFase(arquivo: string): Promise<boolean> {
+async function abrirFase(arquivo: string, jaPerguntou = false): Promise<boolean> {
   if (arquivo === estado.arquivoFase) return true;
-  if (!(await podeDescartar())) { void atualizarListaFases(); return false; }
+  if (!jaPerguntou && !(await podeDescartar())) { void atualizarListaFases(); return false; }
   try {
     const fase = normalizarFase(JSON.parse(await plat.lerFase(arquivo)));
     estado.carregarFase(fase, arquivo);
@@ -442,6 +464,7 @@ const inicio = new TelaInicio(plat, {
   abrirRecente: async (c) => { if (await podeDescartar()) await trocarProjeto(await plat.abrirCaminho(c)); },
   abrirFase: (a) => abrirFase(a),
   criarFase: (n, o) => criarNovaFase(n, o),
+  abrirMapa: () => void abrirMapa(),
 });
 
 // ---------- Barra superior ----------
@@ -496,13 +519,28 @@ teste.aoMudarEstado = () => {
   atualizarModos();
   if (!estado.testando) viewport.app.canvas.focus();
 };
-// Saída para outra fase/área durante o teste: abre o destino e continua testando lá, levando o inventário
-teste.aoIrPara = async (destino) => {
+// Passagem para outra sala durante o teste (Mapa): transição (corte/escurecer/tela cheia + som) cobrindo a
+// janela enquanto o editor abre o destino; o teste continua lá com inventário, munição e variáveis do código.
+const telaTransicao = new TelaTransicao((c) => urlAsset(plat, c));
+teste.aoIrPara = async (v) => {
   const inv = teste.inventarioParaLevar;
+  const outraSala = v.fase !== estado.arquivoFase;
+  if (outraSala && estado.sujo) {
+    if (!(await podeDescartar())) { teste.cancelarViagem(); estado.avisar('Passagem cancelada: a fase tem alterações não salvas.'); return; }
+  }
+  await telaTransicao.cobrir(v.transicao);
+  teste.prepararViagem(v);
   teste.parar();
-  if (!(await abrirFase(destino))) { estado.avisar(`Não consegui ir para ${destino}.`); return; }
+  if (outraSala && !(await abrirFase(v.fase, true))) {
+    LOG.add({ cat: 'erro', texto: `Passagem: não consegui abrir ${v.fase}` });
+    estado.avisar(`Não consegui ir para ${v.fase}.`);
+    teste.cancelarViagem();
+    await telaTransicao.descobrir();
+    return;
+  }
   teste.config = { ...JOGADOR_PADRAO, ...(config.jogador ?? {}) };
   teste.controles = normalizarControles(config.controles);
+  teste.mapa = normalizarMapa(config.mapa);
   await prepararPersonagemTeste();
   await carregarTiposInimigo();
   teste.hudConfig = normalizarHud(config.hud);
@@ -510,6 +548,7 @@ teste.aoIrPara = async (destino) => {
   teste.levarInventario(inv);
   teste.iniciar();
   estado.avisar(`Chegou em ${estado.fase.nome}.`);
+  await telaTransicao.descobrir();
 };
 
 async function alternarTeste() {
@@ -518,6 +557,7 @@ async function alternarTeste() {
   viewport.ferrColisao.cancelar();
   teste.config = { ...JOGADOR_PADRAO, ...(config.jogador ?? {}) };
   teste.controles = normalizarControles(config.controles);
+  teste.mapa = normalizarMapa(config.mapa);
   await prepararPersonagemTeste();
   await carregarTiposInimigo();
   teste.hudConfig = normalizarHud(config.hud);
@@ -794,6 +834,55 @@ async function abrirHud() {
   editorHud.abrir(normalizarHud(config.hud), estado.fase.resolucaoBase, estado.fase.objetos.flatMap((o) => { const c = comportamentoDe(o); return c?.tipo === 'coletavel' ? [c.item] : []; }));
 }
 
+// ---------- Mapa (salas, passagens e transições) ----------
+/** Salas do projeto para o diagrama: a fase aberta vem da memória (com passagens ainda não salvas). */
+async function salasDoProjeto(): Promise<InfoSala[]> {
+  const arquivos = await plat.listarFases();
+  const salas: InfoSala[] = [];
+  for (const arquivo of arquivos) {
+    try {
+      const f = arquivo === estado.arquivoFase ? estado.fase : normalizarFase(JSON.parse(await plat.lerFase(arquivo)));
+      salas.push({
+        arquivo, nome: f.nome, tipo: f.tipo, regiao: f.regiao, tamanho: f.tamanho, spawn: f.spawnJogador,
+        passagens: f.objetos.flatMap((o) => {
+          const c = comportamentoDe(o);
+          return c?.tipo === 'saida' ? [{ id: o.id, nome: o.nome, x: o.x, y: o.y, w: o.w * o.escala, h: o.h * o.escala, requer: c.requer }] : [];
+        }),
+      });
+    } catch (err) {
+      salas.push({ arquivo, nome: arquivo, tipo: 'fase', regiao: '', tamanho: [640, 360], spawn: [0, 0], passagens: [], erro: `Não abriu: ${String(err)}` });
+    }
+  }
+  return salas;
+}
+const editorMapa = new EditorMapa({
+  aoMudar: (m, motivo) => {
+    config.mapa = m;
+    salvarConfigDepois();
+    if (motivo) LOG.add({ cat: 'sistema', texto: `Mapa: ${motivo}` });
+    avisarCodigoMudou();
+  },
+  aoAbrirSala: (arquivo) => void abrirFase(arquivo),
+  aoNovaSala: () => void novaFase(),
+  imagens: () => plat.listarAssets(),
+  sons: () => plat.listarSons(),
+  garantir: (c, cat) => (c.startsWith('jogo/') ? Promise.resolve(c.slice(5)) : plat.garantirEmUso(c, cat)),
+  url: (c) => urlAsset(plat, c),
+  previa: (t) => { LOG.add({ cat: 'sistema', texto: `Mapa: pré-visualizou a transição (${resumoTransicao(t)})` }); void telaTransicao.previa(t); },
+});
+async function abrirMapa() {
+  if (estado.testando) teste.parar();
+  if (editorPersonagens.aberta) await editorPersonagens.fechar();
+  if (editorControles.aberta) editorControles.fechar();
+  if (editorHud.aberta) editorHud.fechar();
+  const salas = await salasDoProjeto();
+  const mapa = normalizarMapa(config.mapa);
+  // Fases apagadas/renomeadas: conexões para elas saem
+  const removidas = salas.length ? limparMapa(mapa, salas.map((s) => s.arquivo)) : 0;
+  if (removidas) { config.mapa = mapa; salvarConfigDepois(); LOG.add({ cat: 'sistema', texto: `Mapa: ${removidas} conexão(ões) para salas que não existem mais foram removidas` }); }
+  editorMapa.abrir(mapa, salas, estado.arquivoFase ?? '');
+}
+
 // ---------- Controles ----------
 const editorControles = new EditorControles();
 editorControles.aoAvisar = (m) => estado.avisar(m);
@@ -840,6 +929,8 @@ const itensTrilho: (ItemTrilho | 'sep')[] = [
     texto: 'Monta personagens animados a partir dos spritesheets (parado, andando, pulando, caindo…), marca os pés e a caixa de colisão, e escolhe quem é o jogador no ▶ Testar.' },
   { id: 'hud', ico: 'hud', titulo: 'HUD', atalho: 'U', acao: () => void abrirHud(),
     texto: 'Edita o que aparece na tela durante o jogo: munição, inimigos vivos, itens, valores do código. Arraste os elementos na prévia da tela.' },
+  { id: 'mapa', ico: 'mapa', titulo: 'Mapa', atalho: 'M', acao: () => void abrirMapa(),
+    texto: 'Diagrama das salas do jogo: conecte as passagens (portas, escadas, saídas) de uma sala à outra e escolha o que acontece no caminho (◆): corte, escurecer, tela cheia animada estilo Resident Evil, som.' },
   { id: 'codigo', ico: 'codigo', titulo: 'Código', atalho: 'O', acao: () => void abrirCodigo(),
     texto: 'Painel de código estilo VS Code: à esquerda o jogo, a fase, cada objeto e cada personagem; à direita o editor. Programe o que os comportamentos prontos não cobrem.' },
   { id: 'controles', ico: 'controle', titulo: 'Controles', atalho: 'B', acao: () => void abrirControles(),
@@ -976,7 +1067,7 @@ const stMsg = el('span', { class: 'msg', role: 'status' });
 const guiaAtalhos = new GuiaAtalhos();
 guiaAtalhos.teclasTeste = () => {
   const c = normalizarControles(config.controles);
-  const nomes: Record<string, string> = { esquerda: 'Andar para a esquerda', direita: 'Andar para a direita', pular: 'Pular', interagir: 'Interagir' };
+  const nomes: Record<string, string> = { esquerda: 'Andar para a esquerda', direita: 'Andar para a direita', pular: 'Pular', interagir: 'Interagir (abrir, ler, passar pela passagem)' };
   return Object.entries(c.acoes).filter(([, l]) => l.length).map(([a, l]) => [l.map(textoAtalho).join(' / '), nomes[a] ?? `Ação "${a}" (ferramenta Controles, B)`] as [string, string]);
 };
 const stAtalhos = el('button', { type: 'button', class: 'st-botao' }, 'Teclas de atalho');
@@ -1028,7 +1119,7 @@ function digitando(): boolean {
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'F1') { e.preventDefault(); guiaAtalhos.alternar(); return; }
-  if (document.querySelector('.modal-fundo') || inicio.aberta || editorPersonagens.aberta || editorControles.aberta || painelCodigo.aberta || editorHud.aberta) return;
+  if (document.querySelector('.modal-fundo') || inicio.aberta || editorPersonagens.aberta || editorControles.aberta || painelCodigo.aberta || editorHud.aberta || editorMapa.aberta || telaTransicao.ativa) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (ctrl && k === 's') { e.preventDefault(); void salvar(); return; }
@@ -1079,6 +1170,7 @@ window.addEventListener('keydown', (e) => {
       else if (k === 'o') void abrirCodigo();
       else if (k === 'n') estado.definirModo(estado.modo === 'inimigo' ? 'selecionar' : 'inimigo');
       else if (k === 'u') void abrirHud();
+      else if (k === 'm') void abrirMapa();
       else if (k === 'l') painelLog.alternar();
       else if (k === 'x' && estado.modo === 'colisao') { estado.comportamentoNovo = estado.comportamentoNovo === 'solido' ? 'atravessavel' : 'solido'; atualizarOpcoesColisao(); }
       else if (k === 'c' && e.shiftKey) { estado.mostrarColisoes = !estado.mostrarColisoes; estado.emit('opcoes'); sincronizarAlternadores(); }
@@ -1114,6 +1206,7 @@ plat.aoMudarProjeto(async (m) => {
   if (m.tipo === 'script') { await painelCodigo.mudouPorFora(m.nome); return; }
   if (m.tipo === 'config') {
     config = { ...CONFIG_PADRAO, ...((await plat.lerConfigProjeto()) ?? {}) };
+    if (editorMapa.aberta) void abrirMapa();
     ferramentasAtuais = config.ferramentas ?? [];
     ferramentas.definir(ferramentasAtuais, biblioteca.caminhos);
     estado.avisar('Configuração do projeto atualizada por fora.');
@@ -1121,6 +1214,7 @@ plat.aoMudarProjeto(async (m) => {
   }
   // Fase
   await atualizarListaFases();
+  if (editorMapa.aberta) editorMapa.atualizarSalas(await salasDoProjeto());
   if (inicio.aberta) await inicio.render();
   if (m.nome !== estado.arquivoFase) { estado.avisar(`A fase ${m.nome} foi alterada por fora.`); return; }
   if (estado.testando) teste.parar();

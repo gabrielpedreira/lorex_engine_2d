@@ -2,11 +2,14 @@
 // Puro (sem PixiJS e sem DOM).
 import type { Segmento } from './fisica';
 import type { Fase, ObjetoFase } from './tipos';
+import { quadroDaFolha } from './folha';
 
 export interface CompColetavel { tipo: 'coletavel'; /** nome do item no inventário (ex.: "chave vermelha") */ item: string; quantidade: number }
 export interface CompPorta { tipo: 'porta'; /** item necessário para abrir ('' = abre sem item) */ requer: string; consome: boolean; abertaNoInicio: boolean }
 export interface CompAlavanca { tipo: 'alavanca'; /** id do objeto que a alavanca aciona */ alvo: string; umaVez: boolean }
-export interface CompSaida { tipo: 'saida'; /** arquivo da fase/área de destino (ex.: "area_02.json") */ destino: string }
+/** Passagem (porta, escada, saída): para onde leva e o efeito ficam no MAPA (ferramenta Mapa, M).
+ *  destino = destino simples, usado só quando a passagem não está conectada no Mapa. */
+export interface CompSaida { tipo: 'saida'; destino: string; /** item que destranca ('' = livre) */ requer: string; consome: boolean }
 export interface CompMensagem { tipo: 'mensagem'; texto: string }
 
 export type Comportamento = CompColetavel | CompPorta | CompAlavanca | CompSaida | CompMensagem;
@@ -16,7 +19,7 @@ export const NOMES_COMPORTAMENTO: Record<TipoComportamento, { nome: string; text
   coletavel: { nome: 'Coletável', texto: 'O jogador pega ao encostar (chave, munição, kit médico). Vai para o inventário.' },
   porta: { nome: 'Porta', texto: 'Bloqueia a passagem enquanto fechada. Abre com a tecla E (pode exigir um item) ou por uma alavanca.' },
   alavanca: { nome: 'Alavanca / botão', texto: 'Com a tecla E, aciona outro objeto: abre ou fecha uma porta, mostra ou esconde um objeto.' },
-  saida: { nome: 'Saída', texto: 'Leva para outra fase ou área ao apertar E. É assim que as áreas se conectam.' },
+  saida: { nome: 'Passagem (porta/saída)', texto: 'Leva para outra sala ao apertar E. Para onde leva e o que acontece no caminho (tela de loading, som) são definidos no Mapa (M).' },
   mensagem: { nome: 'Mensagem / nota', texto: 'Mostra um texto ao apertar E (bilhete, placa, documento, pensamento da personagem).' },
 };
 
@@ -25,7 +28,7 @@ export function comportamentoPadrao(tipo: TipoComportamento, o: ObjetoFase): Com
     case 'coletavel': return { tipo, item: o.nome.replace(/[_-]+/g, ' '), quantidade: 1 };
     case 'porta': return { tipo, requer: '', consome: false, abertaNoInicio: false };
     case 'alavanca': return { tipo, alvo: '', umaVez: false };
-    case 'saida': return { tipo, destino: '' };
+    case 'saida': return { tipo, destino: '', requer: '', consome: false };
     case 'mensagem': return { tipo, texto: '' };
   }
 }
@@ -63,6 +66,8 @@ export interface ResultadoInteracao {
   irPara?: string;
   /** Uma alavanca acionou este objeto (o código dele recebe aoAcionado). */
   acionado?: string;
+  /** O jogador usou esta passagem (id do objeto): o Mapa diz para onde ela leva. */
+  passagem?: string;
 }
 
 /** Estado do mundo durante o jogo: inventário, portas abertas, itens pegos. */
@@ -80,11 +85,52 @@ export class MundoInterativo {
   private mudou = true;
   private segsPortas: Segmento[] = [];
 
+  /** Tempo do jogo (s), atualizado pelo modo Teste: base das animações dos objetos. */
+  tempo = 0;
+  /** Animação de cada objeto animado: tocando desde "inicio" ou parada num quadro fixo. */
+  private anims = new Map<string, { inicio: number; repetir: boolean } | { fixo: number }>();
+
   constructor(private fase: Fase) {
     for (const o of fase.objetos) {
       const c = comportamentoDe(o);
-      this.estados.set(o.id, { visivel: o.visivel, aberta: c?.tipo === 'porta' ? c.abertaNoInicio : false, usado: false });
+      const aberta = c?.tipo === 'porta' ? c.abertaNoInicio : false;
+      this.estados.set(o.id, { visivel: o.visivel, aberta, usado: false });
+      if (o.anim) {
+        if (c?.tipo === 'porta') this.anims.set(o.id, { fixo: aberta ? o.anim.quadros - 1 : 0 });
+        else if (o.anim.modo === 'loop') this.anims.set(o.id, { inicio: 0, repetir: true });
+        else if (o.anim.modo === 'umaVez') this.anims.set(o.id, { inicio: 0, repetir: false });
+        else this.anims.set(o.id, { fixo: 0 });
+      }
     }
+  }
+
+  // ---------- Animação dos objetos ----------
+  tocarAnim(id: string, repetir = false) { this.anims.set(id, { inicio: this.tempo, repetir }); }
+  pararAnim(id: string) { const o = this.objeto(id); if (o) this.anims.set(id, { fixo: this.quadroAnim(o) }); }
+  definirQuadro(id: string, q: number) {
+    const o = this.objeto(id);
+    if (o?.anim) this.anims.set(id, { fixo: Math.max(0, Math.min(o.anim.quadros - 1, Math.round(q))) });
+  }
+  quadroAnim(o: ObjetoFase): number {
+    const s = this.anims.get(o.id);
+    if (!o.anim || !s) return 0;
+    if ('fixo' in s) return s.fixo;
+    return quadroDaFolha(o.anim, this.tempo - s.inicio, s.repetir);
+  }
+  tocandoAnim(o: ObjetoFase): boolean {
+    const s = this.anims.get(o.id);
+    if (!o.anim || !s || 'fixo' in s) return false;
+    return s.repetir || (this.tempo - s.inicio) * o.anim.fps < o.anim.quadros;
+  }
+
+  /** Abre/fecha uma porta. Porta animada toca a animação ao abrir e volta ao 1º quadro ao fechar. */
+  definirAberta(id: string, aberta: boolean) {
+    const e = this.estados.get(id);
+    const o = this.objeto(id);
+    if (!e || !o || e.aberta === aberta) { if (e) e.aberta = aberta; return; }
+    e.aberta = aberta;
+    this.mudou = true;
+    if (o.anim) { if (aberta) this.tocarAnim(id, false); else this.anims.set(id, { fixo: 0 }); }
   }
 
   private objeto(id: string) { return this.fase.objetos.find((o) => o.id === id); }
@@ -133,7 +179,8 @@ export class MundoInterativo {
     const o = this.objeto(id);
     if (!e || !o) return true;
     const c = comportamentoDe(o);
-    if (c?.tipo === 'porta') return e.visivel && !e.aberta;
+    // Porta animada continua aparecendo aberta (no último quadro); a comum some
+    if (c?.tipo === 'porta' && !o.anim) return e.visivel && !e.aberta;
     return e.visivel;
   }
 
@@ -173,7 +220,8 @@ export class MundoInterativo {
       if (c.tipo === 'alavanca' && c.umaVez && e.usado) continue;
       if (c.tipo === 'porta' && e.aberta) continue;
       const acao = c.tipo === 'porta' ? (c.requer && !this.inventario.get(c.requer) ? `Abrir (precisa de: ${c.requer})` : 'Abrir')
-        : c.tipo === 'alavanca' ? 'Acionar' : c.tipo === 'saida' ? 'Entrar' : 'Ler';
+        : c.tipo === 'alavanca' ? 'Acionar'
+        : c.tipo === 'saida' ? (c.requer && !e.usado && !this.inventario.get(c.requer) ? `Entrar (precisa de: ${c.requer})` : 'Entrar') : 'Ler';
       const d = Math.abs(b.x + b.w / 2 - cx);
       if (!melhor || d < melhor.d) melhor = { o, acao, d };
     }
@@ -192,7 +240,7 @@ export class MundoInterativo {
           if (c.consome) this.inventario.set(c.requer, tem - 1);
           if (this.inventario.get(c.requer) === 0) this.inventario.delete(c.requer);
         }
-        e.aberta = true; this.mudou = true;
+        this.definirAberta(o.id, true);
         return { aviso: `${o.nome}: aberta` };
       }
       case 'alavanca': {
@@ -201,13 +249,20 @@ export class MundoInterativo {
         const ea = alvo ? this.estados.get(alvo.id) : undefined;
         if (!alvo || !ea) return { aviso: 'Esta alavanca não está ligada a nada (escolha um alvo no editor).' };
         const ca = comportamentoDe(alvo);
-        if (ca?.tipo === 'porta') { ea.aberta = !ea.aberta; this.mudou = true; return { aviso: `${alvo.nome}: ${ea.aberta ? 'aberta' : 'fechada'}`, acionado: alvo.id }; }
+        if (ca?.tipo === 'porta') { this.definirAberta(alvo.id, !ea.aberta); return { aviso: `${alvo.nome}: ${ea.aberta ? 'aberta' : 'fechada'}`, acionado: alvo.id }; }
         if (this.acionadosPorCodigo.has(alvo.id)) return { acionado: alvo.id }; // o código do alvo (aoAcionado) decide
         ea.visivel = !ea.visivel; this.mudou = true;
         return { aviso: `${alvo.nome}: ${ea.visivel ? 'apareceu' : 'sumiu'}`, acionado: alvo.id };
       }
-      case 'saida':
-        return c.destino ? { irPara: c.destino } : { aviso: 'Esta saída ainda não tem destino (escolha no editor).' };
+      case 'saida': {
+        if (c.requer && !e.usado) {
+          const tem = this.inventario.get(c.requer) ?? 0;
+          if (!tem) return { aviso: `Trancada. Precisa de: ${c.requer}` };
+          if (c.consome) { if (tem > 1) this.inventario.set(c.requer, tem - 1); else this.inventario.delete(c.requer); }
+          e.usado = true; // destrancada de vez
+        }
+        return { passagem: o.id, ...(c.destino ? { irPara: c.destino } : {}) };
+      }
       case 'mensagem':
         return { mensagem: c.texto || '(mensagem vazia)' };
       default:

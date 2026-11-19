@@ -17,7 +17,7 @@ export function gruposAtalhos(teclasTeste: [string, string][]): Grupo[] {
     ] },
     { titulo: 'Ferramentas (barra lateral)', itens: [
       ['V', 'Selecionar e mover'], ['H', 'Mover a visão'], ['C', 'Colisão'], ['I', 'Início do jogador'],
-      ['N', 'Inimigos'], ['K', 'Personagens'], ['U', 'HUD'], ['B', 'Controles'], ['O', 'Código'], ['F5', '▶ Testar / parar'],
+      ['N', 'Inimigos'], ['K', 'Personagens'], ['U', 'HUD'], ['M', 'Mapa (salas e passagens)'], ['B', 'Controles'], ['O', 'Código'], ['F5', '▶ Testar / parar'],
     ] },
     { titulo: 'Objetos', itens: [
       ['Clique', 'Selecionar · arrastar move · alças nos cantos mudam o tamanho'],
@@ -34,6 +34,12 @@ export function gruposAtalhos(teclasTeste: [string, string][]): Grupo[] {
     ] },
     { titulo: 'Inimigos (N)', itens: [
       ['Clique no vazio', 'Colocar o tipo escolhido (pisa no chão abaixo)'], ['Arrastar', 'Mover (gruda no chão; Alt solta)'], ['Del', 'Excluir'],
+    ] },
+    { titulo: 'Mapa (M)', itens: [
+      ['Arrastar de uma passagem ▭', 'Conectar a outra passagem (ou ao meio da sala = início dela)'],
+      ['Clique no ◆', 'Escolher a transição (corte, escurecer, tela cheia animada, som)'],
+      ['Arrastar uma sala', 'Mover no diagrama'], ['Duplo clique na sala', 'Abrir a sala no editor'],
+      ['Arrastar o fundo / roda', 'Mover a visão / zoom'], ['Del', 'Excluir a conexão selecionada'], ['Home', 'Enquadrar'], ['Esc', 'Fechar'],
     ] },
     { titulo: '▶ Testar', itens: [
       ...teclasTeste, ['F6', 'Reiniciar a fase'], ['Esc / F5', 'Voltar ao editor'], ['Shift+C', 'Mostrar colisões'],

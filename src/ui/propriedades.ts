@@ -6,6 +6,7 @@ import { dica } from './legenda';
 import { EFEITOS_PADRAO, type Efeito, type TipoEfeito } from '../core/efeitos';
 import { NOMES_COMPORTAMENTO, comportamentoPadrao, type Comportamento, type TipoComportamento } from '../core/comportamentos';
 import { el } from './dom';
+import { MODOS_ANIM, duracaoFolha, palpiteAnim, tamanhoQuadro, type ModoAnim } from '../core/folha';
 
 export interface AcoesObjeto {
   duplicar(): void;
@@ -32,6 +33,11 @@ export interface AcoesObjeto {
   listarFases(): Promise<string[]>;
   /** Entra no modo "clique no objeto alvo" e devolve o id escolhido (null = cancelou). */
   escolherAlvo(): Promise<string | null>;
+  /** Para onde a passagem leva pelo Mapa (texto) ou null se não estiver conectada. */
+  destinoNoMapa(id: string): string | null;
+  abrirMapa(): void;
+  /** Tamanho (px) da imagem do objeto, para recortar o spritesheet. */
+  tamanhoImagem(o: ObjetoFase): Promise<{ w: number; h: number }>;
 }
 
 export class PainelPropriedades {
@@ -145,9 +151,19 @@ export class PainelPropriedades {
         break;
       }
       case 'saida': {
-        const destino = el('select', { id: 'pc-destino' }, el('option', { value: '' }, 'Escolha a fase ou área…'));
-        const lab = el('label', { for: 'pc-destino' }, 'Leva para');
-        dica(lab, 'Destino', 'A fase ou área onde o jogador vai aparecer (na bandeira de início dela).');
+        const noMapa = this.acoes.destinoNoMapa(o.id);
+        const mapa = el('button', { type: 'button', class: 'primario largo' }, noMapa ? 'Ver no Mapa' : 'Conectar no Mapa');
+        dica(mapa, 'Mapa', 'Abre o diagrama das salas: arraste desta passagem até a da outra sala e clique no ◆ para escolher a transição (tela de loading, som).', 'M');
+        mapa.addEventListener('click', () => this.acoes.abrirMapa());
+        secao.append(
+          el('p', { class: noMapa ? 'dica-campo' : 'aviso-texto' }, noMapa ? `Leva para: ${noMapa}` : 'Ainda não está conectada no Mapa.'),
+          mapa,
+          texto('Precisa do item', atual.requer, (v) => { atual.requer = v; }, 'Passagem trancada: só abre com este item no inventário (ex.: "cartão de acesso"). Vazio = livre. Depois de destrancada, fica livre.', itensDaFase),
+          marcar('Gasta o item ao destrancar', atual.consome, (v) => { atual.consome = v; }, 'Se marcado, o item sai do inventário quando a passagem é destrancada.'));
+        if (noMapa && !atual.destino) break;
+        const destino = el('select', { id: 'pc-destino' }, el('option', { value: '' }, 'Nenhum (usar o Mapa)'));
+        const lab = el('label', { for: 'pc-destino' }, 'Destino simples');
+        dica(lab, 'Destino simples', 'Sem conexão no Mapa, leva para o início desta fase/área, sem transição. O Mapa tem prioridade.');
         void this.acoes.listarFases().then((fases) => {
           for (const f of fases) if (f !== this.estado.arquivoFase) destino.append(el('option', { value: f }, f));
           destino.value = atual.destino;
@@ -353,6 +369,7 @@ export class PainelPropriedades {
       ),
       this.secaoContinuacao(),
       this.secaoComportamento(o),
+      this.secaoAnimacao(o),
       this.secaoEfeitos(o),
       el('div', { class: 'secao acoes' },
         botao('Trazer p/ frente', () => this.acoes.ordem('frente')),
@@ -363,6 +380,53 @@ export class PainelPropriedades {
         botao('Excluir', () => this.acoes.excluir(), 'perigo'),
       ),
     );
+  }
+
+  /** Objeto animado: a imagem é um spritesheet cortado em quadros (tocha, porta abrindo, ventilador…). */
+  private secaoAnimacao(o: ObjetoFase) {
+    const secao = el('div', { class: 'secao' });
+    const titulo = el('h3', {}, 'Animação');
+    dica(titulo, 'Animação (spritesheet)', 'Transforma a imagem num objeto animado: ela é cortada em quadros (da esquerda para a direita, linha por linha) que tocam no jogo. Spritesheets com "spritesheet" ou "_8fps" no nome já entram animados.');
+    const ligar = el('input', { type: 'checkbox' });
+    ligar.checked = !!o.anim;
+    ligar.addEventListener('change', async () => {
+      if (ligar.checked) {
+        const t = await this.acoes.tamanhoImagem(o);
+        const porta = o.comportamentos[0]?.tipo === 'porta';
+        const a = palpiteAnim(o.nome, t.w, t.h, porta ? 'parado' : 'loop');
+        this.estado.alterar(() => { o.anim = a; const q = tamanhoQuadro(a); o.w = q.w; o.h = q.h; });
+      } else if (o.anim) {
+        const a = o.anim;
+        this.estado.alterar(() => { o.w = a.folha[0]; o.h = a.folha[1]; delete o.anim; });
+      }
+      this.render(true);
+    });
+    const lab = el('label', { class: 'check' }, ligar, 'Animado (spritesheet)');
+    dica(lab, 'Animado', 'Liga/desliga a animação. Desligado, a imagem aparece inteira.');
+    secao.append(titulo, lab);
+    const a = o.anim;
+    if (!a) return secao;
+    const recortar = () => { const q = tamanhoQuadro(a); o.w = q.w; o.h = q.h; };
+    const modo = el('select', { id: 'p-anim-modo' }, ...MODOS_ANIM.map((m) => el('option', { value: m.id }, m.nome)));
+    modo.value = a.modo;
+    modo.addEventListener('change', () => { this.estado.alterar(() => { a.modo = modo.value as ModoAnim; }); this.render(true); });
+    const labModo = el('label', { for: 'p-anim-modo' }, 'Toca');
+    dica(labModo, 'Quando toca', MODOS_ANIM.map((m) => `${m.nome}: ${m.texto}`).join(' '));
+    const q = tamanhoQuadro(a);
+    const porta = o.comportamentos[0]?.tipo === 'porta';
+    secao.append(
+      el('div', { class: 'linha2' },
+        this.num('Quadros', a.quadros, (v) => { a.quadros = Math.max(1, Math.round(v)); a.colunas = Math.min(a.colunas, a.quadros) || a.quadros; recortar(); }, { min: 1 }),
+        this.num('Por linha', a.colunas, (v) => { a.colunas = Math.max(1, Math.min(a.quadros, Math.round(v))); recortar(); }, { min: 1 })),
+      el('div', { class: 'linha2' },
+        this.num('FPS', a.fps, (v) => { a.fps = Math.max(0.5, v); }, { min: 0.5, passo: 1 }),
+        el('div', { class: 'campo' }, labModo, modo)),
+      el('div', { class: 'tamanho-info' }, `Quadro: ${q.w} × ${q.h} px · ${a.quadros} quadros · ${duracaoFolha(a).toFixed(2).replace('.', ',')} s`),
+      el('p', { class: 'dica-campo' }, MODOS_ANIM.find((m) => m.id === a.modo)?.texto ?? ''),
+      porta ? el('p', { class: 'dica-campo' }, 'Porta animada: ao abrir, toca a animação e fica aberta no último quadro (em vez de sumir). Use "Parado até mandar".') : '',
+      el('p', { class: 'dica-campo' }, 'No código: eu.tocar(), eu.tocar(true) repete, eu.parar(), eu.quadro.'),
+    );
+    return secao;
   }
 
   /** Botões de continuação: uma cópia encostada exatamente ao lado (cenários em loop). */

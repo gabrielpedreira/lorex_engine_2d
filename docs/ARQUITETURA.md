@@ -347,6 +347,38 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   (link externo via `setWindowOpenHandler` → navegador). **Linha de informações** (`barra-info`, grid `info`) abaixo da
   barra de menu: posição, camada, mensagem. REGRA: atalho novo entra no guia.
 
+### 4.25 Objetos animados (etapa 5 do construtor de fases)
+
+- `src/core/folha.ts` (puro): `AnimFolha { quadros, colunas, fps, modo: 'loop' | 'umaVez' | 'parado', folha: [w, h] }`,
+  `tamanhoQuadro`, `retanguloFolha`, `quadroDaFolha`, `pareceFolha`, `palpiteAnim` (FPS pelo nome `_8fps`). Usado pelos
+  objetos e pelas telas de transição.
+- `ObjetoFase.anim?`: com animação, `w`/`h` são o tamanho de UM quadro. `main.adicionarAsset` detecta spritesheets ao
+  colocar. Objetos animados não passam por "Otimizar" (reduzir borra os quadros).
+- Viewport: `quadrosDe` recorta e guarda as texturas de cada folha; `quadroObjeto` = `quadroTeste(o)` no teste ou, no
+  editor, "repetir sempre" anima na prévia de efeitos. `animarEfeitos` também percorre os objetos animados.
+- Jogo: `MundoInterativo` guarda o estado da animação de cada objeto (`tocarAnim`, `pararAnim`, `definirQuadro`,
+  `quadroAnim`, relógio `tempo`). `definirAberta` abre/fecha portas; porta animada toca ao abrir, fica visível aberta e
+  sem colisão. API do código: `animado`, `tocar(repetir)`, `parar()`, `quadro`, `quadros`, `tocando`.
+
+### 4.26 Mapa, passagens e transições
+
+- `src/core/mapa.ts` (puro): `Mapa { salas: {arquivo → x, y}, conexoes }`, `Conexao { a, b: {fase, passagem}, maoDupla,
+  transicao }` (passagem `''` = início do jogador), `Transicao { efeito: corte | escurecer | tela, animacao, anim, duracao,
+  cor, texto, som, volume }`, `viagemDe`, `conectar` (uma passagem leva a um lugar só), `limparMapa`, `assetsDoMapa`.
+  Salvo em `jogo/projeto.json → mapa`.
+- Comportamento `saida` = **Passagem** (`requer`/`consome` para trancar). `MundoInterativo.interagir` devolve
+  `{ passagem }`; o destino vem do Mapa (o `destino` antigo vale só sem conexão).
+- `src/ui/mapa.ts` (`EditorMapa`, ferramenta M): SVG com salas (tamanho proporcional à fase), passagens na posição
+  relativa, início ▼, conexões em curva com o losango no meio; painel de sala/passagem/conexão; sons listados por
+  `assets:listarSons` (.ogg/.mp3/.wav) e copiados para `jogo/assets/sons`, animações para `jogo/assets/transicoes`.
+- `src/editor/transicao.ts` (`TelaTransicao`): camada fixa sobre a janela; `cobrir` (som + fade ou corte), animação em
+  canvas com escala inteira, `descobrir` (espera o maior entre o tempo mínimo e a animação). `main.aoIrPara` cobre,
+  troca de fase e descobre; o teste continua (mesmo log; `prepararViagem`, `posicionarChegada`, `memoriaSalas`).
+- Código: gancho `aoPassar(jogo, passagem, destino)` (jogo e fase; pode mudar `destino` ou cancelar), `jogo.passar`,
+  `jogo.destinoDe`, `jogo.irPara(fase, { chegada, transicao })`. Log: categoria mundo (passagem, chegada, sala
+  restaurada) e sistema (mudanças no Mapa). CSP com `media-src projeto:`; protocolo com `stream: true` (áudio).
+- Limpeza de cópias sem uso também respeita as folhas dos personagens e as animações do Mapa.
+
 ### 4.18 Legendas e recarregar por fora
 
 - `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas
@@ -367,7 +399,11 @@ src/editor/estado.ts     estado central + eventos + desfazer/refazer (snapshots 
 src/editor/viewport.ts   cenário PixiJS: câmera, camadas, grade, seleção, mouse, efeitos ao vivo
 src/editor/colisoes.ts   geometria e desenho das colisões e da bandeira de início
 src/editor/ferramentaColisao.ts  ferramenta Colisão (desenhar e editar formas)
-src/editor/testar.ts     modo ▶ Testar (HUD, câmera, entrada)
+src/editor/testar.ts     modo ▶ Testar (HUD, câmera, entrada, passagens entre salas)
+src/editor/transicao.ts  tela de transição entre salas (corte, escurecer, tela cheia animada, som)
+src/core/folha.ts        animação por spritesheet (objetos e transições)
+src/core/mapa.ts         mapa: salas, conexões e transições
+src/ui/mapa.ts           ferramenta Mapa (diagrama)
 src/core/fisica.ts       física de plataforma (pura)
 src/plataforma/          acesso a arquivos: Electron (disco) ou navegador (demo)
 src/ui/                  painéis: tela inicial, caixa de ferramentas, biblioteca, camadas, propriedades, diálogos, ícones

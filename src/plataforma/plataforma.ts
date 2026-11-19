@@ -26,6 +26,8 @@ export interface ConfigProjeto {
   personagemTeste?: string;
   /** Elementos do HUD (ferramenta HUD). Vazio = padrão (munição). */
   hud?: import('../core/hud').ConfigHud;
+  /** Mapa: salas, passagens e transições (ferramenta Mapa). */
+  mapa?: import('../core/mapa').Mapa;
   /** Teclas de cada ação (ferramenta Controles). Vazio = padrão. */
   controles?: import('../core/controles').Controles;
   /** Ajustes do jogador usados no ▶ Testar (tamanho, velocidade, pulo, gravidade). */
@@ -63,6 +65,8 @@ export interface Plataforma {
   projetoAtual(): Promise<InfoProjeto | null>;
   /** Imagens do projeto, caminhos relativos à raiz (ex.: "chaves e itens/chave.png"). */
   listarAssets(): Promise<string[]>;
+  /** Sons do projeto (.ogg, .mp3, .wav), caminhos relativos à raiz. */
+  listarSons(): Promise<string[]>;
   /** Garante que o asset esteja em jogo/assets e devolve o caminho relativo a jogo/. categoria: subpasta (ex.: "personagens/lorena"). */
   garantirEmUso(caminhoRaiz: string, categoria?: string): Promise<string>;
   /** Dados de jogo/<pasta>/: personagens (.json) e scripts (.js). */

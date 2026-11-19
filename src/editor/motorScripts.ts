@@ -4,6 +4,7 @@ import type { ObjetoFase } from '../core/tipos';
 import type { InimigoVivo } from './inimigosTeste';
 import { toca, type MundoInterativo } from '../core/comportamentos';
 import { LOG } from '../core/log';
+import type { Transicao, Viagem } from '../core/mapa';
 import { compilarScript, linhaDoErro, type DonoScript, type ScriptCompilado } from '../core/scripts';
 
 /** O que o motor de scripts precisa do modo Teste. */
@@ -22,7 +23,9 @@ export interface PonteTeste {
   empurrar(vx: number, vy: number): void;
   aviso(t: string): void;
   mensagem(t: string): void;
-  irPara(fase: string): void;
+  irPara(fase: string, op?: { chegada?: string; transicao?: Partial<Transicao> | string }): void;
+  passar(o: ObjetoFase): void;
+  destinoDe(o: ObjetoFase): Viagem | null;
   apertou(acao: string): boolean;
   segurando(acao: string): boolean;
   hudDefinir(rotulo: string, valor: string): void;
@@ -206,6 +209,23 @@ export class MotorScripts {
     return ok;
   }
 
+  /** aoPassar (jogo e fase): pode mudar o destino/transição ou cancelar (false). */
+  passar(origem: ObjetoFase | undefined, v: Viagem): boolean {
+    const destino = { fase: v.fase, chegada: v.chegada, transicao: { ...v.transicao } };
+    const passagem = origem ? this.handle(origem) : null;
+    let ok = true;
+    for (const s of this.scripts) {
+      if (s.dono !== 'jogo' && s.dono !== 'fase') continue;
+      if (this.chamar(s, 'aoPassar', passagem, destino) === false) ok = false;
+    }
+    if (!ok) return false;
+    v.fase = String(destino.fase || v.fase);
+    if (!v.fase.endsWith('.json')) v.fase += '.json';
+    v.chegada = String(destino.chegada ?? '');
+    v.transicao = { ...v.transicao, ...destino.transicao };
+    return true;
+  }
+
   trocouFase(fase: string) {
     for (const s of this.scripts) if (s.dono === 'jogo') this.chamar(s, 'aoTrocarFase', fase);
   }
@@ -249,6 +269,10 @@ export class MotorScripts {
   }
 
   private objeto(id: string) { return this.ponte.objetos().find((o) => o.id === id); }
+  objetoPorNome(nome: string) {
+    const l = this.ponte.objetos();
+    return l.find((x) => x.id === nome) ?? l.find((x) => x.nome === nome) ?? l.find((x) => x.nome.toLowerCase() === nome.toLowerCase());
+  }
 
   // ---------- API ----------
 
@@ -272,7 +296,14 @@ export class MotorScripts {
       get visivel() { return m().visivel(o.id); },
       set visivel(v: boolean) { const e = est(); if (e) { e.visivel = v; m().marcarMudanca(); ponte.mudouCena(); } },
       get aberta() { return !!est()?.aberta; },
-      set aberta(v: boolean) { const e = est(); if (e) { e.aberta = v; m().marcarMudanca(); ponte.mudouCena(); } },
+      set aberta(v: boolean) { if (est()) { m().definirAberta(o.id, !!v); m().marcarMudanca(); ponte.mudouCena(); } },
+      get animado() { return !!o.anim; },
+      get quadro() { return m().quadroAnim(o); },
+      set quadro(v: number) { m().definirQuadro(o.id, Number(v) || 0); },
+      get quadros() { return o.anim?.quadros ?? 1; },
+      get tocando() { return m().tocandoAnim(o); },
+      tocar(repetir = false) { if (o.anim) m().tocarAnim(o.id, !!repetir); },
+      parar() { if (o.anim) m().pararAnim(o.id); },
       get dados() { let d = motor.dadosObjetos.get(o.id); if (!d) motor.dadosObjetos.set(o.id, d = {}); return d; },
       mostrar() { novo.visivel = true; },
       esconder() { novo.visivel = false; },
@@ -414,7 +445,16 @@ export class MotorScripts {
       objetos: (contem = '') => ponte.objetos().filter((o) => o.nome.toLowerCase().includes(contem.toLowerCase())).map((o) => motor.handle(o)),
       aviso: (t: string) => ponte.aviso(String(t)),
       mensagem: (t: string) => ponte.mensagem(String(t)),
-      irPara: (f: string) => ponte.irPara(String(f)),
+      irPara: (f: string, op?: { chegada?: string; transicao?: Partial<Transicao> | string }) => ponte.irPara(String(f), op),
+      passar: (nome: unknown) => {
+        const o = typeof nome === 'object' && nome && 'id' in nome ? motor.objetoPorNome(String((nome as { id: string }).id)) : motor.objetoPorNome(String(nome));
+        if (o) ponte.passar(o); else ponte.aviso(`jogo.passar: não achei o objeto "${String(nome)}"`);
+      },
+      destinoDe: (nome: unknown) => {
+        const o = typeof nome === 'object' && nome && 'id' in nome ? motor.objetoPorNome(String((nome as { id: string }).id)) : motor.objetoPorNome(String(nome));
+        const v = o ? ponte.destinoDe(o) : null;
+        return v ? { fase: v.fase, chegada: v.chegada, transicao: { ...v.transicao } } : null;
+      },
       apertou: (a: string) => ponte.apertou(a),
       segurando: (a: string) => ponte.segurando(a),
       esperar: (seg: number, fn: () => void) => { motor.timers.push({ quando: motor.tempo + Math.max(0, Number(seg) || 0), fn, arquivo: motor.arquivoAtual || 'esperar' }); },
