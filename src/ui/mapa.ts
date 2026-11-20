@@ -453,17 +453,20 @@ export class EditorMapa {
     const palco = this.area.parentElement!;
     const r = texto.getBoundingClientRect(), rp = palco.getBoundingClientRect();
     const input = el('input', { type: 'text', class: 'mapa-nome-edicao', value: s.nome, 'aria-label': 'Nome da sala' }) as HTMLInputElement;
-    input.style.left = `${r.left - rp.left - 4}px`;
-    input.style.top = `${r.top - rp.top - 4}px`;
+    // Dentro do palco (sem passar da borda: o foco num campo fora da área rolaria o palco e "quebraria" o diagrama)
+    input.style.left = `${Math.max(8, Math.min(rp.width - 248, r.left - rp.left - 4))}px`;
+    input.style.top = `${Math.max(8, Math.min(rp.height - 40, r.top - rp.top - 4))}px`;
     palco.append(input);
-    input.focus(); input.select();
+    input.focus({ preventScroll: true }); input.select();
+    palco.scrollTo(0, 0);
     let feito = false;
     const terminar = async (salvar: boolean) => {
       if (feito) return;
       feito = true;
       const nome = input.value.trim();
       input.remove();
-      this.raiz.focus();
+      palco.scrollTo(0, 0);
+      this.raiz.focus({ preventScroll: true });
       if (!salvar || !nome || nome === s.nome) return;
       try {
         this.salas = await this.acoes.renomearSala(arquivo, nome);

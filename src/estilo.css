@@ -669,7 +669,7 @@ body.corpo-codigo { margin: 0; height: 100vh; overflow: hidden; background: var(
 .mapa-inicio { fill: var(--acento); opacity: 0.85; cursor: crosshair; }
 .mapa-nome { fill: #ffffff; font: 600 15px 'Segoe UI', sans-serif; cursor: text; }
 .mapa-nome:hover { fill: var(--acento); text-decoration: underline; }
-.mapa-nome-edicao { position: absolute; z-index: 3; width: 220px; font: 600 15px 'Segoe UI', sans-serif; padding: 2px 4px; }
+.mapa-palco input.mapa-nome-edicao { position: absolute; z-index: 3; width: 240px; max-width: calc(100% - 16px); font: 600 15px 'Segoe UI', sans-serif; padding: 2px 6px; }
 .mapa-conector { fill: #101513; stroke: #4f5bd5; stroke-width: 2.5; cursor: crosshair; opacity: 0.75; }
 .mapa-conector:hover { fill: #4f5bd5; opacity: 1; }
 .mapa-sub { fill: var(--texto-2); font: 10px 'Segoe UI', sans-serif; pointer-events: none; }
