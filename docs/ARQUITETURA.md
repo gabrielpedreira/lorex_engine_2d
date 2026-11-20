@@ -377,6 +377,11 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
 - Código: gancho `aoPassar(jogo, passagem, destino)` (jogo e fase; pode mudar `destino` ou cancelar), `jogo.passar`,
   `jogo.destinoDe`, `jogo.irPara(fase, { chegada, transicao })`. Log: categoria mundo (passagem, chegada, sala
   restaurada) e sistema (mudanças no Mapa). CSP com `media-src projeto:`; protocolo com `stream: true` (áudio).
+- Editar pelo Mapa (`AcoesMapa`): `criarSala` (área de 2 telas com chão, salva sem abrir), `renomearSala` (muda
+  `nome`; o arquivo fica), `criarPassagem` (objeto **zona**: `asset: ''`, 32×64, comportamento saida, na borda) e
+  `excluirPassagem`. `main.alterarFaseArquivo` muda a fase aberta pelo estado (e salva) ou as outras direto no arquivo.
+  Arrastar da bolinha da borda (`data-conector`) ou de uma passagem até uma sala cria a passagem do outro lado,
+  na borda virada para a origem. Viewport: objeto sem `asset` = retângulo vermelho translúcido, oculto no ▶ Testar.
 - Limpeza de cópias sem uso também respeita as folhas dos personagens e as animações do Mapa.
 
 ### 4.18 Legendas e recarregar por fora

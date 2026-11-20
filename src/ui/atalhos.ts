@@ -36,10 +36,12 @@ export function gruposAtalhos(teclasTeste: [string, string][]): Grupo[] {
       ['Clique no vazio', 'Colocar o tipo escolhido (pisa no chão abaixo)'], ['Arrastar', 'Mover (gruda no chão; Alt solta)'], ['Del', 'Excluir'],
     ] },
     { titulo: 'Mapa (M)', itens: [
-      ['Arrastar de uma passagem ▭', 'Conectar a outra passagem (ou ao meio da sala = início dela)'],
+      ['+ Sala', 'Adicionar um local (área nova, com chão)'], ['Clique no nome', 'Renomear a sala'],
+      ['Arrastar da bolinha azul da borda', 'Conectar a outra sala (cria as passagens nas duas)'],
+      ['Arrastar de uma passagem ▭', 'Conectar a outra passagem, ao meio de uma sala (cria a passagem lá) ou ao ▼ início dela'],
       ['Clique no ◆', 'Escolher a transição (corte, escurecer, tela cheia animada, som)'],
       ['Arrastar uma sala', 'Mover no diagrama'], ['Duplo clique na sala', 'Abrir a sala no editor'],
-      ['Arrastar o fundo / roda', 'Mover a visão / zoom'], ['Del', 'Excluir a conexão selecionada'], ['Home', 'Enquadrar'], ['Esc', 'Fechar'],
+      ['Arrastar o fundo / roda', 'Mover a visão / zoom'], ['Del', 'Excluir a conexão ou a passagem selecionada'], ['Home', 'Enquadrar'], ['Esc', 'Fechar'],
     ] },
     { titulo: '▶ Testar', itens: [
       ...teclasTeste, ['F6', 'Reiniciar a fase'], ['Esc / F5', 'Voltar ao editor'], ['Shift+C', 'Mostrar colisões'],

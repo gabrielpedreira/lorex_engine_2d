@@ -26,7 +26,13 @@ export interface InfoSala {
 export interface AcoesMapa {
   aoMudar(m: Mapa, motivo: string): void;
   aoAbrirSala(arquivo: string): void;
-  aoNovaSala(): void;
+  /** Cria uma sala (área nova, já salva) e devolve o arquivo e a lista atualizada. */
+  criarSala(nome: string): Promise<{ arquivo: string; salas: InfoSala[] }>;
+  /** Muda o nome mostrado da sala (o arquivo continua o mesmo). */
+  renomearSala(arquivo: string, nome: string): Promise<InfoSala[]>;
+  /** Cria uma passagem (zona invisível no jogo) na borda da sala. */
+  criarPassagem(arquivo: string, lado: Lado, nome: string): Promise<{ id: string; salas: InfoSala[] }>;
+  excluirPassagem(arquivo: string, id: string): Promise<InfoSala[]>;
   /** Imagens do projeto (relativas à raiz). */
   imagens(): Promise<string[]>;
   /** Sons do projeto (relativos à raiz). */
@@ -37,6 +43,8 @@ export interface AcoesMapa {
   url(caminhoJogo: string): string;
   previa(t: Transicao): void;
 }
+
+export type Lado = 'esquerda' | 'direita';
 
 type Selecao = { tipo: 'sala'; arquivo: string } | { tipo: 'porta'; fase: string; id: string } | { tipo: 'con'; id: string } | null;
 
@@ -159,9 +167,9 @@ export class EditorMapa {
 
   // ---------- Interface ----------
   private montar() {
-    const nova = el('button', { type: 'button', class: 'secundario' }, '+ Nova sala');
-    dica(nova, 'Nova sala', 'Cria uma fase ou área nova (abre a janela de nova fase). Depois volte ao Mapa (M) para conectá-la.');
-    nova.addEventListener('click', () => { this.fechar(); this.acoes.aoNovaSala(); });
+    const nova = el('button', { type: 'button', class: 'secundario' }, '+ Sala');
+    dica(nova, 'Adicionar sala', 'Adiciona um local ao mapa (uma área nova, já com chão e salva em jogo/fases). Digite o nome e conecte arrastando das bolinhas azuis das bordas.');
+    nova.addEventListener('click', () => void this.novaSala());
     const organizar = el('button', { type: 'button', class: 'secundario' }, 'Organizar');
     dica(organizar, 'Organizar', 'Põe as salas em grade, na ordem dos arquivos. As conexões continuam.');
     organizar.addEventListener('click', () => {
@@ -193,7 +201,7 @@ export class EditorMapa {
       el('header', { class: 'pers-topo' }, el('h2', {}, 'Mapa'), legenda, el('div', { class: 'espaco' }),
         el('span', { class: 'dica-campo' }, 'Salvo automaticamente em jogo/projeto.json'), nova, organizar, enq, fechar),
       el('div', { class: 'mapa-colunas' }, el('div', { class: 'mapa-palco' }, this.area,
-        el('div', { class: 'mapa-ajuda' }, 'Arraste de uma passagem ▭ até outra para conectar · clique no ◆ para a transição · arraste as salas · roda = zoom · arraste o fundo = mover · duplo clique na sala = abrir')),
+        el('div', { class: 'mapa-ajuda' }, 'Arraste de uma passagem ▭ até outra · clique no ◆ para a transição · arraste das bolinhas azuis até outra sala para conectar · clique no nome para renomear · arraste as salas · roda = zoom · arraste o fundo = mover · duplo clique na sala = abrir')),
       this.painel)));
     this.desenhar();
     this.renderPainel();
@@ -223,12 +231,19 @@ export class EditorMapa {
       const g = svg('g', { class: 'mapa-sala' + (selSala ? ' sel' : '') + (s.arquivo === this.faseAtual ? ' atual' : '') + (s.erro ? ' erro' : ''), 'data-sala': s.arquivo });
       g.append(
         svg('rect', { x: b.x, y: b.y, width: b.w, height: b.h, rx: 3 }),
-        svg('text', { x: b.x + 2, y: b.y - 8, class: 'mapa-nome' }, s.nome),
+        svg('text', { x: b.x + 2, y: b.y - 8, class: 'mapa-nome', 'data-nome': s.arquivo }, s.nome, svg('title', {}, 'Clique para renomear')),
         svg('text', { x: b.x + 2, y: b.y + b.h + 14, class: 'mapa-sub' }, `${s.arquivo}${s.tipo === 'area' ? ' · área' : ''}${s.regiao ? ' · ' + s.regiao : ''}${s.arquivo === this.faseAtual ? ' · aberta no editor' : ''}`),
       );
       // Início do jogador (alvo para chegar "no meio" da sala)
       const ini = this.pontoDe({ fase: s.arquivo, passagem: '' });
-      if (ini) g.append(svg('path', { class: 'mapa-inicio', d: `M${ini.x - 5},${ini.y - 9} L${ini.x + 5},${ini.y - 9} L${ini.x},${ini.y} Z` }));
+      if (ini) g.append(svg('path', { class: 'mapa-inicio', 'data-inicio': s.arquivo, d: `M${ini.x - 5},${ini.y - 9} L${ini.x + 5},${ini.y - 9} L${ini.x},${ini.y} Z` }));
+      // Bolinhas de conexão nas bordas: arraste até outra sala e as passagens são criadas sozinhas
+      for (const lado of ['esquerda', 'direita'] as const) {
+        const cx = lado === 'esquerda' ? b.x - 9 : b.x + b.w + 9, cy = b.y + b.h / 2;
+        const c = svg('circle', { class: 'mapa-conector', 'data-conector': `${s.arquivo}|${lado}`, cx, cy, r: 6 });
+        c.append(svg('title', {}, `Arraste até outra sala para conectar (cria uma passagem ${lado === 'esquerda' ? 'à esquerda' : 'à direita'} desta sala e outra na sala de destino)`));
+        g.append(c);
+      }
       for (const p of s.passagens) {
         const pt = this.pontoDe({ fase: s.arquivo, passagem: p.id })!;
         const ligada = !!conexaoDaPassagem(this.mapa, s.arquivo, p.id);
@@ -287,6 +302,9 @@ export class EditorMapa {
       const porta = alvo.closest('[data-porta]')?.getAttribute('data-porta');
       const con = alvo.closest('[data-con]')?.getAttribute('data-con');
       const sala = alvo.closest('[data-sala]')?.getAttribute('data-sala');
+      const nome = alvo.closest('[data-nome]')?.getAttribute('data-nome');
+      const conector = alvo.closest('[data-conector]')?.getAttribute('data-conector');
+      if (ev.button === 0 && nome) { ev.preventDefault(); this.editarNome(nome); return; }
       a.setPointerCapture(ev.pointerId);
       const p0 = this.ponto(ev);
       const c0 = { x: ev.clientX, y: ev.clientY };
@@ -296,10 +314,12 @@ export class EditorMapa {
         a.addEventListener('pointermove', fn);
         a.addEventListener('pointerup', up);
       };
-      if (ev.button === 0 && porta) {
-        // Arrastar de uma passagem: linha provisória até soltar em outra passagem ou numa sala
-        const [fase, id] = porta.split('|');
-        const ini = this.pontoDe({ fase, passagem: id })!;
+      if (ev.button === 0 && (porta || conector)) {
+        // Arrastar de uma passagem (ou da bolinha da borda): linha provisória até soltar em outra passagem ou sala
+        const [fase, id] = (porta ?? conector)!.split('|');
+        const origemSala = this.sala(fase)!;
+        const bo = this.caixaSala(origemSala);
+        const ini = porta ? this.pontoDe({ fase, passagem: id })! : { x: id === 'esquerda' ? bo.x - 9 : bo.x + bo.w + 9, y: bo.y + bo.h / 2 };
         const temp = this.grupo.querySelector<SVGPathElement>('.temp')!;
         fim((m) => {
           moveu ||= Math.hypot(m.clientX - c0.x, m.clientY - c0.y) > 4;
@@ -307,16 +327,13 @@ export class EditorMapa {
           temp.setAttribute('d', `M${ini.x},${ini.y} L${p.x},${p.y}`);
         }, (m) => {
           temp.setAttribute('d', '');
-          if (!moveu) { this.sel = { tipo: 'porta', fase, id }; this.desenhar(); this.renderPainel(); return; }
+          if (!moveu) { if (porta) { this.sel = { tipo: 'porta', fase, id }; this.desenhar(); this.renderPainel(); } return; }
           const sob = document.elementFromPoint(m.clientX, m.clientY);
           const destPorta = sob?.closest('[data-porta]')?.getAttribute('data-porta');
+          const destInicio = sob?.closest('[data-inicio]')?.getAttribute('data-inicio');
           const destSala = sob?.closest('[data-sala]')?.getAttribute('data-sala');
-          if (destPorta && destPorta !== porta) {
-            const [f2, id2] = destPorta.split('|');
-            this.ligar({ fase, passagem: id }, { fase: f2, passagem: id2 });
-          } else if (destSala && !destPorta) {
-            this.ligar({ fase, passagem: id }, { fase: destSala, passagem: '' });
-          }
+          if (porta && destPorta === porta) return;
+          void this.conectarArrasto(porta ? { fase, passagem: id } : { fase, lado: id as Lado }, destPorta, destInicio, destSala);
         });
         return;
       }
@@ -366,7 +383,125 @@ export class EditorMapa {
     this.mudou(`conectou ${this.nomePonta(a)} ${conexao.maoDupla ? '⇄' : '→'} ${this.nomePonta(b)}${removidas.length ? ` (substituiu ${removidas.length} conexão antiga)` : ''}`);
   }
 
+  /** Termina um arrasto de conexão. Soltar no meio de uma sala cria lá uma passagem na borda virada para a origem. */
+  private async conectarArrasto(origem: PontaConexao | { fase: string; lado: Lado }, destPorta?: string | null, destInicio?: string | null, destSala?: string | null) {
+    const destino = destPorta ? destPorta.split('|')[0] : destInicio ?? destSala;
+    if (!destino) return;
+    if (!('passagem' in origem) && destino === origem.fase) return; // da sala para ela mesma: nada
+    const so = this.sala(origem.fase), sd = this.sala(destino);
+    if (!so || !sd) return;
+    const bo = this.caixaSala(so), bd = this.caixaSala(sd);
+    const destinoADireita = bd.x + bd.w / 2 >= bo.x + bo.w / 2;
+    try {
+      let a: PontaConexao;
+      if ('passagem' in origem) a = origem;
+      else {
+        const r = await this.acoes.criarPassagem(origem.fase, origem.lado, `Passagem → ${sd.nome}`);
+        this.salas = r.salas;
+        a = { fase: origem.fase, passagem: r.id };
+      }
+      let b: PontaConexao;
+      if (destPorta) b = { fase: destino, passagem: destPorta.split('|')[1] };
+      else if (destInicio) b = { fase: destino, passagem: '' };
+      else {
+        const r = await this.acoes.criarPassagem(destino, destinoADireita ? 'esquerda' : 'direita', `Passagem → ${so.nome}`);
+        this.salas = r.salas;
+        b = { fase: destino, passagem: r.id };
+      }
+      this.ligar(a, b);
+    } catch (err) {
+      this.painel.prepend(el('p', { class: 'aviso-texto' }, `Não consegui criar a passagem: ${String(err)}`));
+    }
+  }
+
+  /** Adiciona um local ao mapa: área nova já salva, no centro da visão, com o nome em edição. */
+  private async novaSala() {
+    let n = this.salas.length + 1;
+    while (this.salas.some((s) => s.nome === `Sala ${String(n).padStart(2, '0')}`)) n++;
+    try {
+      const r = await this.acoes.criarSala(`Sala ${String(n).padStart(2, '0')}`);
+      this.salas = r.salas;
+      // Lugar livre perto do centro da visão (sem cobrir outra sala)
+      const ret = this.area.getBoundingClientRect();
+      const nova = this.sala(r.arquivo)!;
+      const base = { x: Math.round(((ret.width / 2 - this.vista.x) / this.vista.z - 100) / 10) * 10, y: Math.round(((ret.height / 2 - this.vista.y) / this.vista.z - 20) / 10) * 10 };
+      const ocupado = (x: number, y: number) => {
+        this.mapa.salas[r.arquivo] = { x, y };
+        const b = this.caixaSala(nova);
+        return this.salas.some((o) => o.arquivo !== r.arquivo && this.mapa.salas[o.arquivo] && (() => {
+          const c = this.caixaSala(o);
+          return b.x < c.x + c.w + 40 && b.x + b.w + 40 > c.x && b.y < c.y + c.h + 60 && b.y + b.h + 60 > c.y;
+        })());
+      };
+      let pos = base;
+      for (let i = 0; i < 60; i++) {
+        const cand = { x: base.x + ((i % 5) - 2) * 160 * (i % 2 ? 1 : -1), y: base.y + Math.floor(i / 5) * 110 * (i % 2 ? -1 : 1) };
+        if (!ocupado(cand.x, cand.y)) { pos = cand; break; }
+      }
+      this.mapa.salas[r.arquivo] = pos;
+      this.sel = { tipo: 'sala', arquivo: r.arquivo };
+      this.mudou(`sala adicionada: ${r.arquivo}`);
+      this.editarNome(r.arquivo);
+    } catch (err) { this.painel.prepend(el('p', { class: 'aviso-texto' }, `Não consegui criar a sala: ${String(err)}`)); }
+  }
+
+  /** Campo de texto por cima do nome da sala (Enter salva, Esc cancela). */
+  private editarNome(arquivo: string) {
+    const s = this.sala(arquivo);
+    const texto = this.grupo.querySelector<SVGTextElement>(`[data-nome="${CSS.escape(arquivo)}"]`);
+    if (!s || !texto) return;
+    const palco = this.area.parentElement!;
+    const r = texto.getBoundingClientRect(), rp = palco.getBoundingClientRect();
+    const input = el('input', { type: 'text', class: 'mapa-nome-edicao', value: s.nome, 'aria-label': 'Nome da sala' }) as HTMLInputElement;
+    input.style.left = `${r.left - rp.left - 4}px`;
+    input.style.top = `${r.top - rp.top - 4}px`;
+    palco.append(input);
+    input.focus(); input.select();
+    let feito = false;
+    const terminar = async (salvar: boolean) => {
+      if (feito) return;
+      feito = true;
+      const nome = input.value.trim();
+      input.remove();
+      this.raiz.focus();
+      if (!salvar || !nome || nome === s.nome) return;
+      try {
+        this.salas = await this.acoes.renomearSala(arquivo, nome);
+        this.mudou(`sala ${arquivo} renomeada para "${nome}"`);
+      } catch (err) { this.painel.prepend(el('p', { class: 'aviso-texto' }, `Não consegui renomear: ${String(err)}`)); }
+    };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') void terminar(true);
+      if (e.key === 'Escape') void terminar(false);
+    });
+    input.addEventListener('blur', () => void terminar(true));
+  }
+
+  private async novaPassagem(arquivo: string, lado: Lado) {
+    const s = this.sala(arquivo);
+    if (!s) return;
+    try {
+      const r = await this.acoes.criarPassagem(arquivo, lado, `Passagem ${s.passagens.length + 1}`);
+      this.salas = r.salas;
+      this.sel = { tipo: 'porta', fase: arquivo, id: r.id };
+      this.mudou(`passagem criada em ${s.nome} (${lado})`);
+    } catch (err) { this.painel.prepend(el('p', { class: 'aviso-texto' }, `Não consegui criar a passagem: ${String(err)}`)); }
+  }
+
+  private async apagarPassagem(arquivo: string, id: string) {
+    const s = this.sala(arquivo);
+    const g = s?.passagens.find((x) => x.id === id);
+    if (!s || !g) return;
+    if ((await perguntar('Excluir passagem', `Excluir "${g.nome}" de ${s.nome}? O objeto sai da fase e a conexão dele também.`, ['Cancelar', 'Excluir'])) !== 1) { this.raiz.focus(); return; }
+    this.salas = await this.acoes.excluirPassagem(arquivo, id);
+    this.mapa.conexoes = this.mapa.conexoes.filter((c) => !((c.a.fase === arquivo && c.a.passagem === id) || (c.b.fase === arquivo && c.b.passagem === id)));
+    this.sel = { tipo: 'sala', arquivo };
+    this.mudou(`passagem ${g.nome} excluída de ${s.nome}`);
+  }
+
   private async excluirSelecionado() {
+    if (this.sel?.tipo === 'porta') { await this.apagarPassagem(this.sel.fase, this.sel.id); return; }
     if (this.sel?.tipo !== 'con') return;
     const c = this.conexao(this.sel.id);
     if (!c) return;
@@ -388,8 +523,8 @@ export class EditorMapa {
     const semPassagem = this.salas.filter((s) => !s.passagens.length);
     p.replaceChildren(
       el('h3', {}, 'Como usar'),
-      el('p', { class: 'dica-campo' }, '1. Em cada sala, coloque o objeto da porta (ou escada, saída…), torne-o interativo e escolha o comportamento "Passagem". Ele aparece aqui como ▭ vermelho.'),
-      el('p', { class: 'dica-campo' }, '2. Arraste de uma passagem até a passagem da outra sala. Solte no meio da sala para chegar no início do jogador dela.'),
+      el('p', { class: 'dica-campo' }, '1. "+ Sala" adiciona um local ao mapa. Clique no nome para renomear.'),
+      el('p', { class: 'dica-campo' }, '2. Para conectar duas salas, arraste da bolinha azul da borda de uma até a outra: as passagens ▭ são criadas nas duas (zonas invisíveis no jogo). Também dá para arrastar de uma passagem que já existe (ex.: o objeto de uma porta com o comportamento Passagem) até outra passagem, até o meio de uma sala ou até o ▼ início dela.'),
       el('p', { class: 'dica-campo' }, '3. Clique no ◆ amarelo para escolher o que acontece entre as salas: nada, escurecer ou uma tela cheia animada com som (a porta se abrindo).'),
       el('p', { class: 'dica-campo' }, 'No ▶ Testar, a passagem leva o jogador para a outra sala com o inventário, a munição e as variáveis do código. Salas já visitadas lembram portas abertas, itens pegos e inimigos mortos.'),
       el('h3', {}, 'Resumo'),
@@ -411,14 +546,30 @@ export class EditorMapa {
       b.addEventListener('click', () => { this.sel = v ? { tipo: 'con', id: v.id } : { tipo: 'porta', fase: s.arquivo, id: g.id }; this.desenhar(); this.renderPainel(); });
       lista.append(b);
     }
+    const nome = el('input', { type: 'text', id: 'mapa-nome-sala', value: s.nome }) as HTMLInputElement;
+    nome.addEventListener('change', async () => {
+      const v = nome.value.trim();
+      if (!v || v === s.nome) return;
+      this.salas = await this.acoes.renomearSala(s.arquivo, v);
+      this.mudou(`sala ${s.arquivo} renomeada para "${v}"`);
+    });
+    const labNome = el('label', { for: 'mapa-nome-sala' }, 'Nome');
+    dica(labNome, 'Nome da sala', 'Nome mostrado no mapa e no editor (também dá para clicar no nome no diagrama). O arquivo continua o mesmo, então as conexões não quebram.');
+    const addPass = (lado: Lado, texto: string) => {
+      const b = el('button', { type: 'button', class: 'secundario' }, texto);
+      dica(b, 'Nova passagem', `Cria uma passagem na borda ${lado} da sala: uma zona invisível no jogo (vermelha no editor) com o comportamento Passagem. Depois é só arrastar dela até outra sala. Para usar a arte de uma porta, dê o comportamento Passagem ao objeto da porta no editor.`);
+      b.addEventListener('click', () => void this.novaPassagem(s.arquivo, lado));
+      return b;
+    };
     this.painel.replaceChildren(
       el('h3', {}, 'Sala'),
-      el('p', {}, el('strong', {}, s.nome)),
+      el('div', { class: 'campo largo' }, labNome, nome),
       el('p', { class: 'dica-campo' }, `${s.arquivo} · ${s.tipo === 'area' ? 'área conectável' : 'fase completa'}${s.regiao ? ` · região ${s.regiao}` : ''} · ${s.tamanho[0]}×${s.tamanho[1]} px`),
       s.erro ? el('p', { class: 'aviso-texto' }, s.erro) : '',
       abrir,
       el('h3', {}, `Passagens (${s.passagens.length})`),
-      s.passagens.length ? lista : el('p', { class: 'dica-campo' }, 'Nenhuma ainda. Na sala, selecione o objeto da porta, torne-o interativo e escolha o comportamento "Passagem".'),
+      s.passagens.length ? lista : el('p', { class: 'dica-campo' }, 'Nenhuma ainda. Crie aqui, arraste das bolinhas azuis das bordas até outra sala, ou dê o comportamento "Passagem" ao objeto de uma porta no editor.'),
+      el('div', { class: 'linha2' }, addPass('esquerda', '+ Passagem à esquerda'), addPass('direita', '+ Passagem à direita')),
     );
   }
 
@@ -428,12 +579,16 @@ export class EditorMapa {
     const c = conexaoDaPassagem(this.mapa, fase, id);
     const ir = el('button', { type: 'button', class: 'secundario largo' }, 'Ver a transição');
     ir.addEventListener('click', () => { if (c) { this.sel = { tipo: 'con', id: c.id }; this.desenhar(); this.renderPainel(); } });
+    const del = el('button', { type: 'button', class: 'perigo' }, 'Excluir passagem');
+    dica(del, 'Excluir passagem', 'Tira o objeto da passagem da fase e a conexão dele.', 'Del');
+    del.addEventListener('click', () => void this.apagarPassagem(fase, id));
     this.painel.replaceChildren(
       el('h3', {}, 'Passagem'),
       el('p', {}, el('strong', {}, g?.nome ?? id)),
       el('p', { class: 'dica-campo' }, `${s?.nome ?? fase} · objeto ${id}${g?.requer ? ` · precisa de: ${g.requer}` : ''}`),
       c ? el('p', { class: 'dica-campo' }, `Conectada: ${this.nomePonta(c.a)} ${c.maoDupla ? '⇄' : '→'} ${this.nomePonta(c.b)}`) : el('p', { class: 'aviso-texto' }, 'Sem conexão: arraste desta passagem até outra.'),
       c ? ir : '',
+      del,
     );
   }
 

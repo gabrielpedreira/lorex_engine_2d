@@ -99,9 +99,11 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
   entra **animado**, mostrando um quadro. Em Propriedades › Animação: quadros, quadros por linha, FPS e quando toca
   (**repetir sempre**, **uma vez ao começar** ou **parado até mandar**). Uma **porta animada** toca a animação ao abrir e
   fica aberta no último quadro. No código: `eu.tocar()`, `eu.parar()`, `eu.quadro`.
-- **Mapa** (`M`): diagrama das salas do jogo (fases e áreas) com as **passagens** (▭) de cada uma. Arraste de uma
-  passagem até a de outra sala para conectar (ou até o meio da sala, para chegar no início dela); a conexão pode ser de
-  mão dupla. No meio de cada ligação há um **losango** (◆) que define o que acontece ao passar: **corte seco**,
+- **Mapa** (`M`): diagrama das salas do jogo (fases e áreas) com as **passagens** (▭) de cada uma. **+ Sala** adiciona
+  um local (área nova, já com chão); clique no nome para renomear. Para conectar duas salas, arraste da **bolinha azul**
+  da borda de uma até a outra: as passagens são criadas nas duas (zonas invisíveis no jogo, vermelhas no editor). Também
+  dá para arrastar de uma passagem existente (ex.: o objeto de uma porta) até outra passagem, até o meio de uma sala ou
+  até o ▼ início dela; criar e excluir passagens pelo painel. A conexão pode ser de mão dupla. No meio de cada ligação há um **losango** (◆) que define o que acontece ao passar: **corte seco**,
   **escurecer** ou **tela cheia animada** (um spritesheet tocando enquanto a próxima sala carrega, estilo Resident Evil
   clássico), com cor, tempo mínimo, texto e **som**. Pré-visualização em tela cheia. Salvo em `jogo/projeto.json`.
   No ▶ Testar, a passagem leva à outra sala com a transição, chegando na passagem de destino, com inventário, munição e

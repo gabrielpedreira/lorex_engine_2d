@@ -353,7 +353,7 @@ export class PainelPropriedades {
             ? 'O jogador pode interagir. Os comportamentos (coletar, abrir, acionar…) chegam com a ferramenta de interação.'
             : 'Só visual. Não reage ao jogador.')),
         el('div', { class: 'campo largo' }, el('label', { for: 'p-camada' }, 'Camada'), camadaSel),
-        el('div', { class: 'asset-info', title: o.asset }, o.asset),
+        el('div', { class: 'asset-info', title: o.asset || 'zona sem imagem' }, o.asset || 'Zona sem imagem (invisível no jogo): mova e redimensione pelas alças.'),
       ),
       el('div', { class: 'secao' },
         el('h3', {}, 'Transformação'),
@@ -369,7 +369,7 @@ export class PainelPropriedades {
       ),
       this.secaoContinuacao(),
       this.secaoComportamento(o),
-      this.secaoAnimacao(o),
+      o.asset ? this.secaoAnimacao(o) : '',
       this.secaoEfeitos(o),
       el('div', { class: 'secao acoes' },
         botao('Trazer p/ frente', () => this.acoes.ordem('frente')),

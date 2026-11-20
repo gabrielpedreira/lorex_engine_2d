@@ -863,13 +863,60 @@ const editorMapa = new EditorMapa({
     avisarCodigoMudou();
   },
   aoAbrirSala: (arquivo) => void abrirFase(arquivo),
-  aoNovaSala: () => void novaFase(),
+  criarSala: async (nome) => {
+    const fase = criarFase(nome, { tipo: 'area', resolucaoBase: config.resolucaoBase, tamanhoGrade: config.tamanhoGrade, telas: [2, 1] });
+    // Já com chão na altura do início do jogador (dá para testar na hora)
+    const [fw, fh] = fase.tamanho, yc = fase.spawnJogador[1];
+    fase.colisoes.push({ id: 'col_001', forma: 'bloco', comportamento: 'solido', pontos: [[0, yc], [fw, yc], [fw, fh], [0, fh]] });
+    const arquivo = await arquivoLivre(nome);
+    await plat.salvarFase(arquivo, JSON.stringify(fase, null, 2));
+    await atualizarListaFases();
+    LOG.add({ cat: 'sistema', texto: `Mapa: sala "${nome}" criada em jogo/fases/${arquivo}` });
+    return { arquivo, salas: await salasDoProjeto() };
+  },
+  renomearSala: async (arquivo, nome) => {
+    await alterarFaseArquivo(arquivo, (f) => { f.nome = nome; });
+    await atualizarListaFases();
+    return salasDoProjeto();
+  },
+  criarPassagem: async (arquivo, lado, nome) => {
+    let id = '';
+    await alterarFaseArquivo(arquivo, (f) => {
+      const w = 32, h = 64;
+      const camada = f.camadas.find((c) => c.id === 'objetos')?.id ?? f.camadas[f.camadas.length - 1].id;
+      id = novoIdObjeto(f);
+      f.objetos.push({
+        id, tipo: 'interativo', nome, asset: '', camada,
+        x: lado === 'esquerda' ? 8 : f.tamanho[0] - w - 8, y: f.spawnJogador[1] - h, w, h,
+        escala: 1, rotacao: 0, espelharX: false, espelharY: false, opacidade: 1, visivel: true,
+        efeitos: [], comportamentos: [{ tipo: 'saida', destino: '', requer: '', consome: false }], conexoes: {}, script: null,
+      });
+    });
+    LOG.add({ cat: 'sistema', texto: `Mapa: passagem "${nome}" (${id}) criada em ${arquivo}` });
+    return { id, salas: await salasDoProjeto() };
+  },
+  excluirPassagem: async (arquivo, id) => {
+    if (arquivo === estado.arquivoFase && estado.selecionado === id) estado.selecionar(null);
+    await alterarFaseArquivo(arquivo, (f) => { f.objetos = f.objetos.filter((o) => o.id !== id); });
+    return salasDoProjeto();
+  },
   imagens: () => plat.listarAssets(),
   sons: () => plat.listarSons(),
   garantir: (c, cat) => (c.startsWith('jogo/') ? Promise.resolve(c.slice(5)) : plat.garantirEmUso(c, cat)),
   url: (c) => urlAsset(plat, c),
   previa: (t) => { LOG.add({ cat: 'sistema', texto: `Mapa: pré-visualizou a transição (${resumoTransicao(t)})` }); void telaTransicao.previa(t); },
 });
+/** Muda uma fase pelo Mapa: a aberta no editor muda na memória e é salva; as outras, direto no arquivo. */
+async function alterarFaseArquivo(arquivo: string, fn: (f: import('./core/tipos').Fase) => void) {
+  if (arquivo === estado.arquivoFase) {
+    estado.alterar(fn);
+    if (!(await salvar())) throw new Error('não consegui salvar a fase aberta');
+    return;
+  }
+  const f = normalizarFase(JSON.parse(await plat.lerFase(arquivo)));
+  fn(f);
+  await plat.salvarFase(arquivo, JSON.stringify(f, null, 2));
+}
 async function abrirMapa() {
   if (estado.testando) teste.parar();
   if (editorPersonagens.aberta) await editorPersonagens.fechar();

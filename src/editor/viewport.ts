@@ -492,8 +492,11 @@ export class Viewport {
   }
 
   private aplicarObjeto(sp: Sprite, o: ObjetoFase, r: ResultadoEfeitos = this.efeitoEstatico(o)) {
-    const tex = this.texturas.get(o.asset);
-    if (tex && o.anim) {
+    // Objeto sem imagem = zona (ex.: passagem criada pelo Mapa): retângulo vermelho translúcido, invisível no jogo
+    const zona = !o.asset;
+    const tex = zona ? Texture.WHITE : this.texturas.get(o.asset);
+    sp.tint = zona ? 0xe5484d : 0xffffff;
+    if (tex && o.anim && !zona) {
       const q = this.quadrosDe(tex, o.asset, o.anim);
       sp.texture = q[Math.min(q.length - 1, this.quadroObjeto(o))];
     } else if (tex) sp.texture = tex;
@@ -516,8 +519,8 @@ export class Viewport {
     const desl = this.deslocamentoTeste?.get(o.id);
     sp.position.set(o.x + (o.w * o.escala) / 2 + (desl?.dx ?? 0), o.y + (o.h * o.escala) / 2 + r.dy + (desl?.dy ?? 0));
     sp.angle = o.rotacao;
-    sp.alpha = o.opacidade * r.alpha;
-    sp.visible = o.visivel && (this.visibilidadeTeste?.get(o.id) ?? true);
+    sp.alpha = o.opacidade * r.alpha * (zona ? 0.45 : 1);
+    sp.visible = o.visivel && (this.visibilidadeTeste?.get(o.id) ?? true) && !(zona && this.estado.testando);
 
     const halo = this.halos.get(o.id);
     if (halo) {
