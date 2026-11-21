@@ -6,7 +6,7 @@ import type { Camada, Fase, LuzFase, ObjetoFase } from '../core/tipos';
 export type Evento = 'fase' | 'selecao' | 'camera' | 'opcoes' | 'arquivo' | 'mensagem' | 'modo';
 
 /** Ferramenta ativa no cenário. */
-export type Modo = 'selecionar' | 'mao' | 'colisao' | 'inicio' | 'inimigo' | 'luz' | 'zona';
+export type Modo = 'selecionar' | 'mao' | 'colisao' | 'inicio' | 'inimigo' | 'luz' | 'zona' | 'tela';
 /** Forma desenhada pela ferramenta Colisão. */
 export type FormaNova = 'bloco' | 'rampa-direita' | 'rampa-esquerda' | 'poligono' | 'linha' | 'maoLivre';
 

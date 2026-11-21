@@ -4,7 +4,7 @@ import { palpiteAnim, pareceFolha, tamanhoQuadro } from './core/folha';
 import { criarFase, nomeArquivoFase, nomeDoArquivo, normalizarFase, novoIdObjeto, type OpcoesFase } from './core/fase';
 import type { ObjetoFase } from './core/tipos';
 import { Estado } from './editor/estado';
-import { Viewport, formatarPct } from './editor/viewport';
+import { Viewport, escalaFullHd, formatarPct } from './editor/viewport';
 import { PlataformaElectron, temElectron } from './plataforma/electron';
 import { PlataformaNavegador } from './plataforma/navegador';
 import type { Plataforma } from './plataforma/plataforma';
@@ -997,6 +997,8 @@ const itensTrilho: (ItemTrilho | 'sep')[] = [
     texto: 'Desenha onde o jogador pisa e esbarra. Ao escolher, aparece uma barra no topo do cenário com as formas (bloco, rampas, polígono, linha, mão livre) e o tipo (sólido ou atravessável).' },
   { id: 'inicio', modo: 'inicio', ico: 'bandeira', titulo: 'Início do jogador', atalho: 'I', acao: () => estado.definirModo('inicio'),
     texto: 'Clique no cenário onde ficam os pés da personagem quando a fase começa. A bandeira verde marca esse lugar.' },
+  { id: 'tela', modo: 'tela', ico: 'tela', titulo: 'Tela do jogo', atalho: 'Q', acao: () => estado.definirModo(estado.modo === 'tela' ? 'selecionar' : 'tela'),
+    texto: 'Ajusta o quadro laranja: o pedaço do cenário que o jogador vê. Arraste os cantos (mantém a proporção) ou escolha 320×180, 480×270, 640×360, 960×540. Mostra se a escala fica nítida em Full HD. Pode virar o padrão do projeto ou ir para todas as fases.' },
   { id: 'zona', modo: 'zona', ico: 'zona', titulo: 'Zona (gatilho / passagem)', atalho: 'Z', acao: () => estado.definirModo(estado.modo === 'zona' ? 'selecionar' : 'zona'),
     texto: 'Arraste no cenário para criar uma área invisível no jogo: um GATILHO (ao entrar: mensagem, inimigos surgindo, luzes, acionar objeto) ou, trocando o comportamento, uma PASSAGEM contínua (fim de rua). No editor aparece roxa (gatilho) ou vermelha (passagem).' },
   { id: 'luz', modo: 'luz', ico: 'luz', titulo: 'Iluminação', atalho: 'Y', acao: () => estado.definirModo(estado.modo === 'luz' ? 'selecionar' : 'luz'),
@@ -1037,6 +1039,8 @@ function atualizarModos() {
   });
   barraColisao.hidden = estado.modo !== 'colisao' || estado.testando;
   barraInimigos.hidden = estado.modo !== 'inimigo' || estado.testando;
+  barraTela.hidden = estado.modo !== 'tela' || estado.testando;
+  if (estado.modo === 'tela') atualizarBarraTela();
   if (estado.modo === 'inimigo') atualizarBarraInimigos();
   if (estado.modo !== 'colisao') viewport.ferrColisao.cancelar();
 }
@@ -1096,6 +1100,61 @@ const dicaInimigos = el('span', { class: 'dica-barra' }, 'Clique para colocar ·
 const barraInimigos = el('div', { class: 'barra-flutuante' }, el('strong', { class: 'rotulo-barra' }, 'Inimigo:'), seletorInimigo, novoTipoInimigo, el('div', { class: 'sep-v' }), dicaInimigos);
 barraInimigos.hidden = true;
 centro.append(barraInimigos);
+// ---------- Ferramenta Tela do jogo (o quadro laranja = o que o jogador vê) ----------
+const PRESETS_TELA: [number, number][] = [[320, 180], [480, 270], [640, 360], [960, 540]];
+const telaL = el('input', { type: 'number', min: 160, max: 3840, step: 16, 'aria-label': 'Largura da tela do jogo' }) as HTMLInputElement;
+const telaA = el('input', { type: 'number', min: 90, max: 2160, step: 2, 'aria-label': 'Altura da tela do jogo' }) as HTMLInputElement;
+const telaInfo = el('span', { class: 'dica-campo' });
+const presetsTela = el('div', { class: 'grupo-presets' }, ...PRESETS_TELA.map(([w, h]) => {
+  const b = el('button', { type: 'button', class: 'secundario' }, `${w}×${h}`);
+  dica(b, `${w} × ${h}`, `A tela do jogo mostra ${w} × ${h} px do cenário (${escalaFullHd(w, h)}).`);
+  b.addEventListener('click', () => definirTela(w, h));
+  return b;
+}));
+function definirTela(w: number, h: number) {
+  w = Math.max(160, Math.min(3840, Math.round(w))); h = Math.max(90, Math.min(2160, Math.round(h)));
+  estado.alterar((f) => { f.resolucaoBase = [w, h]; });
+  LOG.add({ cat: 'sistema', texto: `Tela do jogo de ${estado.fase.nome}: ${w} × ${h} px (${escalaFullHd(w, h)})` });
+  atualizarBarraTela();
+}
+telaL.addEventListener('change', () => { const [rw, rh] = estado.fase.resolucaoBase; const w = Number(telaL.value); if (w > 0) definirTela(w, Math.round((w * rh) / rw / 2) * 2); });
+telaA.addEventListener('change', () => { const [rw] = estado.fase.resolucaoBase; const h = Number(telaA.value); if (h > 0) definirTela(rw, h); });
+const telaPadrao = el('button', { type: 'button', class: 'secundario' }, 'Padrão do projeto');
+dica(telaPadrao, 'Padrão do projeto', 'As fases e salas NOVAS (inclusive "+ Sala" do Mapa) nascem com esta tela do jogo.');
+telaPadrao.addEventListener('click', () => {
+  config.resolucaoBase = [...estado.fase.resolucaoBase] as [number, number];
+  salvarConfigDepois();
+  estado.avisar(`Padrão do projeto: ${config.resolucaoBase[0]} × ${config.resolucaoBase[1]} px.`);
+});
+const telaTodas = el('button', { type: 'button', class: 'secundario' }, 'Aplicar em todas');
+dica(telaTodas, 'Aplicar em todas', 'Todas as fases e salas do projeto passam a ter esta tela do jogo (e ela vira o padrão). Pergunta antes.');
+telaTodas.addEventListener('click', async () => {
+  const [w, h] = estado.fase.resolucaoBase;
+  const fases = await plat.listarFases();
+  if ((await perguntar('Tela do jogo em todas as fases', `Todas as ${fases.length} fase(s) passam a mostrar ${w} × ${h} px. A fase aberta é salva.`, ['Cancelar', 'Aplicar'])) !== 1) return;
+  for (const arq of fases) await alterarFaseArquivo(arq, (f) => { f.resolucaoBase = [w, h]; });
+  config.resolucaoBase = [w, h]; salvarConfigDepois();
+  LOG.add({ cat: 'sistema', texto: `Tela do jogo ${w} × ${h} px aplicada em ${fases.length} fase(s) e no padrão do projeto` });
+  estado.avisar(`Tela ${w} × ${h} aplicada em ${fases.length} fase(s).`);
+});
+const barraTela = el('div', { class: 'barra-flutuante barra-tela' }, el('strong', { class: 'rotulo-barra' }, 'Tela do jogo:'), presetsTela,
+  telaL, el('span', {}, '×'), telaA, telaInfo, el('div', { class: 'sep-v' }), telaPadrao, telaTodas);
+barraTela.hidden = true;
+centro.append(barraTela);
+function atualizarBarraTela() {
+  const [w, h] = estado.fase.resolucaoBase;
+  if (document.activeElement !== telaL) telaL.value = String(w);
+  if (document.activeElement !== telaA) telaA.value = String(h);
+  telaInfo.textContent = escalaFullHd(w, h);
+  presetsTela.querySelectorAll('button').forEach((b, i) => b.classList.toggle('ligado', PRESETS_TELA[i][0] === w && PRESETS_TELA[i][1] === h));
+}
+estado.on('fase', () => { if (estado.modo === 'tela') atualizarBarraTela(); });
+viewport.aoMudarTela = () => {
+  const [w, h] = estado.fase.resolucaoBase;
+  LOG.add({ cat: 'sistema', texto: `Tela do jogo de ${estado.fase.nome}: ${w} × ${h} px (${escalaFullHd(w, h)})` });
+  atualizarBarraTela();
+};
+
 function atualizarBarraInimigos() {
   seletorInimigo.replaceChildren(...(tiposInimigo.size
     ? [...tiposInimigo].map(([arq, t]) => el('option', { value: arq }, `${t.p.nome} (${arq})`))
@@ -1112,6 +1171,7 @@ estado.on('modo', () => {
   if (estado.modo === 'colisao') estado.avisar('Colisão: escolha a forma e o tipo na barra do topo e desenhe no cenário. Clique numa forma pronta para editar.');
   if (estado.modo === 'inicio') estado.avisar('Início do jogador: clique onde ficam os pés da personagem ao começar.');
   if (estado.modo === 'mao') estado.avisar('Mover a visão: arraste o cenário.');
+  if (estado.modo === 'tela') estado.avisar('Tela do jogo: arraste os cantos do quadro laranja para mudar quanto o jogador vê, ou escolha um tamanho na barra de cima. Arraste o cenário para levar o quadro a outro lugar.');
 });
 
 barra.append(
@@ -1251,6 +1311,7 @@ window.addEventListener('keydown', (e) => {
       else if (k === 'm') void abrirMapa();
       else if (k === 'y' && e.shiftKey) { estado.previaLuz = !estado.previaLuz; estado.emit('opcoes'); estado.avisar(`Prévia do escuro ${estado.previaLuz ? 'ligada' : 'desligada'}.`); }
       else if (k === 'y') estado.definirModo(estado.modo === 'luz' ? 'selecionar' : 'luz');
+      else if (k === 'q') estado.definirModo(estado.modo === 'tela' ? 'selecionar' : 'tela');
       else if (k === 'z') estado.definirModo(estado.modo === 'zona' ? 'selecionar' : 'zona');
       else if (k === 'l') painelLog.alternar();
       else if (k === 'x' && estado.modo === 'colisao') { estado.comportamentoNovo = estado.comportamentoNovo === 'solido' ? 'atravessavel' : 'solido'; atualizarOpcoesColisao(); }

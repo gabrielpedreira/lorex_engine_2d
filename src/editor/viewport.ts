@@ -31,6 +31,12 @@ export function formatarPct(escala: number) {
   return `${p >= 10 ? Math.round(p) : p.toFixed(1).replace('.', ',')}%`;
 }
 
+/** Quantas vezes a tela do jogo cabe em Full HD (ex.: "×3 em 1920×1080"). */
+export function escalaFullHd(w: number, h: number) {
+  const k = Math.min(1920 / w, 1080 / h);
+  return Number.isInteger(k) ? `×${k} em Full HD (nítido)` : `×${k.toFixed(2).replace('.', ',')} em Full HD (${k >= 1 ? 'escala quebrada: pode borrar' : 'maior que Full HD'})`;
+}
+
 export const NIVEIS_ZOOM = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 12, 16];
 const TAM_ALCA = 8;
 const COR_SELECAO = 0xa7dd3e; // lima da logo
@@ -44,7 +50,8 @@ type Arraste =
   | { tipo: 'inimigo'; id: string; mexeu: boolean; dx: number; dy: number }
   | { tipo: 'luz'; id: string; mexeu: boolean; dx: number; dy: number }
   | { tipo: 'raioLuz'; id: string; mexeu: boolean }
-  | { tipo: 'zona'; x0: number; y0: number; x1: number; y1: number };
+  | { tipo: 'zona'; x0: number; y0: number; x1: number; y1: number }
+  | { tipo: 'tela'; cx: number; razao: number; mexeu: boolean };
 
 /** Halo (efeito Brilhar): cópia da imagem em silhueta colorida e borrada, atrás do objeto. */
 interface Halo { sp: Sprite; blur: BlurFilter; chave: string; raio: number }
@@ -107,6 +114,8 @@ export class Viewport {
 
   /** Chamado a cada quadro (ms desde o anterior), antes de desenhar. Usado pelo ▶ Testar. */
   aoQuadro: ((dtMs: number) => void) | null = null;
+  /** Ferramenta Tela do jogo: o tamanho da tela do jogador mudou. */
+  aoMudarTela: () => void = () => {};
   /** Ferramenta Zona: um retângulo foi desenhado (mundo). */
   aoCriarZona: (x: number, y: number, w: number, h: number) => void = () => {};
   /** Chamado depois de reconstruir a cena (para reinserir o jogador do teste). */
@@ -763,7 +772,16 @@ export class Viewport {
     const a = this.camadaParaTela(cj.x, cj.y, '');
     const z = this.estado.camera.zoom;
     g.rect(Math.round(a.x) + 0.5, Math.round(a.y) + 0.5, Math.round(cj.w * z), Math.round(cj.h * z))
-      .stroke({ width: 1, color: COR_TELA_JOGO, alpha: 0.6 });
+      .stroke({ width: this.estado.modo === 'tela' ? 2 : 1, color: COR_TELA_JOGO, alpha: this.estado.modo === 'tela' ? 1 : 0.6 });
+    if (this.estado.modo === 'tela') {
+      // Ferramenta Tela do jogo: alças nos cantos (mudam o tamanho, mantendo a proporção) e cruz no centro
+      const rt = this.retanguloTelaJogo();
+      for (const [cx, cy] of [[rt.x, rt.y], [rt.x + rt.w, rt.y], [rt.x, rt.y + rt.h], [rt.x + rt.w, rt.y + rt.h]]) {
+        g.rect(Math.round(cx - TAM_ALCA / 2), Math.round(cy - TAM_ALCA / 2), TAM_ALCA, TAM_ALCA).fill({ color: 0xffffff }).stroke({ width: 1, color: COR_TELA_JOGO });
+      }
+      const mx = rt.x + rt.w / 2, my = rt.y + rt.h / 2;
+      g.moveTo(mx - 8, my).lineTo(mx + 8, my).moveTo(mx, my - 8).lineTo(mx, my + 8).stroke({ width: 1, color: COR_TELA_JOGO, alpha: 0.8 });
+    }
     if (this.hover && this.hover !== this.estado.selecionado) {
       const o = this.estado.objeto(this.hover);
       if (o) {
@@ -832,6 +850,14 @@ export class Viewport {
           .fill({ color: 0xffffff }).stroke({ width: 1, color: COR_SELECAO });
       }
     }
+  }
+
+  /** Quadro da tela do jogador, na tela do editor. */
+  private retanguloTelaJogo() {
+    const cj = this.cameraJogo();
+    const a = this.camadaParaTela(cj.x, cj.y, '');
+    const z = this.estado.camera.zoom;
+    return { x: a.x, y: a.y, w: cj.w * z, h: cj.h * z };
   }
 
   // ---------- Iluminação ----------
@@ -1139,6 +1165,18 @@ export class Viewport {
           return;
         }
       }
+      if (this.estado.modo === 'tela') {
+        // Alça do canto: muda o tamanho da tela do jogador; no resto, arrasta a visão (o quadro acompanha)
+        const canto = this.cantoEm(this.retanguloTelaJogo(), p.x, p.y);
+        if (canto) {
+          const cj = this.cameraJogo();
+          this.arraste = { tipo: 'tela', cx: cj.x + cj.w / 2, razao: cj.w / cj.h, mexeu: false };
+        } else {
+          this.arraste = { tipo: 'pan', sx: p.x, sy: p.y, cx: cam.x, cy: cam.y };
+          cv.style.cursor = 'grabbing';
+        }
+        return;
+      }
       if (this.estado.modo === 'zona') {
         const w = this.mundoEncaixado(p.x, p.y);
         this.arraste = { tipo: 'zona', x0: w.x, y0: w.y, x1: w.x, y1: w.y };
@@ -1228,6 +1266,13 @@ export class Viewport {
           }
         }
         if (this.estado.modo === 'luz' || this.estado.modo === 'zona') { cv.style.cursor = 'crosshair'; this.aoPairar(null, 0, 0); return; }
+        if (this.estado.modo === 'tela') {
+          const canto = this.cantoEm(this.retanguloTelaJogo(), p.x, p.y);
+          cv.style.cursor = canto ? (canto === 'se' || canto === 'no' ? 'nwse-resize' : 'nesw-resize') : 'grab';
+          const [rw, rh] = this.estado.fase.resolucaoBase;
+          this.aoPairar(canto ? { titulo: 'Tela do jogador', texto: `${rw} × ${rh} px. Arraste para aumentar ou diminuir o quanto o jogador vê (mantém a proporção; passos de 16 px).` } : null, e.clientX, e.clientY);
+          return;
+        }
         const iniHover = this.estado.modo === 'inimigo' || this.estado.modo === 'selecionar' ? this.inimigoEm(p.x, p.y) : undefined;
         if (iniHover) {
           const t = this.tiposInimigo.get(iniHover.personagem);
@@ -1255,6 +1300,16 @@ export class Viewport {
       }
       this.aoPairar(null, 0, 0);
       if (a.tipo === 'inicio') { this.moverInicio(a, p.x, p.y); return; }
+      if (a.tipo === 'tela') {
+        if (!a.mexeu) { this.estado.checkpoint(); a.mexeu = true; }
+        const wx = this.telaParaCamada(p.x, p.y, '').x;
+        const w = Math.max(160, Math.min(3840, Math.round((2 * Math.abs(wx - a.cx)) / 16) * 16));
+        const h = Math.max(90, Math.round(w / a.razao / 2) * 2);
+        this.estado.fase.resolucaoBase = [w, h];
+        this.mostrarLegenda(`${w} × ${h} px · ${escalaFullHd(w, h)}`, p.x, p.y);
+        this.estado.marcarAlterado();
+        return;
+      }
       if (a.tipo === 'zona') { const w = this.mundoEncaixado(p.x, p.y); a.x1 = w.x; a.y1 = w.y; this.chaveCamera = ''; return; }
       if (a.tipo === 'luz' || a.tipo === 'raioLuz') {
         const l = this.estado.luz(a.id);
@@ -1331,7 +1386,8 @@ export class Viewport {
         if (a.mexeu && o) this.aoEscalar(o);
       }
       if (!a && this.estado.modo === 'colisao') this.ferrColisao.pointerUp();
-      if (a?.tipo === 'raioLuz') this.mostrarLegenda(null);
+      if (a?.tipo === 'raioLuz' || a?.tipo === 'tela') this.mostrarLegenda(null);
+      if (a?.tipo === 'tela' && a.mexeu) this.aoMudarTela();
       if (a?.tipo === 'zona') {
         let x = Math.min(a.x0, a.x1), y = Math.min(a.y0, a.y1), w = Math.abs(a.x1 - a.x0), h = Math.abs(a.y1 - a.y0);
         if (w < 6 || h < 6) { w = 64; h = 64; x -= 32; y -= 32; } // clique simples: zona padrão

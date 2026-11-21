@@ -402,6 +402,13 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   borda). No teste o estado vem de `MundoInterativo` (`escura`, `luzes`, `ajusteLuz`) e entra na memória das salas.
   Código: `jogo.luz(nome)`, `jogo.luzes()`, `jogo.escura`.
 
+### 4.28 Ferramenta Tela do jogo
+
+- Modo `tela` (Q): o quadro laranja (`cameraJogo`, centrado na visão) ganha alças; arrastar um canto muda
+  `fase.resolucaoBase` simetricamente em torno do centro, mantendo a proporção (passos de 16 px, 160–3840).
+  Barra flutuante com presets, campos L×A, `escalaFullHd` (nitidez), "Padrão do projeto" (`config.resolucaoBase`)
+  e "Aplicar em todas" (`alterarFaseArquivo` em cada fase). Mudanças vão para o Log.
+
 ### 4.18 Legendas e recarregar por fora
 
 - `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas

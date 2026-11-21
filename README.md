@@ -112,6 +112,9 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 - **Passagens: como passa** — apertando Interagir (porta) ou **ao atravessar** (contínua: fim de rua, corredor). Escolhe-se
   no Mapa (painel da passagem ou da conexão) ou nas Propriedades. Quem chega por uma passagem contínua só volta depois de
   sair dela. Passagem fora dos limites da fase é avisada no Mapa e no Log.
+- **Tela do jogo** (`Q`): ajusta o quadro laranja (o pedaço do cenário que o jogador vê). Arraste os cantos
+  (mantém a proporção, passos de 16 px) ou escolha 320×180 / 480×270 / 640×360 / 960×540; mostra se a escala fica
+  nítida em Full HD. "Padrão do projeto" vale para as fases novas; "Aplicar em todas" muda todas as fases.
 - **Zona** (`Z`): arraste no cenário para criar uma área invisível no jogo (roxa no editor). Com o comportamento
   **Gatilho**, ao entrar: mostrar mensagem, **fazer inimigos surgirem** (spawner/emboscada: no inimigo, "Aparece quando
   entrar em…"), ligar/desligar luzes, apagar/acender a sala ou acionar um objeto; uma vez ou sempre. Código: `aoTocar` /
@@ -172,7 +175,7 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 | Sólido ↔ atravessável (modo Colisão) | `X` |
 | Polígono/linha: terminar · desfazer ponto · cancelar | `Enter` ou duplo clique · `Backspace` · `Esc` |
 | Personagens / Inimigos / HUD / Mapa / Controles / Código / Log | `K` / `N` / `U` / `M` / `B` / `O` / `L` |
-| Zona / Iluminação / prévia do escuro | `Z` / `Y` / `Shift+Y` |
+| Tela do jogo / Zona / Iluminação / prévia do escuro | `Q` / `Z` / `Y` / `Shift+Y` |
 | ▶ Testar / voltar | `F5` / `Esc` (no teste: teclas da ferramenta Controles; `F6` reinicia) |
 | Mostrar colisões / prévia de efeitos | `Shift+C` / `Shift+E` |
 | Mostrar/ocultar caixa de ferramentas | `T` |
