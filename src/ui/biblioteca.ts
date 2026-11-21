@@ -1,6 +1,6 @@
 // Painel esquerdo: assets do projeto agrupados em "Em uso" (jogo/assets) e "Apoio" (resto da pasta).
 import { nomeDoArquivo } from '../core/fase';
-import type { Plataforma } from '../plataforma/plataforma';
+import { anticache, type Plataforma } from '../plataforma/plataforma';
 import { el } from './dom';
 import { dica } from './legenda';
 
@@ -13,6 +13,8 @@ export class Biblioteca {
   /** Botão "Limpar sem uso" no grupo Em uso (null = não mostrar). */
   aoLimpar: (() => void) | null = null;
 
+  /** Botão Atualizar: rever a pasta (imagens novas, trocadas ou apagadas). */
+  aoAtualizar: () => void = () => {};
   /** Duplo clique: adicionar no centro da visão, na camada ativa. */
   aoAdicionar: (caminhoRaiz: string) => void = () => {};
 
@@ -20,8 +22,11 @@ export class Biblioteca {
     const busca = el('input', { type: 'search', placeholder: 'Buscar asset…', 'aria-label': 'Buscar asset' });
     busca.addEventListener('input', () => { this.filtro = busca.value.trim().toLowerCase(); this.render(); });
     this.lista = el('div', { class: 'bib-lista' });
+    const atualizar = el('button', { type: 'button', class: 'bib-atualizar', 'aria-label': 'Atualizar a biblioteca' }, '⟳ Atualizar');
+    dica(atualizar, 'Atualizar a biblioteca', 'Lê a pasta do projeto de novo: imagens novas aparecem, as apagadas somem e as que você trocou (mesmo nome) são recarregadas no cenário, nas miniaturas e nas cópias de jogo/assets.', 'F9');
+    atualizar.addEventListener('click', () => this.aoAtualizar());
     raiz.append(
-      el('div', { class: 'painel-titulo' }, 'Biblioteca'),
+      el('div', { class: 'painel-titulo bib-titulo' }, el('span', {}, 'Biblioteca'), atualizar),
       el('div', { class: 'bib-busca' }, busca),
       this.lista,
       el('div', { class: 'dica' }, 'Arraste para o cenário ou dê duplo clique para pôr no centro da camada ativa.'),
@@ -76,7 +81,7 @@ export class Biblioteca {
 
   private item(caminho: string): HTMLElement {
     const nome = nomeDoArquivo(caminho);
-    const img = el('img', { src: this.plat.urlRaiz(caminho), alt: '', loading: 'lazy', draggable: 'false' });
+    const img = el('img', { src: this.plat.urlRaiz(caminho) + anticache(), alt: '', loading: 'lazy', draggable: 'false' });
     const it = el('div', { class: 'bib-item', draggable: 'true', tabindex: 0, 'data-caminho': caminho },
       el('div', { class: 'bib-miniatura' }, img),
       el('span', {}, nome));

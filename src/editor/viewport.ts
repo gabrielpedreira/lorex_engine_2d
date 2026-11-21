@@ -12,7 +12,7 @@ import { novoIdInimigo } from '../core/fase';
 import type { TipoInimigo } from './inimigosTeste';
 import { desenharInicio, sobreInicio } from './colisoes';
 import { FerramentaColisao } from './ferramentaColisao';
-import { urlAsset, type Plataforma } from '../plataforma/plataforma';
+import { anticache, urlAsset, type Plataforma } from '../plataforma/plataforma';
 import type { Estado } from './estado';
 
 // Pixel art: nunca suavizar ao ampliar
@@ -36,6 +36,9 @@ export function escalaFullHd(w: number, h: number) {
   const k = Math.min(1920 / w, 1080 / h);
   return Number.isInteger(k) ? `×${k} em Full HD (nítido)` : `×${k.toFixed(2).replace('.', ',')} em Full HD (${k >= 1 ? 'escala quebrada: pode borrar' : 'maior que Full HD'})`;
 }
+
+/** Seta de navegação: uma passagem da sala aberta que leva a outra sala (atalho para abrir a outra). */
+export interface SetaNav { id: string; nome: string; arquivo: string; x: number; y: number; w: number; h: number }
 
 export const NIVEIS_ZOOM = [0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 12, 16];
 const TAM_ALCA = 8;
@@ -116,6 +119,11 @@ export class Viewport {
 
   /** Chamado a cada quadro (ms desde o anterior), antes de desenhar. Usado pelo ▶ Testar. */
   aoQuadro: ((dtMs: number) => void) | null = null;
+  /** Setas de navegação entre salas (fora da área da fase, apontando para o lado da passagem). */
+  private setas: SetaNav[] = [];
+  private camadaSetas: HTMLElement | null = null;
+  /** Clique numa seta: abrir a sala de destino. */
+  aoNavegar: (arquivo: string) => void = () => {};
   /** Ferramenta Tela do jogo: o tamanho da tela do jogador mudou. */
   aoMudarTela: () => void = () => {};
   /** Ferramenta Zona: um retângulo foi desenhado (mundo). */
@@ -379,10 +387,19 @@ export class Viewport {
   async texturaRaiz(caminhoRaiz: string): Promise<Texture> {
     const cache = this.texturasRaiz.get(caminhoRaiz);
     if (cache) return cache;
-    const tex = await Assets.load<Texture>({ src: this.plat.urlRaiz(caminhoRaiz), parser: 'texture' });
+    const tex = await Assets.load<Texture>({ src: this.plat.urlRaiz(caminhoRaiz) + anticache(), parser: 'texture' });
     tex.source.scaleMode = 'nearest';
     this.texturasRaiz.set(caminhoRaiz, tex);
     return tex;
+  }
+
+  /** "Atualizar" da biblioteca: esquece as imagens carregadas e busca de novo (as trocadas na pasta aparecem). */
+  recarregarTexturas() {
+    this.texturas.clear();
+    this.texturasRaiz.clear();
+    this.quadrosFolha.clear();
+    this.carregando.clear();
+    this.sincronizar();
   }
 
   /** Tamanho da imagem original, se já carregada. */
@@ -394,7 +411,7 @@ export class Viewport {
   async textura(asset: string): Promise<Texture> {
     const cache = this.texturas.get(asset);
     if (cache) return cache;
-    const tex = await Assets.load<Texture>({ src: urlAsset(this.plat, asset), parser: 'texture' });
+    const tex = await Assets.load<Texture>({ src: urlAsset(this.plat, asset) + anticache(), parser: 'texture' });
     tex.source.scaleMode = 'nearest';
     this.texturas.set(asset, tex);
     return tex;
@@ -686,7 +703,7 @@ export class Viewport {
       cont.scale.set(zoom);
     }
     const { w, h } = this.tamanhoTela();
-    const chave = `${x},${y},${zoom},${this.estado.fase.objetos.length},${this.estado.fase.objetos.reduce((n, o) => n + (o.tipo === 'interativo' ? o.x + o.y * 7 + o.escala * 13 : 0), 0)},${this.estado.previaParallax},${JSON.stringify(this.estado.fase.camadas)},${this.estado.fase.resolucaoBase},${w},${h},${this.estado.grade},${this.hover},${this.estado.selecionado},${JSON.stringify(this.estado.objetoSelecionado() ?? '')},${this.estado.fase.tamanho},${this.estado.fase.corFundo},${this.estado.modo},${this.estado.mostrarColisoes},${this.estado.colisaoSelecionada},${JSON.stringify(this.estado.fase.colisoes)},${this.ferrColisao.versao},${this.estado.testando},${this.estado.fase.spawnJogador},${JSON.stringify(this.guias)},${JSON.stringify(this.estado.fase.inimigos)},${this.estado.inimigoSelecionado},${this.ocultarInimigosEditor},${JSON.stringify(this.estado.fase.luzes)},${JSON.stringify(this.estado.fase.iluminacao)},${this.estado.luzSelecionada},${this.estado.previaLuz},${JSON.stringify(this.arraste?.tipo === 'zona' ? this.arraste : null)}`;
+    const chave = `${x},${y},${zoom},${this.estado.fase.objetos.length},${this.estado.fase.objetos.reduce((n, o) => n + (o.tipo === 'interativo' ? o.x + o.y * 7 + o.escala * 13 : 0), 0)},${this.estado.previaParallax},${JSON.stringify(this.estado.fase.camadas)},${this.estado.fase.resolucaoBase},${w},${h},${this.estado.grade},${this.hover},${this.estado.selecionado},${JSON.stringify(this.estado.objetoSelecionado() ?? '')},${this.estado.fase.tamanho},${this.estado.fase.corFundo},${this.estado.modo},${this.estado.mostrarColisoes},${this.estado.colisaoSelecionada},${JSON.stringify(this.estado.fase.colisoes)},${this.ferrColisao.versao},${this.estado.testando},${this.estado.fase.spawnJogador},${JSON.stringify(this.guias)},${JSON.stringify(this.estado.fase.inimigos)},${this.estado.inimigoSelecionado},${this.ocultarInimigosEditor},${JSON.stringify(this.estado.fase.luzes)},${JSON.stringify(this.estado.fase.iluminacao)},${this.estado.luzSelecionada},${this.estado.previaLuz},${JSON.stringify(this.arraste?.tipo === 'zona' ? this.arraste : null)},${this.setas.length}`;
     if (this.carimbo) this.atualizarFantasma();
     if (chave === this.chaveCamera) return;
     this.chaveCamera = chave;
@@ -694,6 +711,50 @@ export class Viewport {
     this.desenharGrade(w, h);
     this.desenharColisoesEInicio();
     this.desenharOverlay();
+    this.posicionarSetas();
+  }
+
+  definirSetas(lista: SetaNav[]) {
+    this.setas = lista;
+    if (!this.camadaSetas) { this.camadaSetas = document.createElement('div'); this.camadaSetas.className = 'setas-nav'; this.el.append(this.camadaSetas); }
+    this.camadaSetas.replaceChildren(...lista.map((s) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'seta-nav';
+      b.dataset.id = s.id;
+      b.innerHTML = '<i></i><span></span>';
+      b.querySelector('span')!.textContent = s.nome;
+      b.title = `Ir para ${s.nome} (${s.arquivo}) — abre a sala no editor`;
+      b.addEventListener('click', () => this.aoNavegar(s.arquivo));
+      return b;
+    }));
+    this.chaveCamera = '';
+  }
+
+  /** Lado da fase onde fica a seta: esquerda/direita para passagens nas bordas, em cima para as do meio. */
+  private posicionarSetas() {
+    const cam = this.camadaSetas;
+    if (!cam) return;
+    cam.hidden = this.estado.testando || !this.setas.length;
+    if (cam.hidden) return;
+    const [fw, fh] = this.estado.fase.tamanho;
+    const a = this.camadaParaTela(0, 0, ''), b = this.camadaParaTela(fw, fh, '');
+    const usados: { lado: string; v: number }[] = [];
+    for (const s of this.setas) {
+      const el = cam.querySelector<HTMLElement>(`[data-id="${CSS.escape(s.id)}"]`);
+      if (!el) continue;
+      const rel = (s.x + s.w / 2) / fw;
+      const lado = rel < 0.12 ? 'esquerda' : rel > 0.88 ? 'direita' : 'cima';
+      el.dataset.lado = lado;
+      const centro = this.camadaParaTela(s.x + s.w / 2, s.y + s.h / 2, '');
+      let v = lado === 'cima' ? centro.x : Math.max(a.y + 30, Math.min(b.y - 30, centro.y));
+      // Não deixa duas setas do mesmo lado uma em cima da outra
+      while (usados.some((u) => u.lado === lado && Math.abs(u.v - v) < (lado === 'cima' ? 120 : 70))) v += lado === 'cima' ? 120 : 70;
+      usados.push({ lado, v });
+      if (lado === 'esquerda') { el.style.left = `${Math.round(a.x - 16)}px`; el.style.top = `${Math.round(v)}px`; }
+      else if (lado === 'direita') { el.style.left = `${Math.round(b.x + 16)}px`; el.style.top = `${Math.round(v)}px`; }
+      else { el.style.left = `${Math.round(v)}px`; el.style.top = `${Math.round(a.y - 14)}px`; }
+    }
   }
 
   private desenharColisoesEInicio() {

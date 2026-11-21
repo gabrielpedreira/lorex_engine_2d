@@ -65,6 +65,8 @@ export interface Plataforma {
   projetoAtual(): Promise<InfoProjeto | null>;
   /** Imagens do projeto, caminhos relativos à raiz (ex.: "chaves e itens/chave.png"). */
   listarAssets(): Promise<string[]>;
+  /** Recopia para jogo/assets as imagens cujo original (apoio) é mais novo que a cópia. Devolve as atualizadas. */
+  atualizarCopias(pares: [string, string][]): Promise<string[]>;
   /** Sons do projeto (.ogg, .mp3, .wav), caminhos relativos à raiz. */
   listarSons(): Promise<string[]>;
   /** Garante que o asset esteja em jogo/assets e devolve o caminho relativo a jogo/. categoria: subpasta (ex.: "personagens/lorena"). */
@@ -85,6 +87,12 @@ export interface Plataforma {
   /** URL para exibir um arquivo relativo à raiz do projeto. */
   urlRaiz(caminhoRaiz: string): string;
 }
+
+/** Muda quando o usuário pede para atualizar as imagens: entra na URL para não usar a versão antiga em cache. */
+export let versaoImagens = 0;
+export function novaVersaoImagens() { versaoImagens = Date.now(); }
+/** Sufixo de URL que força recarregar a imagem depois de "Atualizar". */
+export const anticache = () => (versaoImagens ? `?v=${versaoImagens}` : '');
 
 /** URL de um asset usado em fase (caminho relativo a jogo/). */
 export function urlAsset(p: Plataforma, caminhoJogo: string): string {

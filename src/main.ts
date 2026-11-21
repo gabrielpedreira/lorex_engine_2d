@@ -46,10 +46,10 @@ import type { FontesScripts } from './editor/motorScripts';
 import { normalizarPersonagem, type Personagem } from './core/personagem';
 import { JOGADOR_PADRAO } from './core/fisica';
 import { TelaInicio } from './ui/inicio';
-import { CONFIG_PADRAO, urlAsset } from './plataforma/plataforma';
+import { CONFIG_PADRAO, novaVersaoImagens, urlAsset } from './plataforma/plataforma';
 import { EditorMapa, type InfoSala } from './ui/mapa';
 import { TelaTransicao } from './editor/transicao';
-import { conexaoDaPassagem, limparMapa, normalizarMapa, resumoTransicao } from './core/mapa';
+import { conexaoDaPassagem, limparMapa, normalizarMapa, resumoTransicao, viagemDe } from './core/mapa';
 
 const plat: Plataforma = temElectron() ? new PlataformaElectron() : new PlataformaNavegador();
 const estado = new Estado();
@@ -321,6 +321,20 @@ async function adicionarAsset(caminhoRaiz: string, sx?: number, sy?: number, tip
   }
 }
 viewport.aoSoltarAsset = (c, sx, sy) => { void adicionarAsset(c, sx, sy); };
+// Biblioteca › Atualizar (F9): imagens novas, apagadas ou trocadas na pasta
+async function atualizarBiblioteca() {
+  const pares: [string, string][] = estado.fase.objetos.filter((o) => o.origem && o.asset).map((o) => [o.origem!, o.asset]);
+  for (const t of tiposInimigo.values()) for (const a of Object.values(t.p.animacoes)) if (a.origem) pares.push([a.origem, a.folha]);
+  const copiadas = await plat.atualizarCopias(pares);
+  novaVersaoImagens();
+  viewport.recarregarTexturas();
+  await biblioteca.recarregar();
+  ferramentas.definir(ferramentasAtuais, biblioteca.caminhos);
+  await carregarTiposInimigo();
+  LOG.add({ cat: 'sistema', texto: `Biblioteca atualizada: ${biblioteca.caminhos.length} imagem(ns)${copiadas.length ? ` · ${copiadas.length} cópia(s) em jogo/assets atualizada(s): ${copiadas.join(', ')}` : ''}` });
+  estado.avisar(`Biblioteca atualizada${copiadas.length ? ` (${copiadas.length} imagem(ns) trocada(s) recarregada(s))` : ''}.`);
+}
+biblioteca.aoAtualizar = () => void atualizarBiblioteca();
 // Ferramenta Zona: retângulo desenhado vira um objeto sem imagem (gatilho por padrão)
 viewport.aoCriarZona = (x, y, w, h) => {
   const camada = estado.fase.camadas.find((c) => c.id === 'objetos')?.id ?? estado.camadaAtiva;
@@ -891,6 +905,7 @@ const editorMapa = new EditorMapa({
     salvarConfigDepois();
     if (motivo) LOG.add({ cat: 'sistema', texto: `Mapa: ${motivo}` });
     avisarCodigoMudou();
+    atualizarSetas(true);
   },
   aoAbrirSala: (arquivo) => void abrirFase(arquivo),
   criarSala: async (nome) => {
@@ -951,6 +966,36 @@ async function alterarFaseArquivo(arquivo: string, fn: (f: import('./core/tipos'
   fn(f);
   await plat.salvarFase(arquivo, JSON.stringify(f, null, 2));
 }
+// ---------- Setas de navegação no cenário (passagens que levam a outras salas) ----------
+const nomesSalas = new Map<string, string>();
+let timerSetas = 0;
+function atualizarSetas(limparNomes = false) {
+  if (limparNomes) nomesSalas.clear();
+  clearTimeout(timerSetas);
+  timerSetas = window.setTimeout(async () => {
+    const arquivo = estado.arquivoFase ?? '';
+    const mapa = normalizarMapa(config.mapa);
+    const setas: import('./editor/viewport').SetaNav[] = [];
+    for (const o of estado.fase.objetos) {
+      const c = comportamentoDe(o);
+      if (c?.tipo !== 'saida') continue;
+      const destino = viagemDe(mapa, arquivo, o.id)?.fase || c.destino;
+      if (!destino || destino === arquivo) continue;
+      if (!nomesSalas.has(destino)) {
+        try { nomesSalas.set(destino, normalizarFase(JSON.parse(await plat.lerFase(destino))).nome); } catch { nomesSalas.set(destino, destino); }
+      }
+      setas.push({ id: o.id, nome: nomesSalas.get(destino)!, arquivo: destino, x: o.x, y: o.y, w: o.w * o.escala, h: o.h * o.escala });
+    }
+    viewport.definirSetas(setas);
+  }, 150);
+}
+viewport.aoNavegar = (arq) => {
+  LOG.add({ cat: 'sistema', texto: `Seta: abrindo ${arq}` });
+  void abrirFase(arq);
+};
+estado.on('fase', () => atualizarSetas());
+estado.on('arquivo', () => atualizarSetas());
+
 async function abrirMapa() {
   if (estado.testando) teste.parar();
   if (editorPersonagens.aberta) await editorPersonagens.fechar();
@@ -1281,6 +1326,7 @@ function digitando(): boolean {
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'F1') { e.preventDefault(); guiaAtalhos.alternar(); return; }
+  if (e.key === 'F9' && !estado.testando) { e.preventDefault(); void atualizarBiblioteca(); return; }
   if (document.querySelector('.modal-fundo') || inicio.aberta || editorPersonagens.aberta || editorControles.aberta || painelCodigo.aberta || editorHud.aberta || editorMapa.aberta || telaTransicao.ativa) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
@@ -1373,6 +1419,7 @@ plat.aoMudarProjeto(async (m) => {
   if (m.tipo === 'config') {
     config = { ...CONFIG_PADRAO, ...((await plat.lerConfigProjeto()) ?? {}) };
     if (editorMapa.aberta) void abrirMapa();
+    atualizarSetas(true);
     ferramentasAtuais = config.ferramentas ?? [];
     ferramentas.definir(ferramentasAtuais, biblioteca.caminhos);
     estado.avisar('Configuração do projeto atualizada por fora.');
@@ -1381,6 +1428,7 @@ plat.aoMudarProjeto(async (m) => {
   // Fase
   await atualizarListaFases();
   if (editorMapa.aberta) editorMapa.atualizarSalas(await salasDoProjeto());
+  atualizarSetas(true);
   if (inicio.aberta) await inicio.render();
   if (m.nome !== estado.arquivoFase) { estado.avisar(`A fase ${m.nome} foi alterada por fora.`); return; }
   if (estado.testando) teste.parar();

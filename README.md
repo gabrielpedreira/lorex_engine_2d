@@ -112,6 +112,10 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 - **Passagens: como passa** — apertando Interagir (porta) ou **ao atravessar** (contínua: fim de rua, corredor). Escolhe-se
   no Mapa (painel da passagem ou da conexão) ou nas Propriedades. Quem chega por uma passagem contínua só volta depois de
   sair dela. Passagem fora dos limites da fase é avisada no Mapa e no Log.
+- **Setas de navegação**: no cenário, cada passagem que leva a outra sala ganha uma seta fora da fase (à esquerda ou à
+  direita para passagens nas bordas, em cima para as do meio) com o nome da sala de destino; clicar abre aquela sala.
+- **Atualizar a biblioteca** (botão ⟳ ou `F9`): relê a pasta; imagens novas aparecem, apagadas somem e as trocadas (mesmo
+  nome) são recarregadas no cenário, nas miniaturas e nas cópias de `jogo/assets` (menos as otimizadas `_LxA`).
 - **Tela do jogo** (`Q`): ajusta o quadro laranja (o pedaço do cenário que o jogador vê). Arraste os cantos
   (mantém a proporção, passos de 16 px) ou escolha 320×180 / 480×270 / 640×360 / 960×540; mostra se a escala fica
   nítida em Full HD. "Padrão do projeto" vale para as fases novas; "Aplicar em todas" muda todas as fases.

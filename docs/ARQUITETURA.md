@@ -420,6 +420,16 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   (`alcaLuz`/`ajustarAlcaLuz`). `Iluminacao.lanternaForma` (cone segue o lado para onde o jogador olha). Código:
   `luz.forma`, `luz.angulo`.
 
+### 4.30 Setas de navegação e atualizar a biblioteca
+
+- `viewport.definirSetas(SetaNav[])`: camada DOM `.setas-nav` sobre o cenário; `posicionarSetas` põe cada seta fora da
+  fase (borda esquerda/direita se a passagem está nos 12% das pontas, senão em cima), sem sobrepor. `main.atualizarSetas`
+  monta a lista com `viagemDe` (ou o destino simples) e o nome da sala (cache `nomesSalas`); recalcula ao mudar a fase,
+  o Mapa ou arquivos por fora. Clique → `abrirFase`.
+- Atualizar (⟳/F9): `assets:atualizarCopias` recopia para `jogo/assets` os originais de apoio mais novos (objetos da fase
+  e folhas dos inimigos; ignora otimizadas `_LxA`), `novaVersaoImagens()` muda o `anticache()` das URLs (miniaturas e
+  texturas), `viewport.recarregarTexturas()` esvazia os caches e recarrega.
+
 ### 4.18 Legendas e recarregar por fora
 
 - `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas

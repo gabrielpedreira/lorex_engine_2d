@@ -707,3 +707,23 @@ body.corpo-codigo { margin: 0; height: 100vh; overflow: hidden; background: var(
 .mapa-sentido { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--borda); border-radius: 8px; background: var(--painel-2); }
 .rotulo-mini { font-size: 11px; color: var(--texto-2); }
 .check.destaque { padding: 6px 8px; border: 1px solid var(--acento); border-radius: 6px; background: var(--acento-suave); }
+
+/* ---------- Setas de navegação entre salas (cenário) ---------- */
+.setas-nav { position: absolute; inset: 0; pointer-events: none; z-index: 4; overflow: hidden; }
+.setas-nav[hidden] { display: none; }
+.seta-nav {
+  position: absolute; pointer-events: auto; display: flex; align-items: center; gap: 6px; padding: 2px 4px;
+  background: none; border: 0; color: #f2f5f4; font: 700 13px 'Segoe UI', sans-serif; cursor: pointer; white-space: nowrap;
+  text-shadow: 0 1px 3px #000;
+}
+.seta-nav i { display: block; width: 0; height: 0; filter: drop-shadow(0 1px 2px rgba(0,0,0,.6)); transition: transform .12s; }
+.seta-nav:hover i { transform: scale(1.15); }
+.seta-nav:hover span { color: var(--acento); }
+.seta-nav[data-lado='cima'] { flex-direction: column-reverse; transform: translate(-50%, -100%); }
+.seta-nav[data-lado='cima'] i { border-left: 18px solid transparent; border-right: 18px solid transparent; border-bottom: 24px solid var(--acento); }
+.seta-nav[data-lado='esquerda'] { flex-direction: column; transform: translate(-100%, -50%); }
+.seta-nav[data-lado='esquerda'] i { border-top: 18px solid transparent; border-bottom: 18px solid transparent; border-right: 24px solid var(--acento); }
+.seta-nav[data-lado='direita'] { flex-direction: column; transform: translate(0, -50%); }
+.seta-nav[data-lado='direita'] i { border-top: 18px solid transparent; border-bottom: 18px solid transparent; border-left: 24px solid var(--acento); }
+.bib-titulo { display: flex; align-items: center; justify-content: space-between; }
+.bib-atualizar { padding: 2px 8px; font-size: 11px; }

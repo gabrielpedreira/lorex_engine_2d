@@ -191,6 +191,26 @@ function registrarIpc() {
     return lista.sort((a, b) => a.localeCompare(b, 'pt-BR'));
   });
 
+  // "Atualizar" da biblioteca: o original de apoio foi trocado → recopia para jogo/assets (mesmo nome; cópias
+  // otimizadas _LxA ficam como estão, porque são reduções feitas a partir do original)
+  ipcMain.handle('assets:atualizarCopias', async (_e, pares) => {
+    const feitos = [];
+    for (const [origem, asset] of Array.isArray(pares) ? pares : []) {
+      try {
+        if (typeof origem !== 'string' || typeof asset !== 'string' || origem.startsWith('jogo/')) continue;
+        if (/_\d+x\d+\.png$/i.test(asset)) continue;
+        const o = resolverDentroDoProjeto(origem), d = resolverDentroDoProjeto('jogo/' + asset);
+        const so = fs.statSync(o), sd = fs.existsSync(d) ? fs.statSync(d) : null;
+        if (sd && so.mtimeMs <= sd.mtimeMs && so.size === sd.size) continue;
+        marcarEscrita(d);
+        await fsp.mkdir(path.dirname(d), { recursive: true });
+        await fsp.copyFile(o, d);
+        feitos.push(asset);
+      } catch { /* original sumiu: mantém a cópia */ }
+    }
+    return feitos;
+  });
+
   // Se o asset é do material de apoio, copia para jogo/assets/<categoria>/ (o original fica onde está).
   ipcMain.handle('assets:garantirEmUso', async (_e, relRaiz, categoriaPedida) => {
     if (relRaiz.startsWith('jogo/')) return relRaiz.slice('jogo/'.length);

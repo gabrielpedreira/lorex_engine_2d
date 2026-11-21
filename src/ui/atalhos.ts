@@ -13,7 +13,7 @@ export function gruposAtalhos(teclasTeste: [string, string][]): Grupo[] {
       ['Espaço + arrastar', 'Mover a visão (também botão do meio)'], ['Shift + roda', 'Rolar na horizontal'],
       ['G', 'Mostrar grade'], ['E', 'Encaixar na grade'], ['P', 'Prévia de parallax'],
       ['Shift+C', 'Mostrar colisões'], ['Shift+E', 'Prévia dos efeitos'], ['T', 'Mostrar/ocultar a caixa de ferramentas'],
-      ['L', 'Mostrar/ocultar o Log'], ['F1', 'Este guia'],
+      ['L', 'Mostrar/ocultar o Log'], ['F9', 'Atualizar a biblioteca (imagens trocadas na pasta)'], ['Setas ▲◀▶ fora da fase', 'Abrir a sala para onde a passagem leva'], ['F1', 'Este guia'],
     ] },
     { titulo: 'Ferramentas (barra lateral)', itens: [
       ['V', 'Selecionar e mover'], ['H', 'Mover a visão'], ['C', 'Colisão'], ['I', 'Início do jogador'],
