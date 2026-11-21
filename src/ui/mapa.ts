@@ -64,6 +64,9 @@ const svg = <K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string,
 function rotuloCurto(t: Transicao) {
   return ({ corte: 'Corte', escurecer: 'Escurecer', tela: 'Tela cheia' } as const)[t.efeito] + (t.som ? ' ♪' : '');
 }
+function rotuloConexao(c: Conexao) {
+  return c.transicaoVolta && !c.mesmoNosDoisSentidos && c.maoDupla ? `→ ${rotuloCurto(c.transicao)} · ← ${rotuloCurto(c.transicaoVolta)}` : rotuloCurto(c.transicao);
+}
 
 export class EditorMapa {
   private raiz: HTMLElement;
@@ -266,10 +269,10 @@ export class EditorMapa {
       const selC = this.sel?.tipo === 'con' && this.sel.id === c.id;
       camadaLinhas.append(svg('path', { class: 'mapa-linha' + (selC ? ' sel' : '') + (c.maoDupla ? '' : ' ida'), d: cam.d, 'data-con': c.id }));
       const { x, y } = cam.meio;
-      const vazio = c.transicao.efeito === 'corte' && !c.transicao.som;
+      const vazio = c.transicao.efeito === 'corte' && !c.transicao.som && (!c.transicaoVolta || c.mesmoNosDoisSentidos || (c.transicaoVolta.efeito === 'corte' && !c.transicaoVolta.som));
       const g = svg('g', { class: 'mapa-acao' + (selC ? ' sel' : '') + (vazio ? ' vazia' : ''), 'data-con': c.id });
       g.append(svg('polygon', { points: `${x},${y - 11} ${x + 11},${y} ${x},${y + 11} ${x - 11},${y}` }),
-        svg('text', { x, y: y + 24, class: 'mapa-acao-texto' }, rotuloCurto(c.transicao)),
+        svg('text', { x, y: y + 24, class: 'mapa-acao-texto' }, rotuloConexao(c)),
         svg('title', {}, `${resumoTransicao(c.transicao)} — clique para escolher o que acontece ao passar (tela de loading, som…)`));
       camadaAcoes.append(g);
     }
@@ -501,8 +504,13 @@ export class EditorMapa {
     const sel = el('select', {}, ...MODOS_PASSAGEM.map((m) => el('option', { value: m.id }, m.nome)));
     sel.value = g?.modo ?? 'interagir';
     sel.addEventListener('change', async () => {
-      this.salas = await this.acoes.modoPassagem(arquivo, id, sel.value as ModoPassagem);
-      this.mudou(`passagem ${g?.nome ?? id}: ${MODOS_PASSAGEM.find((m) => m.id === sel.value)?.nome}`);
+      const modo = sel.value as ModoPassagem;
+      this.salas = await this.acoes.modoPassagem(arquivo, id, modo);
+      // Conexão com o mesmo comportamento na ida e na volta: a outra ponta acompanha
+      const c = conexaoDaPassagem(this.mapa, arquivo, id);
+      const outra = c && c.mesmoNosDoisSentidos && c.maoDupla && c.b.passagem ? (c.a.fase === arquivo && c.a.passagem === id ? c.b : c.a) : null;
+      if (outra) this.salas = await this.acoes.modoPassagem(outra.fase, outra.passagem, modo);
+      this.mudou(`passagem ${g?.nome ?? id}: ${MODOS_PASSAGEM.find((m) => m.id === modo)?.nome}${outra ? ' (e a do outro lado)' : ''}`);
     });
     const lab = el('label', {}, rotulo);
     dica(lab, 'Como passa', MODOS_PASSAGEM.map((m) => `${m.nome}: ${m.texto}`).join(' '));
@@ -616,71 +624,124 @@ export class EditorMapa {
   }
 
   private painelConexao(c: Conexao) {
-    const t = c.transicao;
-    const campo = (rotulo: string, input: HTMLElement, texto: string) => {
-      const id = 'mapa-' + rotulo.replace(/\W+/g, '');
+    const mudar = (motivo: string, fn: () => void) => { fn(); this.mudou(motivo); };
+    const campoCom = (sufixo: string) => (rotulo: string, input: HTMLElement, texto: string) => {
+      const id = 'mapa-' + sufixo + rotulo.replace(/\W+/g, '');
       input.id = id;
       const lab = el('label', { for: id }, rotulo);
       dica(lab, rotulo, texto);
       return el('div', { class: 'campo largo' }, lab, input);
     };
-    const mudar = (motivo: string, fn: () => void) => { fn(); this.mudou(motivo); };
+    const volta = el('input', { type: 'checkbox' });
+    volta.checked = c.maoDupla;
+    volta.disabled = !c.b.passagem;
+    volta.addEventListener('change', () => mudar(`conexão ${c.id}: ${volta.checked ? 'mão dupla' : 'só ida'}`, () => { c.maoDupla = volta.checked; }));
+    const labVolta = el('label', { class: 'check' }, volta, 'Mão dupla (dá para voltar por ela)');
+    dica(labVolta, 'Mão dupla', c.b.passagem ? 'Marcado: a passagem de chegada também leva de volta.' : 'A chegada é o início da sala (não é uma passagem), então só vai.');
+    const doisLados = c.maoDupla && !!c.b.passagem;
+    const igual = el('input', { type: 'checkbox' });
+    igual.checked = c.mesmoNosDoisSentidos;
+    igual.addEventListener('change', async () => {
+      const ligar = igual.checked;
+      if (ligar) {
+        // A volta passa a ser igual à ida: mesma transição e mesmo "como passa"
+        delete c.transicaoVolta;
+        const modoIda = this.sala(c.a.fase)?.passagens.find((x) => x.id === c.a.passagem)?.modo;
+        if (modoIda && c.b.passagem) this.salas = await this.acoes.modoPassagem(c.b.fase, c.b.passagem, modoIda);
+      } else c.transicaoVolta = structuredClone(c.transicao);
+      c.mesmoNosDoisSentidos = ligar;
+      this.mudou(`conexão ${c.id}: ${ligar ? 'mesmo comportamento na ida e na volta' : 'ida e volta diferentes'}`);
+    });
+    const labIgual = el('label', { class: 'check destaque' }, igual, 'Mesmo comportamento na ida e na volta');
+    dica(labIgual, 'Ida e volta', 'Marcado: o que você escolher (como passa, efeito, som) vale para os dois sentidos, e as duas passagens mudam juntas. Desmarcado: a ida e a volta têm cada uma a sua configuração.');
+    const excluir = el('button', { type: 'button', class: 'perigo' }, 'Excluir conexão');
+    dica(excluir, 'Excluir conexão', 'Desliga as duas passagens.', 'Del');
+    excluir.addEventListener('click', () => void this.excluirSelecionado());
+    const inverter = el('button', { type: 'button', class: 'secundario' }, 'Inverter sentido');
+    dica(inverter, 'Inverter', 'Troca origem e chegada (só faz diferença sem mão dupla ou com ida e volta diferentes).');
+    inverter.disabled = !c.b.passagem;
+    inverter.addEventListener('click', () => mudar(`conexão ${c.id} invertida`, () => {
+      const x = c.a; c.a = c.b; c.b = x;
+      if (c.transicaoVolta) { const t = c.transicao; c.transicao = c.transicaoVolta; c.transicaoVolta = t; }
+    }));
+
+    const blocos: (HTMLElement | string)[] = [
+      el('h3', {}, 'Conexão'),
+      el('p', { class: 'mapa-rota' }, el('strong', {}, this.nomePonta(c.a)), el('span', {}, c.maoDupla ? ' ⇄ ' : ' → '), el('strong', {}, this.nomePonta(c.b))),
+      labVolta,
+      doisLados ? labIgual : '',
+    ];
+    if (!doisLados || c.mesmoNosDoisSentidos) {
+      blocos.push(el('h3', {}, doisLados ? 'Ida e volta' : 'Ida'),
+        doisLados ? this.seletorModoAmbos(c) : this.seletorModo(c.a.fase, c.a.passagem, `Como passa em ${this.nomePonta(c.a)}`),
+        ...this.blocoTransicao(c, c.transicao, 'i', campoCom('i'), mudar));
+    } else {
+      blocos.push(el('div', { class: 'mapa-sentido' }, el('h3', {}, `Ida: ${this.nomePonta(c.a)} → ${this.nomePonta(c.b)}`),
+        this.seletorModo(c.a.fase, c.a.passagem, 'Como passa'),
+        ...this.blocoTransicao(c, c.transicao, 'i', campoCom('i'), mudar)));
+      const tv = c.transicaoVolta ?? (c.transicaoVolta = structuredClone(c.transicao));
+      blocos.push(el('div', { class: 'mapa-sentido' }, el('h3', {}, `Volta: ${this.nomePonta(c.b)} → ${this.nomePonta(c.a)}`),
+        this.seletorModo(c.b.fase, c.b.passagem, 'Como passa'),
+        ...this.blocoTransicao(c, tv, 'v', campoCom('v'), mudar)));
+    }
+    blocos.push(el('div', { class: 'secao acoes' }, inverter, excluir),
+      el('p', { class: 'dica-campo' }, 'No código (jogo.js ou script da fase): aoPassar(jogo, passagem, destino) roda antes de passar e pode mudar destino.transicao ou cancelar (return false).'));
+    this.painel.replaceChildren(...blocos);
+  }
+
+  /** "Como passa" valendo para as duas passagens da conexão de uma vez. */
+  private seletorModoAmbos(c: Conexao) {
+    const ga = this.sala(c.a.fase)?.passagens.find((x) => x.id === c.a.passagem);
+    const gb = this.sala(c.b.fase)?.passagens.find((x) => x.id === c.b.passagem);
+    const sel = el('select', {}, ...MODOS_PASSAGEM.map((m) => el('option', { value: m.id }, m.nome)));
+    sel.value = ga?.modo ?? 'interagir';
+    sel.addEventListener('change', async () => {
+      const modo = sel.value as ModoPassagem;
+      this.salas = await this.acoes.modoPassagem(c.a.fase, c.a.passagem, modo);
+      this.salas = await this.acoes.modoPassagem(c.b.fase, c.b.passagem, modo);
+      this.mudou(`conexão ${c.id}: ${MODOS_PASSAGEM.find((m) => m.id === modo)?.nome} na ida e na volta`);
+    });
+    const lab = el('label', {}, 'Como passa (nas duas passagens)');
+    dica(lab, 'Como passa', MODOS_PASSAGEM.map((m) => `${m.nome}: ${m.texto}`).join(' '));
+    lab.append(sel);
+    const aviso = ga && gb && ga.modo !== gb.modo ? el('p', { class: 'aviso-texto' }, `Hoje as passagens estão diferentes (${ga.modo === 'tocar' ? 'ida ao atravessar' : 'ida com Interagir'}, ${gb.modo === 'tocar' ? 'volta ao atravessar' : 'volta com Interagir'}). Escolha acima para igualar.`) : '';
+    return el('div', { class: 'campo largo mapa-modo' }, lab, aviso);
+  }
+
+  /** Efeito, tempo, cor, animação, som e pré-visualização de UMA transição (ida ou volta). */
+  private blocoTransicao(c: Conexao, t: Transicao, sufixo: string, campo: (r: string, i: HTMLElement, t: string) => HTMLElement, mudar: (m: string, fn: () => void) => void): (HTMLElement | string)[] {
+    const nomeSentido = sufixo === 'v' ? ' (volta)' : '';
     const efeitos = el('div', { class: 'segmentado', role: 'radiogroup', 'aria-label': 'Efeito' });
     for (const e of EFEITOS_TRANSICAO) {
       const b = el('button', { type: 'button', class: t.efeito === e.id ? 'ativo' : '', role: 'radio', 'aria-checked': String(t.efeito === e.id) }, e.nome);
       dica(b, e.nome, e.texto);
-      b.addEventListener('click', () => mudar(`transição ${c.id}: ${e.nome}`, () => {
+      b.addEventListener('click', () => mudar(`transição ${c.id}${nomeSentido}: ${e.nome}`, () => {
         t.efeito = e.id as EfeitoTransicao;
         if (e.id === 'tela' && t.duracao < 0.8) t.duracao = 1.2;
         if (e.id === 'escurecer' && t.duracao > 1) t.duracao = 0.35;
       }));
       efeitos.append(b);
     }
-    const volta = el('input', { type: 'checkbox' });
-    volta.checked = c.maoDupla;
-    volta.disabled = !c.b.passagem;
-    volta.addEventListener('change', () => mudar(`conexão ${c.id}: ${volta.checked ? 'mão dupla' : 'só ida'}`, () => { c.maoDupla = volta.checked; }));
-    const labVolta = el('label', { class: 'check' }, volta, 'Mão dupla (volta pelo mesmo caminho)');
-    dica(labVolta, 'Mão dupla', c.b.passagem ? 'Marcado: a passagem de chegada também leva de volta, com a mesma transição.' : 'A chegada é o início da sala (não é uma passagem), então só vai.');
-    const prev = el('button', { type: 'button', class: 'primario largo' }, '▶ Pré-visualizar a transição');
-    dica(prev, 'Pré-visualizar', 'Mostra a transição em tela cheia, com o som, como no jogo.');
-    prev.addEventListener('click', () => this.acoes.previa(structuredClone(t)));
-    const excluir = el('button', { type: 'button', class: 'perigo' }, 'Excluir conexão');
-    dica(excluir, 'Excluir conexão', 'Desliga as duas passagens.', 'Del');
-    excluir.addEventListener('click', () => void this.excluirSelecionado());
-    const inverter = el('button', { type: 'button', class: 'secundario' }, 'Inverter sentido');
-    dica(inverter, 'Inverter', 'Troca origem e chegada (só faz diferença sem mão dupla).');
-    inverter.disabled = !c.b.passagem;
-    inverter.addEventListener('click', () => mudar(`conexão ${c.id} invertida`, () => { const x = c.a; c.a = c.b; c.b = x; }));
-
-    const blocos: (HTMLElement | string)[] = [
-      el('h3', {}, 'Conexão'),
-      el('p', { class: 'mapa-rota' }, el('strong', {}, this.nomePonta(c.a)), el('span', {}, c.maoDupla ? ' ⇄ ' : ' → '), el('strong', {}, this.nomePonta(c.b))),
-      labVolta,
-      el('h3', {}, 'Como o jogador passa'),
-      this.seletorModo(c.a.fase, c.a.passagem, `Em ${this.nomePonta(c.a)}`),
-      c.b.passagem ? this.seletorModo(c.b.fase, c.b.passagem, `Em ${this.nomePonta(c.b)}`) : '',
-      el('h3', {}, 'Ao passar (◆)'),
-      efeitos,
-      el('p', { class: 'dica-campo' }, EFEITOS_TRANSICAO.find((e) => e.id === t.efeito)?.texto ?? ''),
-    ];
+    const blocos: (HTMLElement | string)[] = [el('span', { class: 'rotulo-mini' }, 'Ao passar (◆)'), efeitos,
+      el('p', { class: 'dica-campo' }, EFEITOS_TRANSICAO.find((e) => e.id === t.efeito)?.texto ?? '')];
     if (t.efeito !== 'corte') {
       const cor = el('input', { type: 'color', value: t.cor });
-      cor.addEventListener('change', () => mudar(`transição ${c.id}: cor`, () => { t.cor = cor.value; }));
+      cor.addEventListener('change', () => mudar(`transição ${c.id}${nomeSentido}: cor`, () => { t.cor = cor.value; }));
       const dur = el('input', { type: 'number', value: t.duracao, step: 0.1, min: 0 });
-      dur.addEventListener('change', () => { const v = Number(dur.value); if (Number.isFinite(v)) mudar(`transição ${c.id}: ${v}s`, () => { t.duracao = Math.max(0, Math.min(30, v)); }); });
+      dur.addEventListener('change', () => { const v = Number(dur.value); if (Number.isFinite(v)) mudar(`transição ${c.id}${nomeSentido}: ${v}s`, () => { t.duracao = Math.max(0, Math.min(30, v)); }); });
       blocos.push(el('div', { class: 'linha2' },
         campo('Tempo mínimo (s)', dur, t.efeito === 'tela' ? 'Quanto a tela fica, no mínimo. Se a animação for mais longa, espera ela terminar.' : 'Quanto a tela fica escura antes de mostrar a sala nova.'),
         campo('Cor de fundo', cor, 'Cor da tela durante a transição (preto é o clássico).')));
     }
-    if (t.efeito === 'tela') blocos.push(...this.camposAnimacao(c, campo, mudar));
-    blocos.push(...this.camposSom(c, campo, mudar), prev, el('div', { class: 'secao acoes' }, inverter, excluir),
-      el('p', { class: 'dica-campo' }, 'No código (jogo.js ou script da fase): aoPassar(jogo, passagem, destino) roda antes de passar e pode mudar destino.transicao ou cancelar (return false).'));
-    this.painel.replaceChildren(...blocos);
+    if (t.efeito === 'tela') blocos.push(...this.camposAnimacao(c, t, campo, mudar));
+    const prev = el('button', { type: 'button', class: 'primario largo' }, `▶ Pré-visualizar${nomeSentido}`);
+    dica(prev, 'Pré-visualizar', 'Mostra a transição em tela cheia, com o som, como no jogo.');
+    prev.addEventListener('click', () => this.acoes.previa(structuredClone(t)));
+    blocos.push(...this.camposSom(c, t, campo, mudar), prev);
+    return blocos;
   }
 
-  private camposAnimacao(c: Conexao, campo: (r: string, i: HTMLElement, t: string) => HTMLElement, mudar: (m: string, fn: () => void) => void): HTMLElement[] {
-    const t = c.transicao;
+  private camposAnimacao(c: Conexao, t: Transicao, campo: (r: string, i: HTMLElement, t: string) => HTMLElement, mudar: (m: string, fn: () => void) => void): HTMLElement[] {
     const sel = el('select', {}, el('option', { value: '' }, t.animacao ? 'Carregando lista…' : 'Nenhuma (só a cor de fundo)'));
     if (t.animacao) sel.append(el('option', { value: 'jogo/' + t.animacao }, t.animacao));
     sel.value = t.animacao ? 'jogo/' + t.animacao : '';
@@ -725,8 +786,7 @@ export class EditorMapa {
     return blocos;
   }
 
-  private camposSom(c: Conexao, campo: (r: string, i: HTMLElement, t: string) => HTMLElement, mudar: (m: string, fn: () => void) => void): HTMLElement[] {
-    const t = c.transicao;
+  private camposSom(c: Conexao, t: Transicao, campo: (r: string, i: HTMLElement, t: string) => HTMLElement, mudar: (m: string, fn: () => void) => void): HTMLElement[] {
     const sel = el('select', {}, el('option', { value: '' }, 'Nenhum'));
     if (t.som) sel.append(el('option', { value: 'jogo/' + t.som }, t.som));
     sel.value = t.som ? 'jogo/' + t.som : '';

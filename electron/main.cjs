@@ -252,7 +252,7 @@ function registrarIpc() {
     }
     try {
       const cfg = JSON.parse(await fsp.readFile(path.join(raizProjeto, 'jogo', 'projeto.json'), 'utf-8'));
-      for (const c of cfg.mapa?.conexoes ?? []) { if (c.transicao?.animacao) usados.add(c.transicao.animacao); }
+      for (const c of cfg.mapa?.conexoes ?? []) { if (c.transicao?.animacao) usados.add(c.transicao.animacao); if (c.transicaoVolta?.animacao) usados.add(c.transicaoVolta.animacao); }
     } catch { /* sem projeto.json */ }
     const arquivos = [];
     const percorrer = async (dir, rel) => {

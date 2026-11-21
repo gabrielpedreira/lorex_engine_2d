@@ -352,6 +352,9 @@ interface Luz {
   raio: number;
   /** 0 a 1. */
   intensidade: number;
+  readonly forma: "circulo" | "cone" | "retangulo";
+  /** Cone: direção em graus (0 = direita, 90 = baixo); retângulo: rotação. Ex.: holofote girando. */
+  angulo: number;
   ligar(): void;
   desligar(): void;
   alternar(): void;

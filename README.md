@@ -103,7 +103,7 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
   um local (área nova, já com chão); clique no nome para renomear. Para conectar duas salas, arraste da **bolinha azul**
   da borda de uma até a outra: as passagens são criadas nas duas (zonas invisíveis no jogo, vermelhas no editor). Também
   dá para arrastar de uma passagem existente (ex.: o objeto de uma porta) até outra passagem, até o meio de uma sala ou
-  até o ▼ início dela; criar e excluir passagens pelo painel. A conexão pode ser de mão dupla. No meio de cada ligação há um **losango** (◆) que define o que acontece ao passar: **corte seco**,
+  até o ▼ início dela; criar e excluir passagens pelo painel. A conexão pode ser de mão dupla e ter o **mesmo comportamento na ida e na volta** (padrão: como passa, efeito e som valem nos dois sentidos e as duas passagens mudam juntas) ou ida e volta diferentes. No meio de cada ligação há um **losango** (◆) que define o que acontece ao passar: **corte seco**,
   **escurecer** ou **tela cheia animada** (um spritesheet tocando enquanto a próxima sala carrega, estilo Resident Evil
   clássico), com cor, tempo mínimo, texto e **som**. Pré-visualização em tela cheia. Salvo em `jogo/projeto.json`.
   No ▶ Testar, a passagem leva à outra sala com a transição, chegando na passagem de destino, com inventário, munição e
@@ -119,8 +119,10 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
   **Gatilho**, ao entrar: mostrar mensagem, **fazer inimigos surgirem** (spawner/emboscada: no inimigo, "Aparece quando
   entrar em…"), ligar/desligar luzes, apagar/acender a sala ou acionar um objeto; uma vez ou sempre. Código: `aoTocar` /
   `aoSair`. Trocando para Passagem, vira uma passagem contínua.
-- **Iluminação** (`Y`): "Fase escura" nas propriedades da fase (escuridão, cor do escuro e **lanterna** em volta do
-  jogador) e pontos de luz no cenário (clique cria; arraste o centro/borda; raio, intensidade, cor, tremular, ligada).
+- **Iluminação** (`Y`): "Fase escura" nas propriedades da fase (escuridão, cor do escuro e **lanterna** do jogador, em
+  volta ou apontada em cone) e luzes no cenário em **círculo** (lâmpada), **cone** (poste, holofote: direção e abertura)
+  ou **retângulo** (janela, luminária tubular), com intensidade, cor, tremular e ligada; a forma da luz nova se escolhe
+  na barra da ferramenta, e a alça muda raio, alcance/direção ou tamanho.
   `Shift+Y` mostra/oculta o escuro no editor. Código: `jogo.luz("Poste").desligar()`, `jogo.escura = true`.
 - **Inimigos** (`N`): coloque inimigos na fase (escolha o tipo, clique no cenário; ele pisa no chão abaixo), arraste
   e exclua. Os tipos são personagens **NPC** com a seção **Inimigo**: comportamento (ex.: **Zumbi** — perambula ao

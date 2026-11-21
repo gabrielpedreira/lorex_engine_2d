@@ -320,8 +320,8 @@ export class ModoTeste {
     this.viewport.quadroTeste = (o) => mundo.quadroAnim(o);
     this.viewport.luzTeste = {
       escura: () => mundo.escura,
-      luz: (l) => ({ ligada: mundo.luzes.get(l.id) ?? l.ligada, raio: mundo.ajusteLuz.get(l.id)?.raio ?? l.raio, intensidade: mundo.ajusteLuz.get(l.id)?.intensidade ?? l.intensidade }),
-      jogador: () => (this.jogador ? { x: this.jogador.x, y: this.jogador.y - this.jogador.cfg.altura / 2 } : null),
+      luz: (l) => ({ ligada: mundo.luzes.get(l.id) ?? l.ligada, raio: mundo.ajusteLuz.get(l.id)?.raio ?? l.raio, intensidade: mundo.ajusteLuz.get(l.id)?.intensidade ?? l.intensidade, angulo: mundo.ajusteLuz.get(l.id)?.angulo ?? l.angulo }),
+      jogador: () => (this.jogador ? { x: this.jogador.x, y: this.jogador.y - this.jogador.cfg.altura * 0.62, direita: this.jogador.olhandoDireita } : null),
     };
     this.tempoJogo = 0;
     this.agarradoAte = 0;

@@ -105,11 +105,16 @@ function normalizarObjeto(o: Partial<ObjetoFase>, camadaPadrao: string): ObjetoF
   };
 }
 
-export const iluminacaoPadrao = (): Iluminacao => ({ escura: false, escuridao: 0.85, cor: '#05070d', lanterna: 0 });
+export const iluminacaoPadrao = (): Iluminacao => ({ escura: false, escuridao: 0.85, cor: '#05070d', lanterna: 0, lanternaForma: 'circulo' });
 
 export function normalizarLuz(l: Partial<LuzFase>): LuzFase {
   return {
     id: String(l.id ?? 'luz_001'), nome: String(l.nome ?? l.id ?? 'Luz'),
+    forma: l.forma === 'cone' || l.forma === 'retangulo' ? l.forma : 'circulo',
+    angulo: Number.isFinite(Number(l.angulo)) ? Number(l.angulo) : 90,
+    abertura: Math.max(5, Math.min(170, Number(l.abertura) || 50)),
+    largura: Math.max(4, Number(l.largura) || 64),
+    altura: Math.max(4, Number(l.altura) || 96),
     x: Number(l.x) || 0, y: Number(l.y) || 0,
     raio: Math.max(8, Number(l.raio) || 96),
     intensidade: Math.max(0, Math.min(1, l.intensidade === undefined ? 1 : Number(l.intensidade))),

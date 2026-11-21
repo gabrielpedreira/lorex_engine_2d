@@ -134,7 +134,7 @@ export class MundoInterativo {
   escura = false;
   readonly luzes = new Map<string, boolean>();
   /** Raio/intensidade mudados pelo código durante o jogo. */
-  readonly ajusteLuz = new Map<string, { raio?: number; intensidade?: number }>();
+  readonly ajusteLuz = new Map<string, { raio?: number; intensidade?: number; angulo?: number }>();
   /** Animação de cada objeto animado: tocando desde "inicio" ou parada num quadro fixo. */
   private anims = new Map<string, { inicio: number; repetir: boolean } | { fixo: number }>();
 

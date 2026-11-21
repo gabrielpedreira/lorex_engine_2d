@@ -86,7 +86,9 @@ export class Viewport {
   private luzRT: RenderTexture | null = null;
   private texLuz: Texture | null = null;
   /** No ▶ Testar: estado das luzes no jogo (o código e os gatilhos ligam/desligam). */
-  luzTeste: { escura(): boolean; luz(l: LuzFase): { ligada: boolean; raio: number; intensidade: number }; jogador(): { x: number; y: number } | null } | null = null;
+  luzTeste: { escura(): boolean; luz(l: LuzFase): { ligada: boolean; raio: number; intensidade: number; angulo: number }; jogador(): { x: number; y: number; direita: boolean } | null } | null = null;
+  private texCone = new Map<number, Texture>();
+  private texRet: Texture | null = null;
   /** Carimbo armado pela caixa de ferramentas (caminho relativo à raiz do projeto). */
   private carimbo: { caminho: string; tex: Texture | null; escala: number } | null = null;
   private mouseTela: { x: number; y: number } | null = null;
@@ -879,9 +881,47 @@ export class Viewport {
     return this.texLuz;
   }
 
+  /** Cone de luz: ápice à esquerda, no meio da altura; aponta para a direita (gira pelo ângulo). */
+  private texturaCone(abertura: number): Texture {
+    const k = Math.round(abertura);
+    const t = this.texCone.get(k);
+    if (t) return t;
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 512;
+    const ctx = c.getContext('2d')!;
+    const meio = ((k / 2) * Math.PI) / 180;
+    const g = ctx.createRadialGradient(0, 256, 0, 0, 256, 256);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.5, 'rgba(255,255,255,0.7)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.filter = `blur(${Math.max(3, Math.round(k / 8))}px)`; // borda do facho suave
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(0, 256);
+    ctx.arc(0, 256, 250, -meio, meio);
+    ctx.closePath();
+    ctx.fill();
+    const tex = Texture.from(c);
+    this.texCone.set(k, tex);
+    return tex;
+  }
+
+  /** Retângulo de luz com bordas suaves (o miolo de 96 px = o tamanho pedido). */
+  private texturaRetangulo(): Texture {
+    if (this.texRet) return this.texRet;
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const ctx = c.getContext('2d')!;
+    ctx.filter = 'blur(9px)';
+    ctx.fillStyle = 'rgba(255,255,255,1)';
+    ctx.fillRect(22, 22, 84, 84);
+    this.texRet = Texture.from(c);
+    return this.texRet;
+  }
+
   /** Luz efetiva (no teste, o jogo pode ter desligado ou mudado). */
   private luzEfetiva(l: LuzFase) {
-    return this.luzTeste ? this.luzTeste.luz(l) : { ligada: l.ligada, raio: l.raio, intensidade: l.intensidade };
+    return this.luzTeste ? this.luzTeste.luz(l) : { ligada: l.ligada, raio: l.raio, intensidade: l.intensidade, angulo: l.angulo };
   }
 
   /** Escuridão da fase com as luzes recortando (a cada quadro: luzes tremulam e o jogador anda). */
@@ -902,19 +942,25 @@ export class Viewport {
     }
     // No editor a prévia é mais leve (dá para continuar enxergando o que se edita)
     this.luzEscuro.clear().rect(0, 0, w, h).fill({ color: il.cor, alpha: teste ? il.escuridao : Math.min(il.escuridao, 0.6) });
-    const tex = this.texturaLuz();
     const z = this.estado.camera.zoom;
     const t = performance.now() / 1000;
-    const lista: { x: number; y: number; raio: number; intensidade: number; cor: string; tremular: boolean; semente: number }[] = [];
+    type L = { x: number; y: number; forma: LuzFase['forma']; raio: number; angulo: number; abertura: number; largura: number; altura: number; intensidade: number; cor: string; tremular: boolean; semente: number };
+    const lista: L[] = [];
     f.luzes.forEach((l, i) => {
       const e = this.luzEfetiva(l);
-      if (e.ligada) lista.push({ x: l.x, y: l.y, raio: e.raio, intensidade: e.intensidade, cor: l.cor, tremular: l.tremular, semente: i * 7.3 });
+      if (e.ligada) lista.push({ ...l, raio: e.raio, intensidade: e.intensidade, angulo: e.angulo, semente: i * 7.3 });
     });
     const pj = teste?.jogador();
-    if (pj && il.lanterna > 0) lista.push({ x: pj.x, y: pj.y, raio: il.lanterna, intensidade: 1, cor: '#ffffff', tremular: false, semente: 0 });
+    if (pj && il.lanterna > 0) {
+      const base = { x: pj.x, y: pj.y, largura: 0, altura: 0, cor: '#ffffff', tremular: false, semente: 0 };
+      if (il.lanternaForma === 'cone') {
+        lista.push({ ...base, forma: 'cone', raio: il.lanterna * 2.2, angulo: pj.direita ? 0 : 180, abertura: 42, intensidade: 1 });
+        lista.push({ ...base, forma: 'circulo', raio: il.lanterna * 0.45, angulo: 0, abertura: 0, intensidade: 0.75 });
+      } else lista.push({ ...base, forma: 'circulo', raio: il.lanterna, angulo: 0, abertura: 0, intensidade: 1 });
+    }
     while (this.luzFuros.length < lista.length) {
-      const furo = new Sprite(tex); furo.anchor.set(0.5); furo.blendMode = 'erase'; this.luzCont.addChild(furo);
-      const brilho = new Sprite(tex); brilho.anchor.set(0.5); brilho.blendMode = 'add'; this.luzBrilho.addChild(brilho);
+      const furo = new Sprite(Texture.EMPTY); furo.blendMode = 'erase'; this.luzCont.addChild(furo);
+      const brilho = new Sprite(Texture.EMPTY); brilho.blendMode = 'add'; this.luzBrilho.addChild(brilho);
       this.luzFuros.push(furo);
     }
     this.luzFuros.forEach((furo, i) => {
@@ -924,22 +970,40 @@ export class Viewport {
       if (!l) return;
       const trem = l.tremular ? 0.72 + 0.28 * Math.abs(Math.sin(t * 9 + l.semente) * Math.sin(t * 3.7 + l.semente * 2)) : 1;
       const p = this.camadaParaTela(l.x, l.y, '');
-      const esc = (l.raio * 2 * z) / 256;
-      furo.position.set(p.x, p.y); furo.scale.set(esc); furo.alpha = l.intensidade * trem;
-      brilho.position.set(p.x, p.y); brilho.scale.set(esc * 0.8);
+      for (const sp of [furo, brilho]) {
+        sp.position.set(p.x, p.y);
+        sp.rotation = l.forma === 'circulo' ? 0 : (l.angulo * Math.PI) / 180;
+        if (l.forma === 'cone') { sp.texture = this.texturaCone(l.abertura); sp.anchor.set(0, 0.5); sp.scale.set((l.raio * z) / 256); }
+        else if (l.forma === 'retangulo') { sp.texture = this.texturaRetangulo(); sp.anchor.set(0.5); sp.scale.set((l.largura * z) / 84, (l.altura * z) / 84); }
+        else { sp.texture = this.texturaLuz(); sp.anchor.set(0.5); sp.scale.set((l.raio * 2 * z) / 256); }
+      }
+      furo.alpha = l.intensidade * trem;
       brilho.tint = l.cor; brilho.alpha = l.cor.toLowerCase() === '#ffffff' ? 0 : 0.22 * l.intensidade * trem;
     });
     this.app.renderer.render({ container: this.luzCont, target: this.luzRT, clear: true });
   }
 
-  /** Luz sob o ponto: centro (mover) ou borda do raio da selecionada (mudar o raio). */
+  /** Ponto da alça de tamanho de uma luz (na tela): borda do círculo, ponta do cone, canto do retângulo. */
+  private alcaLuz(l: LuzFase) {
+    const p = this.camadaParaTela(l.x, l.y, '');
+    const z = this.estado.camera.zoom;
+    const a = (l.angulo * Math.PI) / 180;
+    if (l.forma === 'cone') return { x: p.x + Math.cos(a) * l.raio * z, y: p.y + Math.sin(a) * l.raio * z };
+    if (l.forma === 'retangulo') {
+      const dx = (l.largura / 2) * z, dy = (l.altura / 2) * z;
+      return { x: p.x + dx * Math.cos(a) - dy * Math.sin(a), y: p.y + dx * Math.sin(a) + dy * Math.cos(a) };
+    }
+    return { x: p.x + l.raio * z, y: p.y };
+  }
+
+  /** Luz sob o ponto: centro (mover) ou alça da selecionada (tamanho/direção). */
   private luzEm(sx: number, sy: number): { l: LuzFase; borda: boolean } | null {
     const f = this.estado.fase;
     const z = this.estado.camera.zoom;
     const sel = this.estado.luzSelecionada ? this.estado.luz(this.estado.luzSelecionada) : undefined;
     if (sel) {
       const p = this.camadaParaTela(sel.x, sel.y, '');
-      if (Math.abs(Math.hypot(sx - p.x, sy - p.y) - sel.raio * z) < 6) return { l: sel, borda: true };
+      if (sel.forma === 'circulo' ? Math.abs(Math.hypot(sx - p.x, sy - p.y) - sel.raio * z) < 6 : Math.hypot(sx - this.alcaLuz(sel).x, sy - this.alcaLuz(sel).y) < 8) return { l: sel, borda: true };
     }
     for (let i = f.luzes.length - 1; i >= 0; i--) {
       const l = f.luzes[i];
@@ -947,6 +1011,23 @@ export class Viewport {
       if (Math.hypot(sx - p.x, sy - p.y) <= 10) return { l, borda: false };
     }
     return null;
+  }
+
+  /** Arrastando a alça: raio (círculo), alcance e direção (cone) ou tamanho (retângulo). */
+  private ajustarAlcaLuz(l: LuzFase, wx: number, wy: number, encaixarAngulo: boolean) {
+    const dx = wx - l.x, dy = wy - l.y;
+    if (l.forma === 'circulo') { l.raio = Math.max(8, Math.round(Math.hypot(dx, dy))); return `raio ${l.raio} px`; }
+    if (l.forma === 'cone') {
+      l.raio = Math.max(16, Math.round(Math.hypot(dx, dy)));
+      let ang = (Math.atan2(dy, dx) * 180) / Math.PI;
+      if (encaixarAngulo) ang = Math.round(ang / 15) * 15;
+      l.angulo = Math.round(((ang % 360) + 360) % 360);
+      return `alcance ${l.raio} px · direção ${l.angulo}°`;
+    }
+    const a = (-l.angulo * Math.PI) / 180;
+    const lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
+    l.largura = Math.max(4, Math.round(Math.abs(lx) * 2)); l.altura = Math.max(4, Math.round(Math.abs(ly) * 2));
+    return `${l.largura} × ${l.altura} px`;
   }
 
   /** Luzes visíveis/editáveis no cenário: na ferramenta Iluminação ou com a fase escura. */
@@ -959,11 +1040,21 @@ export class Viewport {
       const p = this.camadaParaTela(l.x, l.y, '');
       const sel = this.estado.luzSelecionada === l.id;
       const cor = Number.parseInt(l.cor.slice(1), 16);
-      g.circle(p.x, p.y, l.raio * z).stroke({ width: sel ? 2 : 1, color: sel ? COR_SELECAO : cor, alpha: sel ? 0.9 : 0.45 });
+      const traco = { width: sel ? 2 : 1, color: sel ? COR_SELECAO : cor, alpha: sel ? 0.9 : 0.45 };
+      const a = (l.angulo * Math.PI) / 180;
+      if (l.forma === 'cone') {
+        const m = ((l.abertura / 2) * Math.PI) / 180, r = l.raio * z;
+        g.moveTo(p.x, p.y).lineTo(p.x + Math.cos(a - m) * r, p.y + Math.sin(a - m) * r).arc(p.x, p.y, r, a - m, a + m).lineTo(p.x, p.y).stroke(traco);
+      } else if (l.forma === 'retangulo') {
+        const dx = (l.largura / 2) * z, dy = (l.altura / 2) * z;
+        const canto = (sx: number, sy: number) => [p.x + sx * dx * Math.cos(a) - sy * dy * Math.sin(a), p.y + sx * dx * Math.sin(a) + sy * dy * Math.cos(a)];
+        g.poly([...canto(-1, -1), ...canto(1, -1), ...canto(1, 1), ...canto(-1, 1)]).stroke(traco);
+      } else g.circle(p.x, p.y, l.raio * z).stroke(traco);
+      if (sel && l.forma !== 'circulo') { const h = this.alcaLuz(l); g.rect(h.x - 4, h.y - 4, 8, 8).fill({ color: 0xffffff }).stroke({ width: 1, color: COR_SELECAO }); }
       g.circle(p.x, p.y, 6).fill({ color: l.ligada ? cor : 0x333333 }).stroke({ width: 1.5, color: sel ? COR_SELECAO : 0x0b0f0e });
       for (let k = 0; k < 8; k++) {
-        const a = (k * Math.PI) / 4;
-        g.moveTo(p.x + Math.cos(a) * 8, p.y + Math.sin(a) * 8).lineTo(p.x + Math.cos(a) * 11, p.y + Math.sin(a) * 11).stroke({ width: 1.5, color: sel ? COR_SELECAO : cor, alpha: 0.9 });
+        const b = (k * Math.PI) / 4;
+        g.moveTo(p.x + Math.cos(b) * 8, p.y + Math.sin(b) * 8).lineTo(p.x + Math.cos(b) * 11, p.y + Math.sin(b) * 11).stroke({ width: 1.5, color: sel ? COR_SELECAO : cor, alpha: 0.9 });
       }
     }
   }
@@ -1159,9 +1250,10 @@ export class Viewport {
         if (this.estado.modo === 'luz') {
           const w = this.mundoEncaixado(p.x, p.y);
           const id = novoIdLuz(this.estado.fase);
-          this.estado.alterar((f) => { f.luzes.push({ id, nome: `Luz ${f.luzes.length + 1}`, x: w.x, y: w.y, raio: 96, intensidade: 1, cor: '#ffe8b0', tremular: false, ligada: true }); });
+          const forma = this.estado.formaLuzNova;
+          this.estado.alterar((f) => { f.luzes.push({ id, nome: `Luz ${f.luzes.length + 1}`, x: w.x, y: w.y, forma, angulo: forma === 'cone' ? 90 : 0, abertura: 50, largura: 64, altura: 96, raio: forma === 'cone' ? 160 : 96, intensidade: 1, cor: '#ffe8b0', tremular: false, ligada: true }); });
           this.estado.selecionarLuz(id);
-          this.estado.avisar(`Luz criada em x ${w.x}, y ${w.y}. Arraste o centro para mover e a borda do círculo para mudar o raio.${this.estado.fase.iluminacao.escura ? '' : ' Ligue "Fase escura" nas propriedades da fase para ver o efeito.'}`);
+          this.estado.avisar(`Luz (${forma}) criada em x ${w.x}, y ${w.y}. Arraste o centro para mover e a alça (borda, ponta do cone ou canto) para o tamanho/direção; Shift gira de 15 em 15°.${this.estado.fase.iluminacao.escura ? '' : ' Ligue "Fase escura" nas propriedades da fase para ver o efeito.'}`);
           return;
         }
       }
@@ -1261,7 +1353,7 @@ export class Viewport {
           const hit = this.luzEm(p.x, p.y);
           if (hit) {
             cv.style.cursor = hit.borda ? 'ew-resize' : 'move';
-            this.aoPairar({ titulo: `${hit.l.nome} · luz`, texto: hit.borda ? 'Arraste para mudar o raio.' : `Raio ${hit.l.raio} px · intensidade ${Math.round(hit.l.intensidade * 100)}%${hit.l.ligada ? '' : ' · desligada'}. Arraste para mover; Del exclui.` }, e.clientX, e.clientY);
+            this.aoPairar({ titulo: `${hit.l.nome} · luz (${hit.l.forma})`, texto: hit.borda ? (hit.l.forma === 'cone' ? 'Arraste para mudar o alcance e a direção (Shift: de 15 em 15°).' : hit.l.forma === 'retangulo' ? 'Arraste para mudar a largura e a altura.' : 'Arraste para mudar o raio.') : `Raio ${hit.l.raio} px · intensidade ${Math.round(hit.l.intensidade * 100)}%${hit.l.ligada ? '' : ' · desligada'}. Arraste para mover; Del exclui.` }, e.clientX, e.clientY);
             return;
           }
         }
@@ -1321,8 +1413,7 @@ export class Viewport {
           if (this.estado.encaixar) { const g = this.estado.fase.tamanhoGrade; nx = Math.round(nx / g) * g; ny = Math.round(ny / g) * g; }
           l.x = Math.round(nx); l.y = Math.round(ny);
         } else {
-          l.raio = Math.max(8, Math.round(Math.hypot(w.x - l.x, w.y - l.y)));
-          this.mostrarLegenda(`raio ${l.raio} px`, p.x, p.y);
+          this.mostrarLegenda(this.ajustarAlcaLuz(l, w.x, w.y, e.shiftKey), p.x, p.y);
         }
         this.estado.marcarAlterado();
         return;

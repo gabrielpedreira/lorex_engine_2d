@@ -75,10 +75,21 @@ export interface InimigoFase {
   surge?: string;
 }
 
+export type FormaLuz = 'circulo' | 'cone' | 'retangulo';
+
 /** Ponto de luz (ferramenta Iluminação). Só aparece quando a fase está escura. */
 export interface LuzFase {
   id: string;
   nome: string;
+  /** circulo = lâmpada/fogo; cone = poste, holofote, lanterna; retangulo = janela, luminária tubular, porta aberta. */
+  forma: FormaLuz;
+  /** Cone: direção (graus; 0 = direita, 90 = para baixo). Retângulo: rotação. */
+  angulo: number;
+  /** Cone: abertura (graus). */
+  abertura: number;
+  /** Retângulo: tamanho (px). */
+  largura: number;
+  altura: number;
   /** Centro, no mundo (camadas com parallax 1). */
   x: number;
   y: number;
@@ -102,6 +113,8 @@ export interface Iluminacao {
   cor: string;
   /** Raio da luz em volta do jogador (lanterna); 0 = sem. */
   lanterna: number;
+  /** Lanterna em volta (círculo) ou apontada para onde o jogador olha (cone). */
+  lanternaForma: 'circulo' | 'cone';
 }
 
 export interface Fase {

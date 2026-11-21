@@ -409,6 +409,17 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   Barra flutuante com presets, campos L×A, `escalaFullHd` (nitidez), "Padrão do projeto" (`config.resolucaoBase`)
   e "Aplicar em todas" (`alterarFaseArquivo` em cada fase). Mudanças vão para o Log.
 
+### 4.29 Ida/volta nas conexões e formatos de luz
+
+- `Conexao.mesmoNosDoisSentidos` (padrão true) e `transicaoVolta`. `viagemDe` usa a volta quando os sentidos diferem.
+  No Mapa, marcado: um "como passa" que grava as duas passagens (`modoPassagem` nas duas salas) e um bloco de transição;
+  desmarcado: blocos Ida e Volta. Mudar o "como passa" de uma passagem (Mapa ou Propriedades → `sincronizarModo`) muda a
+  do outro lado quando a conexão é igual nos dois sentidos. Cada sala guarda a sua tela do jogo (`resolucaoBase`).
+- `LuzFase.forma` circulo | cone | retangulo, `angulo`, `abertura`, `largura`, `altura`; texturas geradas em canvas
+  (gradiente radial, cone desfocado com ápice à esquerda e rotação pelo ângulo, retângulo desfocado). Alça por forma
+  (`alcaLuz`/`ajustarAlcaLuz`). `Iluminacao.lanternaForma` (cone segue o lado para onde o jogador olha). Código:
+  `luz.forma`, `luz.angulo`.
+
 ### 4.18 Legendas e recarregar por fora
 
 - `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas

@@ -17,7 +17,7 @@ import { el, perguntar } from './ui/dom';
 import { Legendas, dica } from './ui/legenda';
 import type { FormaNova } from './editor/estado';
 import { ICONES, icone } from './ui/icones';
-import { PainelPropriedades } from './ui/propriedades';
+import { FORMAS_LUZ, PainelPropriedades } from './ui/propriedades';
 import { ModoTeste } from './editor/testar';
 import { EditorPersonagens } from './ui/personagens';
 import { EditorControles } from './ui/controles';
@@ -232,6 +232,13 @@ new PainelPropriedades(painelProps, estado, {
     return `${outra.fase}${outra.passagem ? ` (passagem ${outra.passagem})` : ' (início)'} · ${resumoTransicao(c.transicao)}${c.maoDupla ? '' : ' · só ida'}`;
   },
   abrirMapa: () => void abrirMapa(),
+  sincronizarModo: (id, modo) => {
+    const c = conexaoDaPassagem(normalizarMapa(config.mapa), estado.arquivoFase ?? '', id);
+    if (!c || !c.mesmoNosDoisSentidos || !c.maoDupla || !c.b.passagem) return;
+    const outra = c.a.fase === estado.arquivoFase && c.a.passagem === id ? c.b : c.a;
+    void alterarFaseArquivo(outra.fase, (f) => { const k = f.objetos.find((o) => o.id === outra.passagem)?.comportamentos[0]; if (k?.tipo === 'saida') k.modo = modo; })
+      .then(() => LOG.add({ cat: 'sistema', texto: `Mapa: a passagem do outro lado (${outra.fase}) também ficou "${modo === 'tocar' ? 'ao atravessar' : 'apertando Interagir'}"` }));
+  },
   tamanhoImagem: async (o) => { const t = await viewport.textura(o.asset); return { w: t.width, h: t.height }; },
   escolherAlvo: () => new Promise((resolve) => {
     if (estado.modo !== 'selecionar') estado.definirModo('selecionar');
@@ -1040,6 +1047,8 @@ function atualizarModos() {
   barraColisao.hidden = estado.modo !== 'colisao' || estado.testando;
   barraInimigos.hidden = estado.modo !== 'inimigo' || estado.testando;
   barraTela.hidden = estado.modo !== 'tela' || estado.testando;
+  barraLuz.hidden = estado.modo !== 'luz' || estado.testando;
+  if (estado.modo === 'luz') atualizarBarraLuz();
   if (estado.modo === 'tela') atualizarBarraTela();
   if (estado.modo === 'inimigo') atualizarBarraInimigos();
   if (estado.modo !== 'colisao') viewport.ferrColisao.cancelar();
@@ -1100,6 +1109,21 @@ const dicaInimigos = el('span', { class: 'dica-barra' }, 'Clique para colocar ·
 const barraInimigos = el('div', { class: 'barra-flutuante' }, el('strong', { class: 'rotulo-barra' }, 'Inimigo:'), seletorInimigo, novoTipoInimigo, el('div', { class: 'sep-v' }), dicaInimigos);
 barraInimigos.hidden = true;
 centro.append(barraInimigos);
+// ---------- Ferramenta Iluminação: formato das luzes novas ----------
+const formasLuz = el('div', { class: 'grupo-presets' }, ...FORMAS_LUZ.map((f) => {
+  const b = el('button', { type: 'button', class: 'secundario' }, f.nome);
+  dica(b, `Luz em ${f.nome.toLowerCase()}`, `${f.texto} O próximo clique no cenário cria uma luz assim.`);
+  b.addEventListener('click', () => { estado.formaLuzNova = f.id; atualizarBarraLuz(); });
+  return b;
+}));
+const barraLuz = el('div', { class: 'barra-flutuante barra-tela' }, el('strong', { class: 'rotulo-barra' }, 'Luz nova:'), formasLuz,
+  el('span', { class: 'dica-campo' }, 'Clique para criar · centro move · alça muda tamanho/direção · Shift+Y esconde o escuro'));
+barraLuz.hidden = true;
+centro.append(barraLuz);
+function atualizarBarraLuz() {
+  formasLuz.querySelectorAll('button').forEach((b, i) => b.classList.toggle('ligado', FORMAS_LUZ[i].id === estado.formaLuzNova));
+}
+
 // ---------- Ferramenta Tela do jogo (o quadro laranja = o que o jogador vê) ----------
 const PRESETS_TELA: [number, number][] = [[320, 180], [480, 270], [640, 360], [960, 540]];
 const telaL = el('input', { type: 'number', min: 160, max: 3840, step: 16, 'aria-label': 'Largura da tela do jogo' }) as HTMLInputElement;
@@ -1137,7 +1161,7 @@ telaTodas.addEventListener('click', async () => {
   LOG.add({ cat: 'sistema', texto: `Tela do jogo ${w} × ${h} px aplicada em ${fases.length} fase(s) e no padrão do projeto` });
   estado.avisar(`Tela ${w} × ${h} aplicada em ${fases.length} fase(s).`);
 });
-const barraTela = el('div', { class: 'barra-flutuante barra-tela' }, el('strong', { class: 'rotulo-barra' }, 'Tela do jogo:'), presetsTela,
+const barraTela = el('div', { class: 'barra-flutuante barra-tela' }, el('strong', { class: 'rotulo-barra' }, 'Tela do jogo desta sala:'), presetsTela,
   telaL, el('span', {}, '×'), telaA, telaInfo, el('div', { class: 'sep-v' }), telaPadrao, telaTodas);
 barraTela.hidden = true;
 centro.append(barraTela);

@@ -40,7 +40,12 @@ export interface Conexao {
   b: PontaConexao;
   /** Voltar de B para A pela mesma conexão (só quando B é uma passagem). */
   maoDupla: boolean;
+  /** Ida (A → B). */
   transicao: Transicao;
+  /** Mesma transição e mesmo "como passa" nos dois sentidos (padrão). */
+  mesmoNosDoisSentidos: boolean;
+  /** Volta (B → A), quando a ida e a volta são diferentes. */
+  transicaoVolta?: Transicao;
 }
 
 export interface Mapa {
@@ -98,7 +103,12 @@ export function normalizarMapa(d: unknown): Mapa {
   for (const c of Array.isArray(m.conexoes) ? m.conexoes : []) {
     const a = ponta(c?.a), b = ponta(c?.b);
     if (!a || !b || !a.passagem) continue; // a origem sempre é uma passagem
-    conexoes.push({ id: String(c.id ?? novoIdConexao({ salas, conexoes })), a, b, maoDupla: c.maoDupla !== false && !!b.passagem, transicao: normalizarTransicao(c.transicao) });
+    const mesmo = c.mesmoNosDoisSentidos !== false;
+    conexoes.push({
+      id: String(c.id ?? novoIdConexao({ salas, conexoes })), a, b, maoDupla: c.maoDupla !== false && !!b.passagem,
+      transicao: normalizarTransicao(c.transicao), mesmoNosDoisSentidos: mesmo,
+      ...(!mesmo && c.transicaoVolta ? { transicaoVolta: normalizarTransicao(c.transicaoVolta) } : {}),
+    });
   }
   return { salas, conexoes };
 }
@@ -120,7 +130,10 @@ export function conexaoDaPassagem(m: Mapa, fase: string, passagem: string): Cone
 export function viagemDe(m: Mapa, fase: string, passagem: string): Viagem | null {
   for (const c of m.conexoes) {
     if (mesma(c.a, fase, passagem)) return { fase: c.b.fase, chegada: c.b.passagem, transicao: c.transicao, deFase: fase, dePassagem: passagem, conexao: c.id };
-    if (c.maoDupla && c.b.passagem && mesma(c.b, fase, passagem)) return { fase: c.a.fase, chegada: c.a.passagem, transicao: c.transicao, deFase: fase, dePassagem: passagem, conexao: c.id };
+    if (c.maoDupla && c.b.passagem && mesma(c.b, fase, passagem)) {
+      const t = !c.mesmoNosDoisSentidos && c.transicaoVolta ? c.transicaoVolta : c.transicao;
+      return { fase: c.a.fase, chegada: c.a.passagem, transicao: t, deFase: fase, dePassagem: passagem, conexao: c.id };
+    }
   }
   return null;
 }
@@ -129,7 +142,7 @@ export function viagemDe(m: Mapa, fase: string, passagem: string): Viagem | null
 export function conectar(m: Mapa, a: PontaConexao, b: PontaConexao, transicao = transicaoPadrao()): { conexao: Conexao; removidas: Conexao[] } {
   const removidas = m.conexoes.filter((c) => [a, b].some((p) => p.passagem && (mesma(c.a, p.fase, p.passagem) || (c.b.passagem && mesma(c.b, p.fase, p.passagem)))));
   m.conexoes = m.conexoes.filter((c) => !removidas.includes(c));
-  const conexao: Conexao = { id: novoIdConexao(m), a, b, maoDupla: !!b.passagem, transicao };
+  const conexao: Conexao = { id: novoIdConexao(m), a, b, maoDupla: !!b.passagem, transicao, mesmoNosDoisSentidos: true };
   m.conexoes.push(conexao);
   return { conexao, removidas };
 }
@@ -152,5 +165,5 @@ export function resumoTransicao(t: Transicao): string {
 
 /** Assets usados pelo mapa (para a limpeza de cópias sem uso não apagar). */
 export function assetsDoMapa(m: Mapa): string[] {
-  return m.conexoes.flatMap((c) => [c.transicao.animacao, c.transicao.som]).filter(Boolean);
+  return m.conexoes.flatMap((c) => [c.transicao.animacao, c.transicao.som, c.transicaoVolta?.animacao ?? '', c.transicaoVolta?.som ?? '']).filter(Boolean);
 }

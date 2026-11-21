@@ -25,6 +25,8 @@ export class Estado {
   inimigoSelecionado: string | null = null;
   /** Luz selecionada (ferramenta Iluminação). */
   luzSelecionada: string | null = null;
+  /** Forma das luzes novas (barra da ferramenta Iluminação). */
+  formaLuzNova: import('../core/tipos').FormaLuz = 'circulo';
   /** Mostra a escuridão no editor (fases escuras). */
   previaLuz = true;
   /** Tipo (personagem NPC) que a ferramenta Inimigos coloca ao clicar. */

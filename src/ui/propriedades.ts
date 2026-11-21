@@ -1,6 +1,12 @@
 // Painel de propriedades: do objeto selecionado ou, sem seleção, da fase.
 import type { Estado } from '../editor/estado';
-import type { Colisao, InimigoFase, LuzFase, ObjetoFase } from '../core/tipos';
+import type { Colisao, FormaLuz, InimigoFase, LuzFase, ObjetoFase } from '../core/tipos';
+
+export const FORMAS_LUZ: { id: FormaLuz; nome: string; texto: string }[] = [
+  { id: 'circulo', nome: 'Círculo', texto: 'Lâmpada, vela, fogo: ilumina em volta.' },
+  { id: 'cone', nome: 'Cone', texto: 'Poste, holofote, lanterna: um facho numa direção.' },
+  { id: 'retangulo', nome: 'Retângulo', texto: 'Janela, luminária tubular, porta aberta, tela de monitor.' },
+];
 import { NOMES_FORMA, caixa, reescalar } from '../editor/colisoes';
 import { dica } from './legenda';
 import { EFEITOS_PADRAO, type Efeito, type TipoEfeito } from '../core/efeitos';
@@ -36,6 +42,8 @@ export interface AcoesObjeto {
   /** Para onde a passagem leva pelo Mapa (texto) ou null se não estiver conectada. */
   destinoNoMapa(id: string): string | null;
   abrirMapa(): void;
+  /** A passagem mudou o "como passa": se a conexão é igual nos dois sentidos, a outra ponta acompanha. */
+  sincronizarModo(id: string, modo: ModoPassagem): void;
   /** Tamanho (px) da imagem do objeto, para recortar o spritesheet. */
   tamanhoImagem(o: ObjetoFase): Promise<{ w: number; h: number }>;
 }
@@ -159,7 +167,7 @@ export class PainelPropriedades {
         mapa.addEventListener('click', () => this.acoes.abrirMapa());
         const modo = el('select', { id: 'pc-modo' }, ...MODOS_PASSAGEM.map((m) => el('option', { value: m.id }, m.nome)));
         modo.value = atual.modo;
-        modo.addEventListener('change', () => { this.estado.alterar(() => { atual.modo = modo.value as ModoPassagem; }); this.render(true); });
+        modo.addEventListener('change', () => { this.estado.alterar(() => { atual.modo = modo.value as ModoPassagem; }); this.acoes.sincronizarModo(o.id, atual.modo); this.render(true); });
         const labModo = el('label', { for: 'pc-modo' }, 'Como passa');
         dica(labModo, 'Como passa', MODOS_PASSAGEM.map((m) => `${m.nome}: ${m.texto}`).join(' '));
         secao.append(
@@ -601,11 +609,32 @@ export class PainelPropriedades {
     const excluir = el('button', { type: 'button', class: 'perigo' }, 'Excluir luz');
     excluir.addEventListener('click', () => this.acoes.excluir());
     const il = this.estado.fase.iluminacao;
+    const forma = el('select', { id: 'p-luzforma' }, ...FORMAS_LUZ.map((f) => el('option', { value: f.id }, f.nome)));
+    forma.value = l.forma;
+    forma.addEventListener('change', () => {
+      this.estado.alterar(() => { l.forma = forma.value as FormaLuz; if (l.forma === 'cone' && l.raio < 120) l.raio = 160; });
+      this.render(true);
+    });
+    const labForma = el('label', { for: 'p-luzforma' }, 'Formato');
+    dica(labForma, 'Formato da luz', FORMAS_LUZ.map((f) => `${f.nome}: ${f.texto}`).join(' '));
+    const porForma: HTMLElement[] = l.forma === 'cone' ? [
+      this.num('Alcance (px)', l.raio, (v) => { l.raio = Math.max(16, Math.round(v)); }, { min: 16, passo: 8 }),
+      el('div', { class: 'linha2' },
+        this.num('Direção °', l.angulo, (v) => { l.angulo = Math.round(v); }, { passo: 15 }),
+        this.num('Abertura °', l.abertura, (v) => { l.abertura = Math.max(5, Math.min(170, Math.round(v))); }, { min: 5, max: 170, passo: 5 })),
+      el('span', { class: 'dica-campo' }, 'Direção: 90° = para baixo (poste), 0° = direita, 180° = esquerda, 270° = para cima.'),
+    ] : l.forma === 'retangulo' ? [
+      el('div', { class: 'linha2' },
+        this.num('Largura', l.largura, (v) => { l.largura = Math.max(4, Math.round(v)); }, { min: 4, passo: 8 }),
+        this.num('Altura', l.altura, (v) => { l.altura = Math.max(4, Math.round(v)); }, { min: 4, passo: 8 })),
+      this.num('Rotação °', l.angulo, (v) => { l.angulo = Math.round(v); }, { passo: 15 }),
+    ] : [this.num('Raio (px)', l.raio, (v) => { l.raio = Math.max(8, Math.round(v)); }, { min: 8, passo: 8 })];
     this.corpo.append(el('div', { class: 'secao' },
       el('h3', {}, `Luz · ${l.id}`),
       this.texto('Nome', l.nome, (v) => { l.nome = v; }),
+      el('div', { class: 'campo largo' }, labForma, forma),
       el('div', { class: 'linha2' }, this.num('X', l.x, (v) => { l.x = Math.round(v); }), this.num('Y', l.y, (v) => { l.y = Math.round(v); })),
-      this.num('Raio (px)', l.raio, (v) => { l.raio = Math.max(8, Math.round(v)); }, { min: 8, passo: 8 }),
+      ...porForma,
       this.num('Intensidade', l.intensidade, (v) => { l.intensidade = v; }, { min: 0, max: 1, passo: 0.1 }),
       el('div', { class: 'campo largo' }, el('label', { for: 'p-luzcor' }, 'Cor do brilho'), cor),
       this.check('Tremular (lâmpada com defeito, fogo)', l.tremular, (v) => { l.tremular = v; }),
@@ -613,6 +642,14 @@ export class PainelPropriedades {
       il.escura ? '' : el('p', { class: 'aviso-texto' }, 'A fase não está escura: as luzes só aparecem com "Fase escura" ligado (propriedades da fase).'),
       el('p', { class: 'dica-campo' }, `No código: jogo.luz("${l.nome}").desligar(), .ligar(), .raio = 120. Arraste o centro para mover e a borda para mudar o raio.`),
       el('div', { class: 'secao acoes' }, excluir)));
+  }
+
+  private lanternaForma() {
+    const il = this.estado.fase.iluminacao;
+    const sel = el('select', { id: 'p-lanternaforma' }, el('option', { value: 'circulo' }, 'Em volta (círculo)'), el('option', { value: 'cone' }, 'Apontada (cone)'));
+    sel.value = il.lanternaForma;
+    sel.addEventListener('change', () => this.estado.alterar(() => { il.lanternaForma = sel.value as 'circulo' | 'cone'; }));
+    return el('div', { class: 'campo largo' }, el('label', { for: 'p-lanternaforma' }, 'Lanterna'), sel);
   }
 
   private secaoIluminacao() {
@@ -628,7 +665,8 @@ export class PainelPropriedades {
         this.num('Escuridão', il.escuridao, (v) => { il.escuridao = v; }, { min: 0, max: 1, passo: 0.05 }),
         el('div', { class: 'campo largo' }, el('label', { for: 'p-escurocor' }, 'Cor do escuro'), cor),
         this.num('Lanterna (px)', il.lanterna, (v) => { il.lanterna = Math.max(0, Math.round(v)); }, { min: 0, passo: 8 }),
-        el('span', { class: 'dica-campo' }, 'Lanterna = luz em volta do jogador no ▶ Testar (0 = sem).'),
+        this.lanternaForma(),
+        el('span', { class: 'dica-campo' }, 'Lanterna = luz do jogador no ▶ Testar (0 = sem). Em cone, aponta para onde ele olha.'),
       ] : []),
       el('span', { class: 'dica-campo' }, `${f.luzes.length} ponto(s) de luz. Ferramenta Iluminação (Y): clique no cenário para criar.`));
   }

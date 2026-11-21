@@ -704,3 +704,6 @@ body.corpo-codigo { margin: 0; height: 100vh; overflow: hidden; background: var(
 .barra-tela button { padding: 4px 8px; font-size: 12px; }
 .grupo-presets { display: flex; gap: 4px; }
 .grupo-presets .ligado { border-color: var(--laranja); color: var(--laranja); }
+.mapa-sentido { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--borda); border-radius: 8px; background: var(--painel-2); }
+.rotulo-mini { font-size: 11px; color: var(--texto-2); }
+.check.destaque { padding: 6px 8px; border: 1px solid var(--acento); border-radius: 6px; background: var(--acento-suave); }
