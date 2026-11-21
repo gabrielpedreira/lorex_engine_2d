@@ -152,6 +152,7 @@ export class ModoTeste {
       danoInimigo: (ini: InimigoVivo, n: number) => { ini.atingido(); t.tratarEventosInimigo(ini, ini.ia.levarDano(n, t.jogador?.x ?? ini.corpo.x, { duracao: ini.duracao })); },
       mudouCena: () => { t.cenaMudou = true; },
       interagir: (o: ObjetoFase) => t.interagirCom(o),
+      luzesFase: () => t.estado.fase.luzes,
     };
   }
   private cenaMudou = false;
@@ -185,7 +186,9 @@ export class ModoTeste {
   private saindo = false;
   private chegadaPendente = '';
   /** O que mudou em cada sala já visitada nesta partida (portas, itens pegos, inimigos mortos). */
-  private memoriaSalas = new Map<string, { estados: Map<string, EstadoObjeto>; mortos: Set<string> }>();
+  private memoriaSalas = new Map<string, { estados: Map<string, EstadoObjeto>; mortos: Set<string>; luzes: Map<string, boolean>; escura: boolean }>();
+  /** Inimigos que só surgem por um gatilho (spawner). */
+  private aguardando: import('../core/tipos').InimigoFase[] = [];
 
   /** Configuração do jogador (lida/salva no projeto). */
   config: ConfigJogador = { ...JOGADOR_PADRAO };
@@ -282,6 +285,7 @@ export class ModoTeste {
     this.mundo = null;
     this.viewport.visibilidadeTeste = null;
     this.viewport.quadroTeste = null;
+    this.viewport.luzTeste = null;
     this.viewport.atualizarCena();
     e.emit('camera');
     e.emit('opcoes');
@@ -308,20 +312,38 @@ export class ModoTeste {
         const o = this.estado.objeto(id);
         if (o?.anim && est.aberta) mundo.definirQuadro(id, o.anim.quadros - 1);
       }
+      for (const [id, v] of mem.luzes) mundo.luzes.set(id, v);
+      mundo.escura = mem.escura;
       mundo.marcarMudanca();
       LOG.add({ cat: 'mundo', texto: `sala já visitada: estado anterior restaurado${mem.mortos.size ? ` (${mem.mortos.size} inimigo(s) continuam mortos)` : ''}` });
     }
     this.viewport.quadroTeste = (o) => mundo.quadroAnim(o);
+    this.viewport.luzTeste = {
+      escura: () => mundo.escura,
+      luz: (l) => ({ ligada: mundo.luzes.get(l.id) ?? l.ligada, raio: mundo.ajusteLuz.get(l.id)?.raio ?? l.raio, intensidade: mundo.ajusteLuz.get(l.id)?.intensidade ?? l.intensidade }),
+      jogador: () => (this.jogador ? { x: this.jogador.x, y: this.jogador.y - this.jogador.cfg.altura / 2 } : null),
+    };
     this.tempoJogo = 0;
     this.agarradoAte = 0;
     this.recargaAte = 0;
     for (const i of this.inimigos) i.remover();
     this.inimigos = [];
+    this.aguardando = [];
     for (const def of this.estado.fase.inimigos) {
       if (mem?.mortos.has(def.id)) continue;
+      // Spawner: espera o gatilho (a não ser que ele já tenha disparado nesta partida)
+      if (def.surge && this.estado.objeto(def.surge) && !mundo.estados.get(def.surge)?.usado) { this.aguardando.push(def); continue; }
       const tipo = this.tiposInimigo.get(def.personagem);
       if (!tipo) { LOG.add({ cat: 'erro', texto: `Inimigo ${def.id}: o personagem ${def.personagem} não existe ou não carregou` }); continue; }
       this.inimigos.push(new InimigoVivo(def, tipo, this.config.gravidade));
+    }
+    if (this.aguardando.length) LOG.add({ cat: 'inimigo', texto: `${this.aguardando.length} inimigo(s) esperando gatilho: ${this.aguardando.map((d) => `${d.id} (gatilho ${this.estado.objeto(d.surge!)?.nome ?? d.surge})`).join(', ')}` });
+    const il = this.estado.fase.iluminacao;
+    if (il.escura || this.estado.fase.luzes.length) LOG.add({ cat: 'mundo', texto: `iluminação: ${mundo.escura ? `sala escura (${Math.round(il.escuridao * 100)}%)` : 'sala clara'} · ${this.estado.fase.luzes.length} luz(es)${il.lanterna ? ` · lanterna ${il.lanterna} px` : ''}` });
+    const [fwA] = this.estado.fase.tamanho;
+    for (const o of this.estado.fase.objetos) {
+      const b = mundo.caixa(o);
+      if (o.comportamentos[0]?.tipo === 'saida' && (b.x + b.w < 0 || b.x > fwA)) LOG.add({ cat: 'erro', texto: `Passagem ${o.nome} está fora da fase (x ${Math.round(b.x)}, largura da fase ${fwA}): o jogador não alcança. Mova-a para dentro.` });
     }
     if (this.inimigos.length) LOG.add({ cat: 'inimigo', texto: `${this.inimigos.length} inimigo(s) na fase: ${this.inimigos.map((i) => `${i.nome} (${i.id})`).join(', ')}` });
     this.viewport.ocultarInimigosEditor = true;
@@ -372,6 +394,8 @@ export class ModoTeste {
     if (r.aviso) LOG.add({ cat: 'mundo', texto: `aviso: ${r.aviso}` });
     if (r.mensagem) LOG.add({ cat: 'mundo', texto: `mensagem: ${r.mensagem}` });
     if (r.acionado && origem && this.motor) this.motor.acionado(r.acionado, origem);
+    if (r.surgir) this.surgirInimigos(r.surgir);
+    if (r.luz && this.mundo) LOG.add({ cat: 'mundo', texto: `iluminação: ${this.mundo.escura ? 'sala escura' : 'sala clara'} · luzes ligadas: ${[...this.mundo.luzes].filter(([, v]) => v).map(([id]) => this.estado.luz(id)?.nome ?? id).join(', ') || 'nenhuma'}` });
     if (r.aviso) this.toast(r.aviso);
     if (r.mensagem) {
       this.mensagemAberta = true;
@@ -389,6 +413,20 @@ export class ModoTeste {
     this.atualizarInventario();
   }
 
+  /** Spawner: os inimigos marcados com este gatilho aparecem. */
+  private surgirInimigos(gatilho: string) {
+    const vem = this.aguardando.filter((d) => d.surge === gatilho);
+    if (!vem.length) { LOG.add({ cat: 'inimigo', texto: `gatilho ${this.estado.objeto(gatilho)?.nome ?? gatilho}: nenhum inimigo marcado para surgir` }); return; }
+    this.aguardando = this.aguardando.filter((d) => d.surge !== gatilho);
+    for (const def of vem) {
+      const tipo = this.tiposInimigo.get(def.personagem);
+      if (!tipo) continue;
+      this.inimigos.push(new InimigoVivo(def, tipo, this.config.gravidade));
+    }
+    this.inserirGrafico();
+    LOG.add({ cat: 'inimigo', texto: `surgiram ${vem.length} inimigo(s): ${vem.map((d) => d.id).join(', ')}` });
+  }
+
   /** Vai para outra sala (passagem, jogo.irPara ou jogo.passar). O código (aoPassar) pode mudar ou cancelar. */
   private viajar(v: Viagem, origem?: ObjetoFase) {
     if (this.saindo) return;
@@ -399,7 +437,9 @@ export class ModoTeste {
     if (this.mundo) {
       this.memoriaSalas.set(v.deFase || (this.estado.arquivoFase ?? ''), {
         estados: new Map([...this.mundo.estados].map(([id, e]) => [id, { ...e }])),
-        mortos: new Set([...this.estado.fase.inimigos.map((d) => d.id)].filter((id) => !this.inimigos.some((i) => i.id === id && i.vivo))),
+        mortos: new Set([...this.estado.fase.inimigos.map((d) => d.id)].filter((id) => !this.aguardando.some((d) => d.id === id) && !this.inimigos.some((i) => i.id === id && i.vivo))),
+        luzes: new Map(this.mundo.luzes),
+        escura: this.mundo.escura,
       });
     }
     this.inventarioLevado = this.mundo ? new Map(this.mundo.inventario) : null;
@@ -436,6 +476,7 @@ export class ModoTeste {
     const o = this.estado.objeto(id);
     if (!o) { LOG.add({ cat: 'erro', texto: `Mapa: a passagem de chegada ${id} não existe em ${this.estado.arquivoFase} (o jogador foi para o início)` }); return; }
     const b = this.mundo.caixa(o);
+    this.mundo.desarmadas.add(o.id); // passagem contínua: só vale de novo depois que o jogador sair dela
     this.jogador.x = b.x + b.w / 2;
     this.jogador.y = b.y + b.h;
     this.jogador.vx = 0; this.jogador.vy = 0;
@@ -562,6 +603,22 @@ export class ModoTeste {
     }
     // Código: aoAtualizar, aoTocar, temporizadores
     if (this.motor) this.motor.atualizar(ms / 1000);
+    // Zonas: passagens contínuas (passam sozinhas) e gatilhos
+    const zonas = m.areas(this.caixaJogador());
+    for (const o of zonas.saiu) if (o.comportamentos[0]?.tipo === 'gatilho') LOG.add({ cat: 'mundo', texto: `saiu do gatilho ${o.nome}` });
+    for (const o of zonas.entrou) {
+      const c = o.comportamentos[0];
+      if (c?.tipo === 'saida') {
+        if (m.desarmadas.has(o.id) || this.saindo) continue;
+        LOG.add({ cat: 'mundo', texto: `atravessou a passagem contínua ${o.nome}` });
+        this.interagirCom(o);
+      } else if (c?.tipo === 'gatilho') {
+        LOG.add({ cat: 'mundo', texto: `entrou no gatilho ${o.nome}` });
+        this.tratar(m.dispararGatilho(o), o);
+      }
+      if (this.saindo) break;
+    }
+    if (this.saindo) return;
     // Coletáveis tocados
     const pegos = m.coletar(this.caixaJogador());
     if (pegos.length) { LOG.add({ cat: 'mundo', texto: pegos.join(' · ') }); this.toast(pegos.join(' · ')); this.aplicarVisibilidade(); this.atualizarInventario(); }

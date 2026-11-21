@@ -8,9 +8,10 @@ import {
   EFEITOS_TRANSICAO, conectar, conexaoDaPassagem, resumoTransicao, type Conexao, type EfeitoTransicao, type Mapa, type PontaConexao, type Transicao,
 } from '../core/mapa';
 import { el, perguntar } from './dom';
+import { MODOS_PASSAGEM, type ModoPassagem } from '../core/comportamentos';
 import { dica } from './legenda';
 
-export interface PassagemSala { id: string; nome: string; x: number; y: number; w: number; h: number; requer: string }
+export interface PassagemSala { id: string; nome: string; x: number; y: number; w: number; h: number; requer: string; modo: ModoPassagem; /** fora da fase (o jogador não alcança) */ fora: boolean }
 export interface InfoSala {
   arquivo: string;
   nome: string;
@@ -33,6 +34,8 @@ export interface AcoesMapa {
   /** Cria uma passagem (zona invisível no jogo) na borda da sala. */
   criarPassagem(arquivo: string, lado: Lado, nome: string): Promise<{ id: string; salas: InfoSala[] }>;
   excluirPassagem(arquivo: string, id: string): Promise<InfoSala[]>;
+  /** Como a passagem funciona: apertando Interagir (porta) ou ao atravessar (contínua). */
+  modoPassagem(arquivo: string, id: string, modo: ModoPassagem): Promise<InfoSala[]>;
   /** Imagens do projeto (relativas à raiz). */
   imagens(): Promise<string[]>;
   /** Sons do projeto (relativos à raiz). */
@@ -249,10 +252,10 @@ export class EditorMapa {
         const ligada = !!conexaoDaPassagem(this.mapa, s.arquivo, p.id);
         const selP = this.sel?.tipo === 'porta' && this.sel.fase === s.arquivo && this.sel.id === p.id;
         const r = svg('rect', {
-          class: 'mapa-porta' + (ligada ? ' ligada' : '') + (selP ? ' sel' : ''), 'data-porta': `${s.arquivo}|${p.id}`,
+          class: 'mapa-porta' + (ligada ? ' ligada' : '') + (selP ? ' sel' : '') + (p.modo === 'tocar' ? ' continua' : '') + (p.fora ? ' fora' : ''), 'data-porta': `${s.arquivo}|${p.id}`,
           x: pt.x - 5, y: pt.y - 8, width: 10, height: 16, rx: 1,
         });
-        r.append(svg('title', {}, `${p.nome}${p.requer ? ` (precisa de: ${p.requer})` : ''} — arraste até outra passagem para conectar`));
+        r.append(svg('title', {}, `${p.nome} · ${p.modo === 'tocar' ? 'passa ao atravessar' : 'apertando Interagir'}${p.requer ? ` (precisa de: ${p.requer})` : ''}${p.fora ? ' · FORA DA FASE: o jogador não alcança' : ''} — arraste até outra passagem para conectar`));
         g.append(r);
       }
       camadaSalas.append(g);
@@ -492,6 +495,21 @@ export class EditorMapa {
     } catch (err) { this.painel.prepend(el('p', { class: 'aviso-texto' }, `Não consegui criar a passagem: ${String(err)}`)); }
   }
 
+  /** Seletor "como passa" de uma passagem (muda o arquivo da sala). */
+  private seletorModo(arquivo: string, id: string, rotulo: string) {
+    const g = this.sala(arquivo)?.passagens.find((x) => x.id === id);
+    const sel = el('select', {}, ...MODOS_PASSAGEM.map((m) => el('option', { value: m.id }, m.nome)));
+    sel.value = g?.modo ?? 'interagir';
+    sel.addEventListener('change', async () => {
+      this.salas = await this.acoes.modoPassagem(arquivo, id, sel.value as ModoPassagem);
+      this.mudou(`passagem ${g?.nome ?? id}: ${MODOS_PASSAGEM.find((m) => m.id === sel.value)?.nome}`);
+    });
+    const lab = el('label', {}, rotulo);
+    dica(lab, 'Como passa', MODOS_PASSAGEM.map((m) => `${m.nome}: ${m.texto}`).join(' '));
+    lab.append(sel);
+    return el('div', { class: 'campo largo mapa-modo' }, lab);
+  }
+
   private async apagarPassagem(arquivo: string, id: string) {
     const s = this.sala(arquivo);
     const g = s?.passagens.find((x) => x.id === id);
@@ -589,6 +607,8 @@ export class EditorMapa {
       el('h3', {}, 'Passagem'),
       el('p', {}, el('strong', {}, g?.nome ?? id)),
       el('p', { class: 'dica-campo' }, `${s?.nome ?? fase} · objeto ${id}${g?.requer ? ` · precisa de: ${g.requer}` : ''}`),
+      g?.fora ? el('p', { class: 'aviso-texto' }, 'Esta passagem está FORA da fase (a fase ficou menor que a posição dela): o jogador não alcança. Abra a sala e arraste a zona para dentro.') : '',
+      this.seletorModo(fase, id, 'Como passa'),
       c ? el('p', { class: 'dica-campo' }, `Conectada: ${this.nomePonta(c.a)} ${c.maoDupla ? '⇄' : '→'} ${this.nomePonta(c.b)}`) : el('p', { class: 'aviso-texto' }, 'Sem conexão: arraste desta passagem até outra.'),
       c ? ir : '',
       del,
@@ -637,6 +657,9 @@ export class EditorMapa {
       el('h3', {}, 'Conexão'),
       el('p', { class: 'mapa-rota' }, el('strong', {}, this.nomePonta(c.a)), el('span', {}, c.maoDupla ? ' ⇄ ' : ' → '), el('strong', {}, this.nomePonta(c.b))),
       labVolta,
+      el('h3', {}, 'Como o jogador passa'),
+      this.seletorModo(c.a.fase, c.a.passagem, `Em ${this.nomePonta(c.a)}`),
+      c.b.passagem ? this.seletorModo(c.b.fase, c.b.passagem, `Em ${this.nomePonta(c.b)}`) : '',
       el('h3', {}, 'Ao passar (◆)'),
       efeitos,
       el('p', { class: 'dica-campo' }, EFEITOS_TRANSICAO.find((e) => e.id === t.efeito)?.texto ?? ''),

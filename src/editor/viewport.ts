@@ -1,6 +1,8 @@
 // Área do cenário: desenha a fase com PixiJS e trata mouse (selecionar, mover, redimensionar, zoom, pan).
 import 'pixi.js/unsafe-eval';
-import { Application, Assets, BlurFilter, ColorMatrixFilter, Container, Graphics, Rectangle, Sprite, Texture, TextureStyle } from 'pixi.js';
+import { Application, Assets, BlurFilter, ColorMatrixFilter, Container, Graphics, Rectangle, RenderTexture, Sprite, Texture, TextureStyle } from 'pixi.js';
+import { novoIdLuz } from '../core/fase';
+import type { LuzFase } from '../core/tipos';
 import { quadroDaFolha, retanguloFolha, type AnimFolha } from '../core/folha';
 import { calcularEfeitos, faseDoId, type EfeitoBrilhar, type ResultadoEfeitos } from '../core/efeitos';
 import type { InimigoFase, ObjetoFase } from '../core/tipos';
@@ -39,7 +41,10 @@ type Arraste =
   | { tipo: 'mover'; id: string; dx: number; dy: number; mexeu: boolean }
   | { tipo: 'escala'; id: string; mexeu: boolean; canto: Canto; ancoraX: number; ancoraY: number }
   | { tipo: 'inicio'; mexeu: boolean; dx: number; dy: number }
-  | { tipo: 'inimigo'; id: string; mexeu: boolean; dx: number; dy: number };
+  | { tipo: 'inimigo'; id: string; mexeu: boolean; dx: number; dy: number }
+  | { tipo: 'luz'; id: string; mexeu: boolean; dx: number; dy: number }
+  | { tipo: 'raioLuz'; id: string; mexeu: boolean }
+  | { tipo: 'zona'; x0: number; y0: number; x1: number; y1: number };
 
 /** Halo (efeito Brilhar): cópia da imagem em silhueta colorida e borrada, atrás do objeto. */
 interface Halo { sp: Sprite; blur: BlurFilter; chave: string; raio: number }
@@ -65,6 +70,16 @@ export class Viewport {
   private colisoesG = new Graphics();
   private halos = new Map<string, Halo>();
   private fantasma = new Sprite(Texture.EMPTY);
+  // ----- Iluminação: escuridão numa textura (as luzes "apagam" o escuro) + brilho colorido somado -----
+  private luzOverlay = new Sprite(Texture.EMPTY);
+  private luzBrilho = new Container();
+  private luzCont = new Container();
+  private luzEscuro = new Graphics();
+  private luzFuros: Sprite[] = [];
+  private luzRT: RenderTexture | null = null;
+  private texLuz: Texture | null = null;
+  /** No ▶ Testar: estado das luzes no jogo (o código e os gatilhos ligam/desligam). */
+  luzTeste: { escura(): boolean; luz(l: LuzFase): { ligada: boolean; raio: number; intensidade: number }; jogador(): { x: number; y: number } | null } | null = null;
   /** Carimbo armado pela caixa de ferramentas (caminho relativo à raiz do projeto). */
   private carimbo: { caminho: string; tex: Texture | null; escala: number } | null = null;
   private mouseTela: { x: number; y: number } | null = null;
@@ -92,6 +107,8 @@ export class Viewport {
 
   /** Chamado a cada quadro (ms desde o anterior), antes de desenhar. Usado pelo ▶ Testar. */
   aoQuadro: ((dtMs: number) => void) | null = null;
+  /** Ferramenta Zona: um retângulo foi desenhado (mundo). */
+  aoCriarZona: (x: number, y: number, w: number, h: number) => void = () => {};
   /** Chamado depois de reconstruir a cena (para reinserir o jogador do teste). */
   aposSincronizar: (() => void) | null = null;
 
@@ -173,7 +190,9 @@ export class Viewport {
     this.el.appendChild(this.app.canvas);
     this.fantasma.alpha = 0.6;
     this.fantasma.visible = false;
-    this.app.stage.addChild(this.fundoFase, this.raizCamadas, this.grade, this.colisoesG, this.overlay, this.fantasma);
+    this.luzCont.addChild(this.luzEscuro);
+    this.luzBrilho.eventMode = 'none';
+    this.app.stage.addChild(this.fundoFase, this.raizCamadas, this.luzBrilho, this.luzOverlay, this.grade, this.colisoesG, this.overlay, this.fantasma);
 
     this.estado.on('fase', () => this.sincronizar());
     this.estado.on('selecao', () => (this.chaveCamera = ''));
@@ -495,7 +514,8 @@ export class Viewport {
     // Objeto sem imagem = zona (ex.: passagem criada pelo Mapa): retângulo vermelho translúcido, invisível no jogo
     const zona = !o.asset;
     const tex = zona ? Texture.WHITE : this.texturas.get(o.asset);
-    sp.tint = zona ? 0xe5484d : 0xffffff;
+    const tipoZona = o.comportamentos[0]?.tipo;
+    sp.tint = !zona ? 0xffffff : tipoZona === 'saida' ? 0xe5484d : tipoZona === 'gatilho' ? 0xa45cf0 : 0x8ea59d;
     if (tex && o.anim && !zona) {
       const q = this.quadrosDe(tex, o.asset, o.anim);
       sp.texture = q[Math.min(q.length - 1, this.quadroObjeto(o))];
@@ -645,6 +665,7 @@ export class Viewport {
   private quadro() {
     this.atualizarRolagem();
     this.animarEfeitos();
+    this.desenharLuz();
     const { x, y, zoom } = this.estado.camera;
     for (const c of this.estado.fase.camadas) {
       const cont = this.conteineres.get(c.id);
@@ -654,7 +675,7 @@ export class Viewport {
       cont.scale.set(zoom);
     }
     const { w, h } = this.tamanhoTela();
-    const chave = `${x},${y},${zoom},${this.estado.fase.objetos.length},${this.estado.fase.objetos.reduce((n, o) => n + (o.tipo === 'interativo' ? o.x + o.y * 7 + o.escala * 13 : 0), 0)},${this.estado.previaParallax},${JSON.stringify(this.estado.fase.camadas)},${this.estado.fase.resolucaoBase},${w},${h},${this.estado.grade},${this.hover},${this.estado.selecionado},${JSON.stringify(this.estado.objetoSelecionado() ?? '')},${this.estado.fase.tamanho},${this.estado.fase.corFundo},${this.estado.modo},${this.estado.mostrarColisoes},${this.estado.colisaoSelecionada},${JSON.stringify(this.estado.fase.colisoes)},${this.ferrColisao.versao},${this.estado.testando},${this.estado.fase.spawnJogador},${JSON.stringify(this.guias)},${JSON.stringify(this.estado.fase.inimigos)},${this.estado.inimigoSelecionado},${this.ocultarInimigosEditor}`;
+    const chave = `${x},${y},${zoom},${this.estado.fase.objetos.length},${this.estado.fase.objetos.reduce((n, o) => n + (o.tipo === 'interativo' ? o.x + o.y * 7 + o.escala * 13 : 0), 0)},${this.estado.previaParallax},${JSON.stringify(this.estado.fase.camadas)},${this.estado.fase.resolucaoBase},${w},${h},${this.estado.grade},${this.hover},${this.estado.selecionado},${JSON.stringify(this.estado.objetoSelecionado() ?? '')},${this.estado.fase.tamanho},${this.estado.fase.corFundo},${this.estado.modo},${this.estado.mostrarColisoes},${this.estado.colisaoSelecionada},${JSON.stringify(this.estado.fase.colisoes)},${this.ferrColisao.versao},${this.estado.testando},${this.estado.fase.spawnJogador},${JSON.stringify(this.guias)},${JSON.stringify(this.estado.fase.inimigos)},${this.estado.inimigoSelecionado},${this.ocultarInimigosEditor},${JSON.stringify(this.estado.fase.luzes)},${JSON.stringify(this.estado.fase.iluminacao)},${this.estado.luzSelecionada},${this.estado.previaLuz},${JSON.stringify(this.arraste?.tipo === 'zona' ? this.arraste : null)}`;
     if (this.carimbo) this.atualizarFantasma();
     if (chave === this.chaveCamera) return;
     this.chaveCamera = chave;
@@ -787,6 +808,13 @@ export class Viewport {
       }
       if (!this.tiposInimigo.has(i.personagem)) g.rect(a1.x, a1.y, b.w * z, b.h * z).fill({ color: 0xef6461, alpha: 0.25 });
     }
+    this.desenharLuzesEditor(g);
+    if (this.arraste?.tipo === 'zona') {
+      const a = this.arraste;
+      const p0 = this.camadaParaTela(Math.min(a.x0, a.x1), Math.min(a.y0, a.y1), '');
+      const z = this.estado.camera.zoom;
+      g.rect(p0.x, p0.y, Math.abs(a.x1 - a.x0) * z, Math.abs(a.y1 - a.y0) * z).fill({ color: 0xa45cf0, alpha: 0.25 }).stroke({ width: 1, color: 0xa45cf0 });
+    }
     // Guias do encaixe entre objetos
     for (const gu of this.guias) {
       const a1 = this.camadaParaTela(gu.x1, gu.y1, gu.camada), a2 = this.camadaParaTela(gu.x2, gu.y2, gu.camada);
@@ -802,6 +830,114 @@ export class Viewport {
       for (const [cx, cy] of [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]]) {
         g.rect(Math.round(cx - TAM_ALCA / 2), Math.round(cy - TAM_ALCA / 2), TAM_ALCA, TAM_ALCA)
           .fill({ color: 0xffffff }).stroke({ width: 1, color: COR_SELECAO });
+      }
+    }
+  }
+
+  // ---------- Iluminação ----------
+
+  /** Gradiente radial branco → transparente (o "furo" que cada luz faz na escuridão). */
+  private texturaLuz(): Texture {
+    if (this.texLuz) return this.texLuz;
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const ctx = c.getContext('2d')!;
+    const g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.35, 'rgba(255,255,255,0.85)');
+    g.addColorStop(0.7, 'rgba(255,255,255,0.35)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 256, 256);
+    this.texLuz = Texture.from(c);
+    return this.texLuz;
+  }
+
+  /** Luz efetiva (no teste, o jogo pode ter desligado ou mudado). */
+  private luzEfetiva(l: LuzFase) {
+    return this.luzTeste ? this.luzTeste.luz(l) : { ligada: l.ligada, raio: l.raio, intensidade: l.intensidade };
+  }
+
+  /** Escuridão da fase com as luzes recortando (a cada quadro: luzes tremulam e o jogador anda). */
+  private desenharLuz() {
+    const f = this.estado.fase;
+    const il = f.iluminacao;
+    const teste = this.estado.testando ? this.luzTeste : null;
+    const escura = teste ? teste.escura() : il.escura && this.estado.previaLuz;
+    this.luzOverlay.visible = escura;
+    this.luzBrilho.visible = escura;
+    if (!escura) return;
+    const { w, h } = this.tamanhoTela();
+    if (w < 2 || h < 2) return;
+    if (!this.luzRT || this.luzRT.width !== w || this.luzRT.height !== h) {
+      this.luzRT?.destroy(true);
+      this.luzRT = RenderTexture.create({ width: w, height: h, resolution: this.app.renderer.resolution });
+      this.luzOverlay.texture = this.luzRT;
+    }
+    // No editor a prévia é mais leve (dá para continuar enxergando o que se edita)
+    this.luzEscuro.clear().rect(0, 0, w, h).fill({ color: il.cor, alpha: teste ? il.escuridao : Math.min(il.escuridao, 0.6) });
+    const tex = this.texturaLuz();
+    const z = this.estado.camera.zoom;
+    const t = performance.now() / 1000;
+    const lista: { x: number; y: number; raio: number; intensidade: number; cor: string; tremular: boolean; semente: number }[] = [];
+    f.luzes.forEach((l, i) => {
+      const e = this.luzEfetiva(l);
+      if (e.ligada) lista.push({ x: l.x, y: l.y, raio: e.raio, intensidade: e.intensidade, cor: l.cor, tremular: l.tremular, semente: i * 7.3 });
+    });
+    const pj = teste?.jogador();
+    if (pj && il.lanterna > 0) lista.push({ x: pj.x, y: pj.y, raio: il.lanterna, intensidade: 1, cor: '#ffffff', tremular: false, semente: 0 });
+    while (this.luzFuros.length < lista.length) {
+      const furo = new Sprite(tex); furo.anchor.set(0.5); furo.blendMode = 'erase'; this.luzCont.addChild(furo);
+      const brilho = new Sprite(tex); brilho.anchor.set(0.5); brilho.blendMode = 'add'; this.luzBrilho.addChild(brilho);
+      this.luzFuros.push(furo);
+    }
+    this.luzFuros.forEach((furo, i) => {
+      const brilho = this.luzBrilho.children[i] as Sprite;
+      const l = lista[i];
+      furo.visible = brilho.visible = !!l;
+      if (!l) return;
+      const trem = l.tremular ? 0.72 + 0.28 * Math.abs(Math.sin(t * 9 + l.semente) * Math.sin(t * 3.7 + l.semente * 2)) : 1;
+      const p = this.camadaParaTela(l.x, l.y, '');
+      const esc = (l.raio * 2 * z) / 256;
+      furo.position.set(p.x, p.y); furo.scale.set(esc); furo.alpha = l.intensidade * trem;
+      brilho.position.set(p.x, p.y); brilho.scale.set(esc * 0.8);
+      brilho.tint = l.cor; brilho.alpha = l.cor.toLowerCase() === '#ffffff' ? 0 : 0.22 * l.intensidade * trem;
+    });
+    this.app.renderer.render({ container: this.luzCont, target: this.luzRT, clear: true });
+  }
+
+  /** Luz sob o ponto: centro (mover) ou borda do raio da selecionada (mudar o raio). */
+  private luzEm(sx: number, sy: number): { l: LuzFase; borda: boolean } | null {
+    const f = this.estado.fase;
+    const z = this.estado.camera.zoom;
+    const sel = this.estado.luzSelecionada ? this.estado.luz(this.estado.luzSelecionada) : undefined;
+    if (sel) {
+      const p = this.camadaParaTela(sel.x, sel.y, '');
+      if (Math.abs(Math.hypot(sx - p.x, sy - p.y) - sel.raio * z) < 6) return { l: sel, borda: true };
+    }
+    for (let i = f.luzes.length - 1; i >= 0; i--) {
+      const l = f.luzes[i];
+      const p = this.camadaParaTela(l.x, l.y, '');
+      if (Math.hypot(sx - p.x, sy - p.y) <= 10) return { l, borda: false };
+    }
+    return null;
+  }
+
+  /** Luzes visíveis/editáveis no cenário: na ferramenta Iluminação ou com a fase escura. */
+  private luzesAtivas() { return this.estado.modo === 'luz' || (this.estado.fase.iluminacao.escura && this.estado.previaLuz); }
+
+  private desenharLuzesEditor(g: Graphics) {
+    if (!this.luzesAtivas()) return;
+    const z = this.estado.camera.zoom;
+    for (const l of this.estado.fase.luzes) {
+      const p = this.camadaParaTela(l.x, l.y, '');
+      const sel = this.estado.luzSelecionada === l.id;
+      const cor = Number.parseInt(l.cor.slice(1), 16);
+      g.circle(p.x, p.y, l.raio * z).stroke({ width: sel ? 2 : 1, color: sel ? COR_SELECAO : cor, alpha: sel ? 0.9 : 0.45 });
+      g.circle(p.x, p.y, 6).fill({ color: l.ligada ? cor : 0x333333 }).stroke({ width: 1.5, color: sel ? COR_SELECAO : 0x0b0f0e });
+      for (let k = 0; k < 8; k++) {
+        const a = (k * Math.PI) / 4;
+        g.moveTo(p.x + Math.cos(a) * 8, p.y + Math.sin(a) * 8).lineTo(p.x + Math.cos(a) * 11, p.y + Math.sin(a) * 11).stroke({ width: 1.5, color: sel ? COR_SELECAO : cor, alpha: 0.9 });
       }
     }
   }
@@ -985,6 +1121,29 @@ export class Viewport {
         }
         if (this.estado.modo === 'inimigo') { this.colocarInimigo(p.x, p.y); return; }
       }
+      // Iluminação: clicar numa luz seleciona e arrasta (a borda da selecionada muda o raio); no vazio cria uma luz
+      if (this.luzesAtivas()) {
+        const hit = this.luzEm(p.x, p.y);
+        if (hit) {
+          this.estado.selecionarLuz(hit.l.id);
+          const w = this.telaParaCamada(p.x, p.y, '');
+          this.arraste = hit.borda ? { tipo: 'raioLuz', id: hit.l.id, mexeu: false } : { tipo: 'luz', id: hit.l.id, mexeu: false, dx: w.x - hit.l.x, dy: w.y - hit.l.y };
+          return;
+        }
+        if (this.estado.modo === 'luz') {
+          const w = this.mundoEncaixado(p.x, p.y);
+          const id = novoIdLuz(this.estado.fase);
+          this.estado.alterar((f) => { f.luzes.push({ id, nome: `Luz ${f.luzes.length + 1}`, x: w.x, y: w.y, raio: 96, intensidade: 1, cor: '#ffe8b0', tremular: false, ligada: true }); });
+          this.estado.selecionarLuz(id);
+          this.estado.avisar(`Luz criada em x ${w.x}, y ${w.y}. Arraste o centro para mover e a borda do círculo para mudar o raio.${this.estado.fase.iluminacao.escura ? '' : ' Ligue "Fase escura" nas propriedades da fase para ver o efeito.'}`);
+          return;
+        }
+      }
+      if (this.estado.modo === 'zona') {
+        const w = this.mundoEncaixado(p.x, p.y);
+        this.arraste = { tipo: 'zona', x0: w.x, y0: w.y, x1: w.x, y1: w.y };
+        return;
+      }
       if (this.estado.modo === 'inicio') {
         const w = this.mundoEncaixado(p.x, p.y);
         this.estado.alterar((f) => { f.spawnJogador = [w.x, w.y]; });
@@ -1060,6 +1219,15 @@ export class Viewport {
       if (!a) {
         if (this.espacoPressionado || this.estado.modo === 'mao') { cv.style.cursor = 'grab'; this.aoPairar(null, 0, 0); return; }
         if (this.estado.modo === 'inicio') { cv.style.cursor = 'crosshair'; this.aoPairar(null, 0, 0); return; }
+        if (this.luzesAtivas()) {
+          const hit = this.luzEm(p.x, p.y);
+          if (hit) {
+            cv.style.cursor = hit.borda ? 'ew-resize' : 'move';
+            this.aoPairar({ titulo: `${hit.l.nome} · luz`, texto: hit.borda ? 'Arraste para mudar o raio.' : `Raio ${hit.l.raio} px · intensidade ${Math.round(hit.l.intensidade * 100)}%${hit.l.ligada ? '' : ' · desligada'}. Arraste para mover; Del exclui.` }, e.clientX, e.clientY);
+            return;
+          }
+        }
+        if (this.estado.modo === 'luz' || this.estado.modo === 'zona') { cv.style.cursor = 'crosshair'; this.aoPairar(null, 0, 0); return; }
         const iniHover = this.estado.modo === 'inimigo' || this.estado.modo === 'selecionar' ? this.inimigoEm(p.x, p.y) : undefined;
         if (iniHover) {
           const t = this.tiposInimigo.get(iniHover.personagem);
@@ -1087,6 +1255,23 @@ export class Viewport {
       }
       this.aoPairar(null, 0, 0);
       if (a.tipo === 'inicio') { this.moverInicio(a, p.x, p.y); return; }
+      if (a.tipo === 'zona') { const w = this.mundoEncaixado(p.x, p.y); a.x1 = w.x; a.y1 = w.y; this.chaveCamera = ''; return; }
+      if (a.tipo === 'luz' || a.tipo === 'raioLuz') {
+        const l = this.estado.luz(a.id);
+        if (!l) return;
+        if (!a.mexeu) { this.estado.checkpoint(); a.mexeu = true; }
+        const w = this.telaParaCamada(p.x, p.y, '');
+        if (a.tipo === 'luz') {
+          let nx = w.x - a.dx, ny = w.y - a.dy;
+          if (this.estado.encaixar) { const g = this.estado.fase.tamanhoGrade; nx = Math.round(nx / g) * g; ny = Math.round(ny / g) * g; }
+          l.x = Math.round(nx); l.y = Math.round(ny);
+        } else {
+          l.raio = Math.max(8, Math.round(Math.hypot(w.x - l.x, w.y - l.y)));
+          this.mostrarLegenda(`raio ${l.raio} px`, p.x, p.y);
+        }
+        this.estado.marcarAlterado();
+        return;
+      }
       if (a.tipo === 'inimigo') {
         const ini = this.estado.inimigo(a.id);
         if (!ini) return;
@@ -1118,6 +1303,14 @@ export class Viewport {
         o.x = enc.x;
         o.y = enc.y;
       } else {
+        if (!o.asset) {
+          // Zona (sem imagem): largura e altura livres
+          const x0 = Math.min(lp.x, a.ancoraX), x1 = Math.max(lp.x, a.ancoraX), y0 = Math.min(lp.y, a.ancoraY), y1 = Math.max(lp.y, a.ancoraY);
+          o.escala = 1; o.x = Math.round(x0); o.y = Math.round(y0); o.w = Math.max(4, Math.round(x1 - x0)); o.h = Math.max(4, Math.round(y1 - y0));
+          this.mostrarLegenda(`${o.w} × ${o.h} px`, p.x, p.y);
+          this.estado.marcarAlterado();
+          return;
+        }
         // Redimensiona livremente mantendo a proporção; Shift = valores redondos.
         const bruta = Math.max(Math.abs(lp.x - a.ancoraX) / o.w, Math.abs(lp.y - a.ancoraY) / o.h);
         o.escala = arredondarEscala(bruta, e.shiftKey);
@@ -1138,6 +1331,12 @@ export class Viewport {
         if (a.mexeu && o) this.aoEscalar(o);
       }
       if (!a && this.estado.modo === 'colisao') this.ferrColisao.pointerUp();
+      if (a?.tipo === 'raioLuz') this.mostrarLegenda(null);
+      if (a?.tipo === 'zona') {
+        let x = Math.min(a.x0, a.x1), y = Math.min(a.y0, a.y1), w = Math.abs(a.x1 - a.x0), h = Math.abs(a.y1 - a.y0);
+        if (w < 6 || h < 6) { w = 64; h = 64; x -= 32; y -= 32; } // clique simples: zona padrão
+        this.aoCriarZona(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+      }
       this.arraste = null;
       if (this.guias.length && !this.carimbo) { this.guias = []; this.chaveCamera = ''; }
       this.chaveCamera = '';

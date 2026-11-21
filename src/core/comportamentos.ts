@@ -9,10 +9,43 @@ export interface CompPorta { tipo: 'porta'; /** item necessário para abrir ('' 
 export interface CompAlavanca { tipo: 'alavanca'; /** id do objeto que a alavanca aciona */ alvo: string; umaVez: boolean }
 /** Passagem (porta, escada, saída): para onde leva e o efeito ficam no MAPA (ferramenta Mapa, M).
  *  destino = destino simples, usado só quando a passagem não está conectada no Mapa. */
-export interface CompSaida { tipo: 'saida'; destino: string; /** item que destranca ('' = livre) */ requer: string; consome: boolean }
+export interface CompSaida {
+  tipo: 'saida'; destino: string; /** item que destranca ('' = livre) */ requer: string; consome: boolean;
+  /** interagir = apertar Interagir (porta); tocar = passa sozinho ao atravessar (fim de rua, corredor contínuo). */
+  modo: ModoPassagem;
+}
+export type ModoPassagem = 'interagir' | 'tocar';
+export const MODOS_PASSAGEM: { id: ModoPassagem; nome: string; texto: string }[] = [
+  { id: 'interagir', nome: 'Apertando Interagir (porta)', texto: 'O jogador para na frente e aperta Interagir (E): portas, escadas, alçapões.' },
+  { id: 'tocar', nome: 'Ao atravessar (contínua)', texto: 'Passa sozinho ao encostar: fim de rua, corredor que continua, borda da área.' },
+];
+/** Gatilho: zona invisível que faz algo quando o jogador entra (e o código recebe aoTocar/aoSair). */
+export interface CompGatilho {
+  tipo: 'gatilho';
+  acao: AcaoGatilho;
+  /** mensagem: o texto */
+  texto: string;
+  /** acionar: id do objeto (como uma alavanca) */
+  alvo: string;
+  /** luzes: id da luz ('' = todas) e o que fazer */
+  luz: string;
+  luzAcao: 'ligar' | 'desligar' | 'alternar';
+  /** Só dispara na primeira vez. */
+  umaVez: boolean;
+}
+export type AcaoGatilho = 'nada' | 'mensagem' | 'acionar' | 'inimigos' | 'luzes' | 'escurecer' | 'clarear';
+export const ACOES_GATILHO: { id: AcaoGatilho; nome: string; texto: string }[] = [
+  { id: 'nada', nome: 'Só o código', texto: 'Não faz nada sozinho: o código do objeto recebe aoTocar (entrou) e aoSair (saiu).' },
+  { id: 'mensagem', nome: 'Mostrar mensagem', texto: 'Mostra um texto ao entrar (pensamento da personagem, aviso).' },
+  { id: 'inimigos', nome: 'Fazer inimigos surgirem', texto: 'Os inimigos marcados com "Surge no gatilho" (Propriedades do inimigo) aparecem quando o jogador entra (spawner / emboscada).' },
+  { id: 'acionar', nome: 'Acionar objeto', texto: 'Como uma alavanca: abre/fecha uma porta ou mostra/esconde um objeto.' },
+  { id: 'luzes', nome: 'Ligar/desligar luz', texto: 'Liga, desliga ou alterna uma luz (ou todas) da ferramenta Iluminação.' },
+  { id: 'escurecer', nome: 'Apagar as luzes da sala', texto: 'A fase fica escura (queda de energia).' },
+  { id: 'clarear', nome: 'Acender a sala', texto: 'A fase deixa de ser escura.' },
+];
 export interface CompMensagem { tipo: 'mensagem'; texto: string }
 
-export type Comportamento = CompColetavel | CompPorta | CompAlavanca | CompSaida | CompMensagem;
+export type Comportamento = CompColetavel | CompPorta | CompAlavanca | CompSaida | CompMensagem | CompGatilho;
 export type TipoComportamento = Comportamento['tipo'];
 
 export const NOMES_COMPORTAMENTO: Record<TipoComportamento, { nome: string; texto: string }> = {
@@ -21,6 +54,7 @@ export const NOMES_COMPORTAMENTO: Record<TipoComportamento, { nome: string; text
   alavanca: { nome: 'Alavanca / botão', texto: 'Com a tecla E, aciona outro objeto: abre ou fecha uma porta, mostra ou esconde um objeto.' },
   saida: { nome: 'Passagem (porta/saída)', texto: 'Leva para outra sala ao apertar E. Para onde leva e o que acontece no caminho (tela de loading, som) são definidos no Mapa (M).' },
   mensagem: { nome: 'Mensagem / nota', texto: 'Mostra um texto ao apertar E (bilhete, placa, documento, pensamento da personagem).' },
+  gatilho: { nome: 'Gatilho (zona)', texto: 'Dispara quando o jogador entra na área: mensagem, inimigos surgindo, luzes, acionar objeto. Use com uma zona (ferramenta Zona, Z).' },
 };
 
 export function comportamentoPadrao(tipo: TipoComportamento, o: ObjetoFase): Comportamento {
@@ -28,7 +62,8 @@ export function comportamentoPadrao(tipo: TipoComportamento, o: ObjetoFase): Com
     case 'coletavel': return { tipo, item: o.nome.replace(/[_-]+/g, ' '), quantidade: 1 };
     case 'porta': return { tipo, requer: '', consome: false, abertaNoInicio: false };
     case 'alavanca': return { tipo, alvo: '', umaVez: false };
-    case 'saida': return { tipo, destino: '', requer: '', consome: false };
+    case 'saida': return { tipo, destino: '', requer: '', consome: false, modo: 'interagir' };
+    case 'gatilho': return { tipo, acao: 'mensagem', texto: '', alvo: '', luz: '', luzAcao: 'alternar', umaVez: true };
     case 'mensagem': return { tipo, texto: '' };
   }
 }
@@ -68,6 +103,10 @@ export interface ResultadoInteracao {
   acionado?: string;
   /** O jogador usou esta passagem (id do objeto): o Mapa diz para onde ela leva. */
   passagem?: string;
+  /** Gatilho de inimigos: os inimigos com "surge" = este id aparecem. */
+  surgir?: string;
+  /** As luzes mudaram (redesenhar a iluminação). */
+  luz?: boolean;
 }
 
 /** Estado do mundo durante o jogo: inventário, portas abertas, itens pegos. */
@@ -87,10 +126,21 @@ export class MundoInterativo {
 
   /** Tempo do jogo (s), atualizado pelo modo Teste: base das animações dos objetos. */
   tempo = 0;
+  /** Zonas (gatilhos e passagens contínuas) em que o jogador está agora. */
+  private dentro = new Set<string>();
+  /** Passagens contínuas desarmadas até o jogador sair delas (quem chega por uma não volta na hora). */
+  readonly desarmadas = new Set<string>();
+  /** Iluminação no jogo: a sala está escura? e cada luz ligada/desligada. */
+  escura = false;
+  readonly luzes = new Map<string, boolean>();
+  /** Raio/intensidade mudados pelo código durante o jogo. */
+  readonly ajusteLuz = new Map<string, { raio?: number; intensidade?: number }>();
   /** Animação de cada objeto animado: tocando desde "inicio" ou parada num quadro fixo. */
   private anims = new Map<string, { inicio: number; repetir: boolean } | { fixo: number }>();
 
   constructor(private fase: Fase) {
+    this.escura = fase.iluminacao.escura;
+    for (const l of fase.luzes) this.luzes.set(l.id, l.ligada);
     for (const o of fase.objetos) {
       const c = comportamentoDe(o);
       const aberta = c?.tipo === 'porta' ? c.abertaNoInicio : false;
@@ -212,6 +262,7 @@ export class MundoInterativo {
       if (!e || !e.visivel) continue;
       const b = this.caixa(o);
       if (!toca(jogador, b, 14)) continue;
+      if (c?.tipo === 'gatilho' || (c?.tipo === 'saida' && c.modo === 'tocar')) continue; // zonas: passam sozinhas
       if (!c || c.tipo === 'coletavel') {
         const d = Math.abs(b.x + b.w / 2 - cx);
         if (!melhor || d < melhor.d) melhor = { o, acao: porCodigo!, d };
@@ -267,6 +318,50 @@ export class MundoInterativo {
         return { mensagem: c.texto || '(mensagem vazia)' };
       default:
         return {};
+    }
+  }
+
+  /** Zonas que o jogador acabou de entrar ou sair (gatilhos e passagens contínuas). */
+  areas(jogador: Caixa): { entrou: ObjetoFase[]; saiu: ObjetoFase[] } {
+    const entrou: ObjetoFase[] = [], saiu: ObjetoFase[] = [];
+    for (const o of this.fase.objetos) {
+      const c = comportamentoDe(o);
+      if (c?.tipo !== 'gatilho' && !(c?.tipo === 'saida' && c.modo === 'tocar')) continue;
+      const e = this.estados.get(o.id);
+      const agora = !!e && e.visivel && toca(jogador, this.caixa(o));
+      if (agora && !this.dentro.has(o.id)) { this.dentro.add(o.id); entrou.push(o); }
+      if (!agora && this.dentro.has(o.id)) { this.dentro.delete(o.id); saiu.push(o); this.desarmadas.delete(o.id); }
+    }
+    return { entrou, saiu };
+  }
+
+  /** O jogador entrou num gatilho: faz a ação dele. */
+  dispararGatilho(o: ObjetoFase): ResultadoInteracao {
+    const c = comportamentoDe(o);
+    const e = this.estados.get(o.id);
+    if (c?.tipo !== 'gatilho' || !e) return {};
+    if (c.umaVez && e.usado) return {};
+    e.usado = true;
+    switch (c.acao) {
+      case 'mensagem': return c.texto ? { mensagem: c.texto } : {};
+      case 'inimigos': return { surgir: o.id };
+      case 'acionar': {
+        const alvo = c.alvo ? this.objeto(c.alvo) : undefined;
+        const ea = alvo ? this.estados.get(alvo.id) : undefined;
+        if (!alvo || !ea) return { aviso: 'Este gatilho não tem alvo (escolha no editor).' };
+        if (comportamentoDe(alvo)?.tipo === 'porta') { this.definirAberta(alvo.id, !ea.aberta); return { acionado: alvo.id }; }
+        if (this.acionadosPorCodigo.has(alvo.id)) return { acionado: alvo.id };
+        ea.visivel = !ea.visivel; this.mudou = true;
+        return { acionado: alvo.id };
+      }
+      case 'luzes': {
+        const ids = c.luz ? [c.luz] : [...this.luzes.keys()];
+        for (const id of ids) this.luzes.set(id, c.luzAcao === 'ligar' ? true : c.luzAcao === 'desligar' ? false : !this.luzes.get(id));
+        return { luz: true };
+      }
+      case 'escurecer': this.escura = true; return { luz: true };
+      case 'clarear': this.escura = false; return { luz: true };
+      default: return {};
     }
   }
 }

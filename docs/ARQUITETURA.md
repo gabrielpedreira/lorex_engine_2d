@@ -384,6 +384,24 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   na borda virada para a origem. Viewport: objeto sem `asset` = retângulo vermelho translúcido, oculto no ▶ Testar.
 - Limpeza de cópias sem uso também respeita as folhas dos personagens e as animações do Mapa.
 
+### 4.27 Passagem contínua, zonas/gatilhos/spawner e iluminação
+
+- `CompSaida.modo`: `interagir` | `tocar`. `MundoInterativo.areas(jogador)` devolve as zonas (gatilhos e passagens
+  contínuas) em que o jogador entrou/saiu; contínuas passam sozinhas (`interagirCom`), exceto as `desarmadas` (a de
+  chegada fica desarmada até o jogador sair dela). Largura da fase menor: zonas na borda direita acompanham; passagem
+  fora dos limites gera erro no Log e aviso no Mapa (`PassagemSala.fora`).
+- Ferramenta **Zona** (modo `zona`): `viewport.aoCriarZona` → objeto sem `asset` (redimensiona livre, cor pelo
+  comportamento: vermelho passagem, roxo gatilho). Comportamento **gatilho** (`CompGatilho`: acao nada | mensagem |
+  inimigos | acionar | luzes | escurecer | clarear; `umaVez`), executado por `dispararGatilho`. **Spawner:**
+  `InimigoFase.surge` = id do gatilho; o teste guarda em `aguardando` e cria ao disparar (`surgirInimigos`). Ganchos
+  `aoTocar`/`aoSair` para objetos.
+- **Iluminação:** `Fase.iluminacao { escura, escuridao, cor, lanterna }` e `Fase.luzes[]`
+  (`LuzFase { x, y, raio, intensidade, cor, tremular, ligada }`). Viewport: escuridão desenhada numa `RenderTexture`
+  com as luzes como sprites de gradiente radial em `blendMode 'erase'`; brilho colorido somado (`add`); lanterna no
+  jogador. No editor a prévia é limitada a 60% de escuro. Ferramenta modo `luz` (criar, mover pelo centro, raio pela
+  borda). No teste o estado vem de `MundoInterativo` (`escura`, `luzes`, `ajusteLuz`) e entra na memória das salas.
+  Código: `jogo.luz(nome)`, `jogo.luzes()`, `jogo.escura`.
+
 ### 4.18 Legendas e recarregar por fora
 
 - `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas

@@ -17,7 +17,7 @@ export function gruposAtalhos(teclasTeste: [string, string][]): Grupo[] {
     ] },
     { titulo: 'Ferramentas (barra lateral)', itens: [
       ['V', 'Selecionar e mover'], ['H', 'Mover a visão'], ['C', 'Colisão'], ['I', 'Início do jogador'],
-      ['N', 'Inimigos'], ['K', 'Personagens'], ['U', 'HUD'], ['M', 'Mapa (salas e passagens)'], ['B', 'Controles'], ['O', 'Código'], ['F5', '▶ Testar / parar'],
+      ['N', 'Inimigos'], ['Z', 'Zona (gatilho / passagem contínua)'], ['Y', 'Iluminação'], ['Shift+Y', 'Mostrar/ocultar o escuro'], ['K', 'Personagens'], ['U', 'HUD'], ['M', 'Mapa (salas e passagens)'], ['B', 'Controles'], ['O', 'Código'], ['F5', '▶ Testar / parar'],
     ] },
     { titulo: 'Objetos', itens: [
       ['Clique', 'Selecionar · arrastar move · alças nos cantos mudam o tamanho'],
@@ -31,6 +31,10 @@ export function gruposAtalhos(teclasTeste: [string, string][]): Grupo[] {
       ['1 a 6', 'Bloco, rampa ◢, rampa ◣, polígono, linha, mão livre'], ['X', 'Sólido ↔ atravessável'],
       ['Enter / duplo clique', 'Terminar polígono ou linha'], ['Backspace', 'Desfazer o último ponto'], ['Esc', 'Cancelar'],
       ['Duplo clique na borda', 'Criar vértice'], ['Alt + clique', 'Apagar vértice'], ['Shift ao escalar', 'Manter a proporção'],
+    ] },
+    { titulo: 'Zona (Z) e Iluminação (Y)', itens: [
+      ['Arrastar (Zona)', 'Desenhar a área; clique simples = 64×64'], ['Alças da zona', 'Largura e altura livres'],
+      ['Clique (Iluminação)', 'Criar luz'], ['Arrastar o centro / a borda', 'Mover a luz / mudar o raio'], ['Del', 'Excluir a luz selecionada'],
     ] },
     { titulo: 'Inimigos (N)', itens: [
       ['Clique no vazio', 'Colocar o tipo escolhido (pisa no chão abaixo)'], ['Arrastar', 'Mover (gruda no chão; Alt solta)'], ['Del', 'Excluir'],

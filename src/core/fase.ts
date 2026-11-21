@@ -1,4 +1,4 @@
-import type { Camada, Colisao, Fase, ObjetoFase, TipoCena } from './tipos';
+import type { Camada, Colisao, Fase, Iluminacao, LuzFase, ObjetoFase, TipoCena } from './tipos';
 import { normalizarEfeitos } from './efeitos';
 import { normalizarComportamentos } from './comportamentos';
 import { normalizarAnim } from './folha';
@@ -45,6 +45,8 @@ export function criarFase(nome: string, o: OpcoesFase = {}): Fase {
     objetos: [],
     colisoes: [],
     inimigos: [],
+    luzes: [],
+    iluminacao: iluminacaoPadrao(),
     spawnJogador: [64, Math.round(res[1] * telas[1] * 0.7)],
   };
 }
@@ -74,7 +76,10 @@ export function normalizarFase(dados: unknown): Fase {
     regiao: typeof d.regiao === 'string' ? d.regiao : '',
     inimigos: (Array.isArray(d.inimigos) ? d.inimigos : []).filter((i) => i && typeof i.personagem === 'string').map((i) => ({
       id: String(i.id), personagem: i.personagem, x: Number(i.x) || 0, y: Number(i.y) || 0, olhandoDireita: !!i.olhandoDireita,
+      ...(typeof i.surge === 'string' && i.surge ? { surge: i.surge } : {}),
     })),
+    luzes: (Array.isArray(d.luzes) ? d.luzes : []).filter((l) => l && typeof l === 'object').map(normalizarLuz),
+    iluminacao: { ...iluminacaoPadrao(), ...(d.iluminacao ?? {}) },
   } as Fase;
 }
 
@@ -98,6 +103,25 @@ function normalizarObjeto(o: Partial<ObjetoFase>, camadaPadrao: string): ObjetoF
     efeitos: normalizarEfeitos(o.efeitos), comportamentos: normalizarComportamentos(o.comportamentos),
     conexoes: o.conexoes ?? {}, script: o.script ?? null,
   };
+}
+
+export const iluminacaoPadrao = (): Iluminacao => ({ escura: false, escuridao: 0.85, cor: '#05070d', lanterna: 0 });
+
+export function normalizarLuz(l: Partial<LuzFase>): LuzFase {
+  return {
+    id: String(l.id ?? 'luz_001'), nome: String(l.nome ?? l.id ?? 'Luz'),
+    x: Number(l.x) || 0, y: Number(l.y) || 0,
+    raio: Math.max(8, Number(l.raio) || 96),
+    intensidade: Math.max(0, Math.min(1, l.intensidade === undefined ? 1 : Number(l.intensidade))),
+    cor: typeof l.cor === 'string' && /^#[0-9a-f]{6}$/i.test(l.cor) ? l.cor : '#ffe8b0',
+    tremular: !!l.tremular, ligada: l.ligada !== false,
+  };
+}
+
+export function novoIdLuz(fase: Fase): string {
+  let maior = 0;
+  for (const l of fase.luzes) { const m = /^luz_(\d+)$/.exec(l.id); if (m) maior = Math.max(maior, Number(m[1])); }
+  return 'luz_' + String(maior + 1).padStart(3, '0');
 }
 
 export function novoIdInimigo(fase: Fase): string {

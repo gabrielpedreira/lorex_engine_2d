@@ -26,6 +26,7 @@ export const GANCHOS: Gancho[] = [
   { nome: 'aoIniciar', donos: ['jogo', 'fase', 'objeto', 'personagem', 'inimigo'], params: 'eu, jogo', texto: 'Uma vez, quando a fase começa.' },
   { nome: 'aoAtualizar', donos: ['jogo', 'fase', 'objeto', 'personagem', 'inimigo'], params: 'eu, jogo, dt', texto: 'A cada quadro (dt = segundos desde o último). Use com moderação.' },
   { nome: 'aoTocar', donos: ['objeto'], params: 'eu, jogo', texto: 'Quando o jogador encosta no objeto (uma vez por encostada).' },
+  { nome: 'aoSair', donos: ['objeto'], params: 'eu, jogo', texto: 'Quando o jogador sai de cima/de dentro do objeto (zonas de gatilho: saiu da área).' },
   { nome: 'aoInteragir', donos: ['objeto'], params: 'eu, jogo', texto: 'Quando o jogador aperta Interagir perto do objeto. Retorne false para cancelar o comportamento pronto (porta, alavanca…). Um objeto com este gancho vira interagível mesmo sem comportamento.' },
   { nome: 'aoColetar', donos: ['objeto'], params: 'eu, jogo', texto: 'Antes de um coletável ir para o inventário. Retorne false para não pegar.' },
   { nome: 'aoAcionado', donos: ['objeto'], params: 'eu, jogo, origem', texto: 'Quando uma alavanca ligada a este objeto é acionada (origem = a alavanca).' },
@@ -134,6 +135,8 @@ export interface ContextoTipos {
   inimigos?: string[];
   /** Chaves dos elementos do HUD. */
   hud?: string[];
+  /** Nomes das luzes da fase. */
+  luzes?: string[];
   acoes: string[];
   animacoes: string[];
   fases: string[];
@@ -157,6 +160,8 @@ type NomeFase = ${uniao(c.fases)} | (string & {});
 type NomeInimigo = ${uniao(c.inimigos ?? [])} | (string & {});
 /** Chave de um elemento do HUD (ferramenta HUD). */
 type ChaveHud = ${uniao(c.hud ?? [])} | (string & {});
+/** Luz desta fase (nome ou id). */
+type NomeLuz = ${uniao(c.luzes ?? [])} | (string & {});
 /** Item do inventário. */
 type NomeItem = ${uniao(c.itens)} | (string & {});
 
@@ -337,6 +342,21 @@ interface Destino {
   transicao: Transicao;
 }
 
+/** Um ponto de luz (ferramenta Iluminação). As mudanças valem durante a partida. */
+interface Luz {
+  readonly id: string;
+  readonly nome: string;
+  readonly x: number;
+  readonly y: number;
+  ligada: boolean;
+  raio: number;
+  /** 0 a 1. */
+  intensidade: number;
+  ligar(): void;
+  desligar(): void;
+  alternar(): void;
+}
+
 /** Tudo o que o código pode usar durante o jogo. */
 interface Jogo {
   readonly jogador: Jogador;
@@ -354,6 +374,11 @@ interface Jogo {
   inimigo(id: NomeInimigo): Inimigo | null;
   /** Objetos cujo nome contém o texto (ou todos). */
   objetos(nomeContem?: string): Objeto[];
+  /** Luz da fase (ferramenta Iluminação), pelo nome ou id. */
+  luz(nomeOuId: NomeLuz): Luz | null;
+  luzes(): Luz[];
+  /** A sala está escura? Mudar apaga/acende a sala (queda de energia). */
+  escura: boolean;
   /** Aviso rápido na tela. */
   aviso(texto: string): void;
   /** Caixa de mensagem (pausa o jogo até fechar). */

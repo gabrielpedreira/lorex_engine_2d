@@ -101,7 +101,7 @@ export class TelaInicio {
         const f = normalizarFase(JSON.parse(await this.plat.lerFase(arquivo)));
         const passagens = f.objetos.filter((o) => o.tipo === 'interativo' && o.comportamentos[0]?.tipo === 'saida').length;
         const animados = f.objetos.filter((o) => o.anim).length;
-        return { arquivo, nome: f.nome, tipo: f.tipo, regiao: f.regiao, info: `${f.tamanho[0]} × ${f.tamanho[1]} px · ${f.objetos.length} objeto(s)${animados ? ` (${animados} animado(s))` : ''} · ${f.colisoes.length ? `${f.colisoes.length} colisão(ões)` : 'sem colisão'}${passagens ? ` · ${passagens} passagem(ns)` : ''}` };
+        return { arquivo, nome: f.nome, tipo: f.tipo, regiao: f.regiao, info: `${f.tamanho[0]} × ${f.tamanho[1]} px · ${f.objetos.length} objeto(s)${animados ? ` (${animados} animado(s))` : ''} · ${f.colisoes.length ? `${f.colisoes.length} colisão(ões)` : 'sem colisão'}${passagens ? ` · ${passagens} passagem(ns)` : ''}${f.iluminacao.escura ? ' · escura' : ''}${f.luzes.length ? ` · ${f.luzes.length} luz(es)` : ''}` };
       } catch {
         return { arquivo, nome: arquivo, tipo: 'fase' as const, regiao: '', info: 'não consegui ler este arquivo' };
       }

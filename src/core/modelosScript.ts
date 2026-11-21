@@ -224,6 +224,32 @@ ${c.consome ? `    jogo.inventario.tirar(${js(c.requer)});
   return false;
 }
 `;
+    case 'gatilho': {
+      const metodo = c.luzAcao === 'ligar' ? 'ligar' : c.luzAcao === 'desligar' ? 'desligar' : 'alternar';
+      const linhas = c.acao === 'mensagem' ? [`jogo.mensagem(${js(c.texto || '')});`]
+        : c.acao === 'luzes' ? (c.luz ? [`const luz = jogo.luz(${js(c.luz)});`, `if (luz) luz.${metodo}();`] : [`for (const luz of jogo.luzes()) luz.${metodo}();`])
+        : c.acao === 'escurecer' ? ['jogo.escura = true;']
+        : c.acao === 'clarear' ? ['jogo.escura = false;']
+        : c.acao === 'acionar' ? [`const alvo = jogo.objeto(${js(c.alvo || '')});`, 'if (alvo) alvo.visivel = !alvo.visivel;']
+        : c.acao === 'inimigos' ? ['// os inimigos marcados com "Surge neste gatilho" aparecem (a engine faz)']
+        : ['// jogo.aviso("Entrou na área");'];
+      const corpo = c.acao === 'nada' ? linhas.map((l) => '  ' + l)
+        : ['  // Já feito pelo gatilho pronto (o mesmo, em código):', ...linhas.map((l) => '  // ' + l)];
+      const umaVez = c.umaVez ? ['  if (eu.dados.disparou) return;', '  eu.dados.disparou = true;'] : [];
+      return [
+        `// Script de ${nome} (gatilho). O gatilho pronto ("${c.acao}") continua rodando quando o jogador entra;`,
+        '// para o código mandar sozinho, escolha a ação "Só o código" no painel Propriedades e escreva aqui.',
+        '',
+        doc('O jogador entrou na área.') + 'export function aoTocar(eu, jogo) {',
+        ...umaVez, ...corpo,
+        '}',
+        '',
+        doc('O jogador saiu da área.') + 'export function aoSair(eu, jogo) {',
+        "  // jogo.log('saiu de', eu.nome);",
+        '}',
+        '',
+      ].join('\n');
+    }
     case 'mensagem':
       return cab + doc('Ler a mensagem.') + `export function aoInteragir(eu, jogo) {
   jogo.mensagem(${js(c.texto || '')});

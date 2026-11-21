@@ -1,12 +1,12 @@
 // Estado central do editor: fase aberta, seleção, câmera, opções e histórico (desfazer/refazer).
 import { LOG } from '../core/log';
 import { criarFase } from '../core/fase';
-import type { Camada, Fase, ObjetoFase } from '../core/tipos';
+import type { Camada, Fase, LuzFase, ObjetoFase } from '../core/tipos';
 
 export type Evento = 'fase' | 'selecao' | 'camera' | 'opcoes' | 'arquivo' | 'mensagem' | 'modo';
 
 /** Ferramenta ativa no cenário. */
-export type Modo = 'selecionar' | 'mao' | 'colisao' | 'inicio' | 'inimigo';
+export type Modo = 'selecionar' | 'mao' | 'colisao' | 'inicio' | 'inimigo' | 'luz' | 'zona';
 /** Forma desenhada pela ferramenta Colisão. */
 export type FormaNova = 'bloco' | 'rampa-direita' | 'rampa-esquerda' | 'poligono' | 'linha' | 'maoLivre';
 
@@ -23,6 +23,10 @@ export class Estado {
   colisaoSelecionada: string | null = null;
   /** Inimigo colocado selecionado (ferramenta Inimigos). */
   inimigoSelecionado: string | null = null;
+  /** Luz selecionada (ferramenta Iluminação). */
+  luzSelecionada: string | null = null;
+  /** Mostra a escuridão no editor (fases escuras). */
+  previaLuz = true;
   /** Tipo (personagem NPC) que a ferramenta Inimigos coloca ao clicar. */
   tipoInimigoNovo = '';
   camadaAtiva = 'objetos';
@@ -98,6 +102,7 @@ export class Estado {
     if (this.selecionado && !this.objeto(this.selecionado)) this.selecionado = null;
     if (this.colisaoSelecionada && !this.colisao(this.colisaoSelecionada)) this.colisaoSelecionada = null;
     if (this.inimigoSelecionado && !this.inimigo(this.inimigoSelecionado)) this.inimigoSelecionado = null;
+    if (this.luzSelecionada && !this.luz(this.luzSelecionada)) this.luzSelecionada = null;
     this.marcarAlterado();
     this.emit('selecao');
     this.avisar(msg);
@@ -111,6 +116,7 @@ export class Estado {
     this.selecionado = null;
     this.colisaoSelecionada = null;
     this.inimigoSelecionado = null;
+    this.luzSelecionada = null;
     this.desfazerPilha = [];
     this.refazerPilha = [];
     if (!fase.camadas.some((c) => c.id === this.camadaAtiva)) {
@@ -136,10 +142,11 @@ export class Estado {
   }
 
   selecionar(id: string | null) {
-    if (this.selecionado === id && !this.colisaoSelecionada && !this.inimigoSelecionado) return;
+    if (this.selecionado === id && !this.colisaoSelecionada && !this.inimigoSelecionado && !this.luzSelecionada) return;
     this.selecionado = id;
     this.colisaoSelecionada = null;
     this.inimigoSelecionado = null;
+    this.luzSelecionada = null;
     this.emit('selecao');
   }
 
@@ -150,6 +157,7 @@ export class Estado {
     this.inimigoSelecionado = id;
     this.selecionado = null;
     this.colisaoSelecionada = null;
+    this.luzSelecionada = null;
     this.emit('selecao');
   }
 
@@ -162,6 +170,18 @@ export class Estado {
     this.colisaoSelecionada = id;
     this.selecionado = null;
     this.inimigoSelecionado = null;
+    this.luzSelecionada = null;
+    this.emit('selecao');
+  }
+
+  luz(id: string): LuzFase | undefined { return this.fase.luzes.find((l) => l.id === id); }
+
+  selecionarLuz(id: string | null) {
+    if (this.luzSelecionada === id && !this.selecionado) return;
+    this.luzSelecionada = id;
+    this.selecionado = null;
+    this.colisaoSelecionada = null;
+    this.inimigoSelecionado = null;
     this.emit('selecao');
   }
 
@@ -171,6 +191,7 @@ export class Estado {
     if (m !== 'colisao') this.colisaoSelecionada = null;
     if (m !== 'selecionar') this.selecionado = null;
     if (m !== 'selecionar' && m !== 'inimigo') this.inimigoSelecionado = null;
+    if (m !== 'selecionar' && m !== 'luz') this.luzSelecionada = null;
     this.emit('modo');
     this.emit('selecao');
   }

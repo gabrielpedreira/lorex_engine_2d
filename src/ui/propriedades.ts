@@ -1,10 +1,10 @@
 // Painel de propriedades: do objeto selecionado ou, sem seleção, da fase.
 import type { Estado } from '../editor/estado';
-import type { Colisao, InimigoFase, ObjetoFase } from '../core/tipos';
+import type { Colisao, InimigoFase, LuzFase, ObjetoFase } from '../core/tipos';
 import { NOMES_FORMA, caixa, reescalar } from '../editor/colisoes';
 import { dica } from './legenda';
 import { EFEITOS_PADRAO, type Efeito, type TipoEfeito } from '../core/efeitos';
-import { NOMES_COMPORTAMENTO, comportamentoPadrao, type Comportamento, type TipoComportamento } from '../core/comportamentos';
+import { ACOES_GATILHO, MODOS_PASSAGEM, NOMES_COMPORTAMENTO, comportamentoPadrao, type AcaoGatilho, type Comportamento, type ModoPassagem, type TipoComportamento } from '../core/comportamentos';
 import { el } from './dom';
 import { MODOS_ANIM, duracaoFolha, palpiteAnim, tamanhoQuadro, type ModoAnim } from '../core/folha';
 
@@ -59,7 +59,9 @@ export class PainelPropriedades {
     const o = this.estado.objetoSelecionado();
     const c = this.estado.colisaoSelecionada ? this.estado.colisao(this.estado.colisaoSelecionada) : undefined;
     const ini = this.estado.inimigoSelecionado ? this.estado.inimigo(this.estado.inimigoSelecionado) : undefined;
-    if (o) this.renderObjeto(o);
+    const luz = this.estado.luzSelecionada ? this.estado.luz(this.estado.luzSelecionada) : undefined;
+    if (luz) this.renderLuz(luz);
+    else if (o) this.renderObjeto(o);
     else if (c) this.renderColisao(c);
     else if (ini) this.renderInimigo(ini);
     else this.renderFase();
@@ -155,9 +157,15 @@ export class PainelPropriedades {
         const mapa = el('button', { type: 'button', class: 'primario largo' }, noMapa ? 'Ver no Mapa' : 'Conectar no Mapa');
         dica(mapa, 'Mapa', 'Abre o diagrama das salas: arraste desta passagem até a da outra sala e clique no ◆ para escolher a transição (tela de loading, som).', 'M');
         mapa.addEventListener('click', () => this.acoes.abrirMapa());
+        const modo = el('select', { id: 'pc-modo' }, ...MODOS_PASSAGEM.map((m) => el('option', { value: m.id }, m.nome)));
+        modo.value = atual.modo;
+        modo.addEventListener('change', () => { this.estado.alterar(() => { atual.modo = modo.value as ModoPassagem; }); this.render(true); });
+        const labModo = el('label', { for: 'pc-modo' }, 'Como passa');
+        dica(labModo, 'Como passa', MODOS_PASSAGEM.map((m) => `${m.nome}: ${m.texto}`).join(' '));
         secao.append(
           el('p', { class: noMapa ? 'dica-campo' : 'aviso-texto' }, noMapa ? `Leva para: ${noMapa}` : 'Ainda não está conectada no Mapa.'),
           mapa,
+          el('div', { class: 'campo largo' }, labModo, modo),
           texto('Precisa do item', atual.requer, (v) => { atual.requer = v; }, 'Passagem trancada: só abre com este item no inventário (ex.: "cartão de acesso"). Vazio = livre. Depois de destrancada, fica livre.', itensDaFase),
           marcar('Gasta o item ao destrancar', atual.consome, (v) => { atual.consome = v; }, 'Se marcado, o item sai do inventário quando a passagem é destrancada.'));
         if (noMapa && !atual.destino) break;
@@ -170,6 +178,49 @@ export class PainelPropriedades {
         });
         destino.addEventListener('change', () => this.estado.alterar(() => { atual.destino = destino.value; }));
         secao.append(el('div', { class: 'campo largo' }, lab, destino));
+        break;
+      }
+      case 'gatilho': {
+        const acao = el('select', { id: 'pc-acao' }, ...ACOES_GATILHO.map((a) => el('option', { value: a.id }, a.nome)));
+        acao.value = atual.acao;
+        acao.addEventListener('change', () => { this.estado.alterar(() => { atual.acao = acao.value as AcaoGatilho; }); this.render(true); });
+        const labAcao = el('label', { for: 'pc-acao' }, 'Ao entrar');
+        dica(labAcao, 'O que o gatilho faz', ACOES_GATILHO.map((a) => `${a.nome}: ${a.texto}`).join(' '));
+        secao.append(el('div', { class: 'campo largo' }, labAcao, acao),
+          el('p', { class: 'dica-campo' }, ACOES_GATILHO.find((a) => a.id === atual.acao)?.texto ?? ''));
+        if (atual.acao === 'mensagem') {
+          const area = el('textarea', { id: 'pc-texto', rows: 3, placeholder: 'Ex.: "Está escuro demais aqui… preciso de uma lanterna."' });
+          area.value = atual.texto;
+          area.addEventListener('change', () => this.estado.alterar(() => { atual.texto = area.value; }));
+          secao.append(el('div', { class: 'campo largo' }, el('label', { for: 'pc-texto' }, 'Texto'), area));
+        }
+        if (atual.acao === 'acionar') {
+          const alvo = atual.alvo ? this.estado.objeto(atual.alvo) : undefined;
+          const escolher = el('button', { type: 'button', class: 'secundario largo' }, alvo ? `Alvo: ${alvo.nome} (trocar)` : 'Escolher o alvo no cenário…');
+          escolher.addEventListener('click', async () => {
+            const id = await this.acoes.escolherAlvo();
+            if (id && id !== o.id) { this.estado.alterar(() => { atual.alvo = id; }); this.render(true); }
+          });
+          secao.append(escolher);
+        }
+        if (atual.acao === 'luzes') {
+          const luz = el('select', { id: 'pc-luz' }, el('option', { value: '' }, 'Todas as luzes'), ...this.estado.fase.luzes.map((l) => el('option', { value: l.id }, l.nome)));
+          luz.value = atual.luz;
+          luz.addEventListener('change', () => this.estado.alterar(() => { atual.luz = luz.value; }));
+          const fazer = el('select', { id: 'pc-luzacao' }, el('option', { value: 'ligar' }, 'Ligar'), el('option', { value: 'desligar' }, 'Desligar'), el('option', { value: 'alternar' }, 'Alternar'));
+          fazer.value = atual.luzAcao;
+          fazer.addEventListener('change', () => this.estado.alterar(() => { atual.luzAcao = fazer.value as 'ligar' | 'desligar' | 'alternar'; }));
+          secao.append(el('div', { class: 'linha2' }, el('div', { class: 'campo' }, el('label', { for: 'pc-luz' }, 'Luz'), luz), el('div', { class: 'campo' }, el('label', { for: 'pc-luzacao' }, 'Fazer'), fazer)));
+          if (!this.estado.fase.luzes.length) secao.append(el('p', { class: 'aviso-texto' }, 'Esta fase ainda não tem luzes (ferramenta Iluminação, Y).'));
+        }
+        if (atual.acao === 'inimigos') {
+          const marcados = this.estado.fase.inimigos.filter((i) => i.surge === o.id);
+          secao.append(el('p', { class: marcados.length ? 'dica-campo' : 'aviso-texto' }, marcados.length
+            ? `Surgem aqui: ${marcados.map((i) => i.id).join(', ')}.`
+            : 'Nenhum inimigo marcado. Selecione um inimigo e, em "Aparece", escolha este gatilho.'));
+        }
+        secao.append(marcar('Só na primeira vez', atual.umaVez, (v) => { atual.umaVez = v; }, 'Desmarcado: dispara toda vez que o jogador entra.'),
+          el('p', { class: 'dica-campo' }, 'No código do objeto: aoTocar (entrou) e aoSair (saiu).'));
         break;
       }
       case 'mensagem': {
@@ -522,11 +573,64 @@ export class PainelPropriedades {
         this.num('X', i.x, (v) => { i.x = Math.round(v); }),
         this.num('Y', i.y, (v) => { i.y = Math.round(v); })),
       el('label', { class: 'check' }, olhando, 'Começa olhando para a direita'),
+      this.campoSurge(i),
       el('span', { class: 'dica-campo' }, t ? `Vida ${t.vida ?? '?'} tiro(s). Posição = pés. Arraste no cenário (gruda no chão; Alt solta).` : 'Tipo não encontrado: crie o personagem NPC em Personagens (K).')),
       el('div', { class: 'secao acoes' },
         botao('Editar o tipo…', () => this.acoes.abrirPersonagem(i.personagem)),
         botao(t?.script ? 'Código do tipo { }' : 'Código do tipo…', () => this.acoes.abrirCodigoInimigo(i.id)),
         botao('Excluir', () => this.acoes.excluir(), 'perigo')));
+  }
+
+  /** Spawner: o inimigo só aparece quando o jogador entra num gatilho. */
+  private campoSurge(i: InimigoFase) {
+    const gatilhos = this.estado.fase.objetos.filter((o) => o.comportamentos[0]?.tipo === 'gatilho');
+    const sel = el('select', { id: 'p-surge' }, el('option', { value: '' }, 'Desde o início da fase'),
+      ...gatilhos.map((g) => el('option', { value: g.id }, `Quando entrar em: ${g.nome}`)));
+    sel.value = i.surge && gatilhos.some((g) => g.id === i.surge) ? i.surge : '';
+    sel.addEventListener('change', () => this.estado.alterar(() => { if (sel.value) i.surge = sel.value; else delete i.surge; }));
+    const lab = el('label', { for: 'p-surge' }, 'Aparece');
+    dica(lab, 'Quando aparece', 'Spawner/emboscada: escolha um gatilho (zona com o comportamento Gatilho e a ação "Fazer inimigos surgirem"). O inimigo fica escondido até o jogador entrar nele.');
+    return el('div', { class: 'campo largo' }, lab, sel,
+      !gatilhos.length ? el('span', { class: 'dica-campo' }, 'Sem gatilhos na fase: crie uma zona (ferramenta Zona, Z) com o comportamento Gatilho.') : '');
+  }
+
+  /** Ponto de luz (ferramenta Iluminação). */
+  private renderLuz(l: LuzFase) {
+    const cor = el('input', { type: 'color', id: 'p-luzcor', value: l.cor });
+    cor.addEventListener('change', () => this.estado.alterar(() => { l.cor = cor.value; }));
+    const excluir = el('button', { type: 'button', class: 'perigo' }, 'Excluir luz');
+    excluir.addEventListener('click', () => this.acoes.excluir());
+    const il = this.estado.fase.iluminacao;
+    this.corpo.append(el('div', { class: 'secao' },
+      el('h3', {}, `Luz · ${l.id}`),
+      this.texto('Nome', l.nome, (v) => { l.nome = v; }),
+      el('div', { class: 'linha2' }, this.num('X', l.x, (v) => { l.x = Math.round(v); }), this.num('Y', l.y, (v) => { l.y = Math.round(v); })),
+      this.num('Raio (px)', l.raio, (v) => { l.raio = Math.max(8, Math.round(v)); }, { min: 8, passo: 8 }),
+      this.num('Intensidade', l.intensidade, (v) => { l.intensidade = v; }, { min: 0, max: 1, passo: 0.1 }),
+      el('div', { class: 'campo largo' }, el('label', { for: 'p-luzcor' }, 'Cor do brilho'), cor),
+      this.check('Tremular (lâmpada com defeito, fogo)', l.tremular, (v) => { l.tremular = v; }),
+      this.check('Começa ligada', l.ligada, (v) => { l.ligada = v; }),
+      il.escura ? '' : el('p', { class: 'aviso-texto' }, 'A fase não está escura: as luzes só aparecem com "Fase escura" ligado (propriedades da fase).'),
+      el('p', { class: 'dica-campo' }, `No código: jogo.luz("${l.nome}").desligar(), .ligar(), .raio = 120. Arraste o centro para mover e a borda para mudar o raio.`),
+      el('div', { class: 'secao acoes' }, excluir)));
+  }
+
+  private secaoIluminacao() {
+    const f = this.estado.fase;
+    const il = f.iluminacao;
+    const cor = el('input', { type: 'color', id: 'p-escurocor', value: il.cor });
+    cor.addEventListener('change', () => this.estado.alterar(() => { il.cor = cor.value; }));
+    const titulo = el('h3', {}, 'Iluminação');
+    dica(titulo, 'Iluminação', 'Fase escura: tudo fica no escuro e só os pontos de luz (ferramenta Iluminação, Y) e a lanterna do jogador clareiam. Gatilhos e o código podem ligar/desligar luzes e apagar a sala.');
+    return el('div', { class: 'secao' }, titulo,
+      this.check('Fase escura', il.escura, (v) => { il.escura = v; }),
+      ...(il.escura ? [
+        this.num('Escuridão', il.escuridao, (v) => { il.escuridao = v; }, { min: 0, max: 1, passo: 0.05 }),
+        el('div', { class: 'campo largo' }, el('label', { for: 'p-escurocor' }, 'Cor do escuro'), cor),
+        this.num('Lanterna (px)', il.lanterna, (v) => { il.lanterna = Math.max(0, Math.round(v)); }, { min: 0, passo: 8 }),
+        el('span', { class: 'dica-campo' }, 'Lanterna = luz em volta do jogador no ▶ Testar (0 = sem).'),
+      ] : []),
+      el('span', { class: 'dica-campo' }, `${f.luzes.length} ponto(s) de luz. Ferramenta Iluminação (Y): clique no cenário para criar.`));
   }
 
   private renderFase() {
@@ -541,7 +645,12 @@ export class PainelPropriedades {
           this.tipoCena(f.tipo, (v) => { f.tipo = v; }),
           this.texto('Região', f.regiao || '', (v) => { f.regiao = v; })),
         el('div', { class: 'linha2' },
-          this.num('Largura', f.tamanho[0], (v) => { f.tamanho = [Math.round(v), f.tamanho[1]]; }, { min: 64, passo: 16 }),
+          this.num('Largura', f.tamanho[0], (v) => {
+            // Zonas (passagens/gatilhos) encostadas na borda direita acompanham a borda nova
+            const antes = f.tamanho[0], nova = Math.round(v);
+            for (const o of f.objetos) if (!o.asset && o.x + o.w * o.escala >= antes - 24) o.x = Math.max(0, o.x + nova - antes);
+            f.tamanho = [nova, f.tamanho[1]];
+          }, { min: 64, passo: 16 }),
           this.num('Altura', f.tamanho[1], (v) => { f.tamanho = [f.tamanho[0], Math.round(v)]; }, { min: 64, passo: 16 })),
         el('div', { class: 'linha2' },
           this.num('Resolução X', f.resolucaoBase[0], (v) => { f.resolucaoBase = [Math.round(v), f.resolucaoBase[1]]; }, { min: 64 }),
@@ -556,6 +665,7 @@ export class PainelPropriedades {
         el('span', { class: 'dica-campo' }, 'Posição dos pés da personagem. Arraste a bandeira no cenário ou use a ferramenta Início (I).'),
         el('div', { class: 'dica' }, `${f.objetos.length} objeto(s) · ${f.colisoes.length} colisão(ões). Selecione algo no cenário para editar.`),
       ),
+      this.secaoIluminacao(),
       this.secaoCodigoFase(),
     );
   }

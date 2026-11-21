@@ -71,6 +71,37 @@ export interface InimigoFase {
   y: number;
   /** Começa olhando para a direita? */
   olhandoDireita: boolean;
+  /** Spawner: só aparece quando o jogador entra neste gatilho (id do objeto). Vazio = desde o início. */
+  surge?: string;
+}
+
+/** Ponto de luz (ferramenta Iluminação). Só aparece quando a fase está escura. */
+export interface LuzFase {
+  id: string;
+  nome: string;
+  /** Centro, no mundo (camadas com parallax 1). */
+  x: number;
+  y: number;
+  raio: number;
+  /** 0 a 1: quanto clareia o centro. */
+  intensidade: number;
+  /** Cor do brilho (branco = luz neutra). */
+  cor: string;
+  /** Pisca/tremula como lâmpada com defeito ou fogo. */
+  tremular: boolean;
+  ligada: boolean;
+}
+
+/** Escuridão da fase (ferramenta Iluminação). */
+export interface Iluminacao {
+  /** A fase é escura? (desligado = tudo iluminado, as luzes não aparecem) */
+  escura: boolean;
+  /** 0 a 1: quão escuro fica longe das luzes. */
+  escuridao: number;
+  /** Cor da escuridão (preto, azul-noite…). */
+  cor: string;
+  /** Raio da luz em volta do jogador (lanterna); 0 = sem. */
+  lanterna: number;
 }
 
 export interface Fase {
@@ -94,4 +125,7 @@ export interface Fase {
   script?: string;
   /** Inimigos colocados na fase (ferramenta Inimigos). */
   inimigos: InimigoFase[];
+  /** Pontos de luz (ferramenta Iluminação). */
+  luzes: LuzFase[];
+  iluminacao: Iluminacao;
 }

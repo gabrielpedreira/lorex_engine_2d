@@ -666,6 +666,9 @@ body.corpo-codigo { margin: 0; height: 100vh; overflow: hidden; background: var(
 .mapa-sala .mapa-porta { fill: #101513; stroke: #e5484d; stroke-width: 2.5; cursor: crosshair; }
 .mapa-sala .mapa-porta.ligada { fill: #e5484d; }
 .mapa-sala .mapa-porta.sel, .mapa-sala .mapa-porta:hover { stroke: #ffffff; }
+.mapa-sala .mapa-porta.continua { stroke-dasharray: 3 2; }
+.mapa-sala .mapa-porta.fora { stroke: var(--laranja); fill: var(--laranja); }
+.mapa-modo label { display: flex; flex-direction: column; gap: 4px; }
 .mapa-inicio { fill: var(--acento); opacity: 0.85; cursor: crosshair; }
 .mapa-nome { fill: #ffffff; font: 600 15px 'Segoe UI', sans-serif; cursor: text; }
 .mapa-nome:hover { fill: var(--acento); text-decoration: underline; }

@@ -102,6 +102,13 @@ const biblioteca = new Biblioteca(conteudoBib, plat);
 
 // ---------- Ações sobre objetos ----------
 function excluirSelecionado() {
+  const idLuz = estado.luzSelecionada;
+  if (idLuz) {
+    estado.alterar((f) => { f.luzes = f.luzes.filter((l) => l.id !== idLuz); });
+    estado.selecionarLuz(null);
+    estado.avisar(`Luz ${idLuz} removida.`);
+    return;
+  }
   const idIni = estado.inimigoSelecionado;
   if (idIni) {
     estado.alterar((f) => { f.inimigos = f.inimigos.filter((i) => i.id !== idIni); });
@@ -307,6 +314,20 @@ async function adicionarAsset(caminhoRaiz: string, sx?: number, sy?: number, tip
   }
 }
 viewport.aoSoltarAsset = (c, sx, sy) => { void adicionarAsset(c, sx, sy); };
+// Ferramenta Zona: retângulo desenhado vira um objeto sem imagem (gatilho por padrão)
+viewport.aoCriarZona = (x, y, w, h) => {
+  const camada = estado.fase.camadas.find((c) => c.id === 'objetos')?.id ?? estado.camadaAtiva;
+  const n = estado.fase.objetos.filter((o) => !o.asset).length + 1;
+  const obj: ObjetoFase = {
+    id: novoIdObjeto(estado.fase), tipo: 'interativo', nome: `Zona ${n}`, asset: '', camada,
+    x, y, w, h, escala: 1, rotacao: 0, espelharX: false, espelharY: false, opacidade: 1, visivel: true,
+    efeitos: [], comportamentos: [{ tipo: 'gatilho', acao: 'mensagem', texto: '', alvo: '', luz: '', luzAcao: 'alternar', umaVez: true }], conexoes: {}, script: null,
+  };
+  estado.alterar((f) => { f.objetos.push(obj); });
+  estado.definirModo('selecionar');
+  estado.selecionar(obj.id);
+  estado.avisar(`${obj.nome} criada (${w}×${h} px): escolha o que ela faz em Propriedades › Comportamento. Para uma passagem contínua, troque para "Passagem".`);
+};
 biblioteca.aoAdicionar = (c) => { void adicionarAsset(c); };
 if (plat.tipo === 'electron') {
   biblioteca.aoLimpar = async () => {
@@ -698,6 +719,7 @@ painelCodigo.tipos = async () => {
     animacoes: [...new Set([...(pers ? Object.keys(pers.animacoes) : []), ...[...tiposInimigo.values()].flatMap((t) => Object.keys(t.p.animacoes))])],
     inimigos: f.inimigos.map((i) => i.id),
     hud: normalizarHud(config.hud).elementos.map((e) => e.chave),
+    luzes: f.luzes.flatMap((l) => [l.nome, l.id]),
     fases: await plat.listarFases(),
     itens,
   });
@@ -846,7 +868,8 @@ async function salasDoProjeto(): Promise<InfoSala[]> {
         arquivo, nome: f.nome, tipo: f.tipo, regiao: f.regiao, tamanho: f.tamanho, spawn: f.spawnJogador,
         passagens: f.objetos.flatMap((o) => {
           const c = comportamentoDe(o);
-          return c?.tipo === 'saida' ? [{ id: o.id, nome: o.nome, x: o.x, y: o.y, w: o.w * o.escala, h: o.h * o.escala, requer: c.requer }] : [];
+          return c?.tipo === 'saida' ? [{ id: o.id, nome: o.nome, x: o.x, y: o.y, w: o.w * o.escala, h: o.h * o.escala, requer: c.requer, modo: c.modo,
+            fora: o.x + o.w * o.escala < 0 || o.x > f.tamanho[0] || o.y + o.h * o.escala < 0 || o.y > f.tamanho[1] }] : [];
         }),
       });
     } catch (err) {
@@ -889,11 +912,15 @@ const editorMapa = new EditorMapa({
         id, tipo: 'interativo', nome, asset: '', camada,
         x: lado === 'esquerda' ? 8 : f.tamanho[0] - w - 8, y: f.spawnJogador[1] - h, w, h,
         escala: 1, rotacao: 0, espelharX: false, espelharY: false, opacidade: 1, visivel: true,
-        efeitos: [], comportamentos: [{ tipo: 'saida', destino: '', requer: '', consome: false }], conexoes: {}, script: null,
+        efeitos: [], comportamentos: [{ tipo: 'saida', destino: '', requer: '', consome: false, modo: 'interagir' }], conexoes: {}, script: null,
       });
     });
     LOG.add({ cat: 'sistema', texto: `Mapa: passagem "${nome}" (${id}) criada em ${arquivo}` });
     return { id, salas: await salasDoProjeto() };
+  },
+  modoPassagem: async (arquivo, id, modo) => {
+    await alterarFaseArquivo(arquivo, (f) => { const c = f.objetos.find((o) => o.id === id)?.comportamentos[0]; if (c?.tipo === 'saida') c.modo = modo; });
+    return salasDoProjeto();
   },
   excluirPassagem: async (arquivo, id) => {
     if (arquivo === estado.arquivoFase && estado.selecionado === id) estado.selecionar(null);
@@ -957,7 +984,7 @@ async function atualizarListaFases() {
 
 // ---------- Barra de ferramentas lateral (estilo Photoshop) ----------
 const trilhoFerr = el('nav', { class: 'trilho-ferramentas', 'aria-label': 'Ferramentas' });
-type ItemTrilho = { id: string; ico: keyof typeof ICONES; titulo: string; texto: string; atalho: string; acao: () => void; modo?: 'selecionar' | 'mao' | 'colisao' | 'inicio' | 'inimigo' };
+type ItemTrilho = { id: string; ico: keyof typeof ICONES; titulo: string; texto: string; atalho: string; acao: () => void; modo?: import('./editor/estado').Modo };
 const itensTrilho: (ItemTrilho | 'sep')[] = [
   { id: 'selecionar', modo: 'selecionar', ico: 'cursor', titulo: 'Selecionar e mover', atalho: 'V', acao: () => estado.definirModo('selecionar'),
     texto: 'Clique num objeto para selecionar, arraste para mover, use as alças dos cantos para mudar o tamanho. A bandeira verde (início do jogador) também se arrasta.' },
@@ -970,6 +997,10 @@ const itensTrilho: (ItemTrilho | 'sep')[] = [
     texto: 'Desenha onde o jogador pisa e esbarra. Ao escolher, aparece uma barra no topo do cenário com as formas (bloco, rampas, polígono, linha, mão livre) e o tipo (sólido ou atravessável).' },
   { id: 'inicio', modo: 'inicio', ico: 'bandeira', titulo: 'Início do jogador', atalho: 'I', acao: () => estado.definirModo('inicio'),
     texto: 'Clique no cenário onde ficam os pés da personagem quando a fase começa. A bandeira verde marca esse lugar.' },
+  { id: 'zona', modo: 'zona', ico: 'zona', titulo: 'Zona (gatilho / passagem)', atalho: 'Z', acao: () => estado.definirModo(estado.modo === 'zona' ? 'selecionar' : 'zona'),
+    texto: 'Arraste no cenário para criar uma área invisível no jogo: um GATILHO (ao entrar: mensagem, inimigos surgindo, luzes, acionar objeto) ou, trocando o comportamento, uma PASSAGEM contínua (fim de rua). No editor aparece roxa (gatilho) ou vermelha (passagem).' },
+  { id: 'luz', modo: 'luz', ico: 'luz', titulo: 'Iluminação', atalho: 'Y', acao: () => estado.definirModo(estado.modo === 'luz' ? 'selecionar' : 'luz'),
+    texto: 'Pontos de luz para salas escuras: clique para criar, arraste o centro para mover e a borda para mudar o raio. Ligue "Fase escura" nas propriedades da fase (sem seleção) e ajuste a escuridão e a lanterna do jogador. Shift+Y mostra/oculta a prévia do escuro.' },
   { id: 'inimigos', modo: 'inimigo', ico: 'inimigo', titulo: 'Inimigos', atalho: 'N', acao: () => estado.definirModo(estado.modo === 'inimigo' ? 'selecionar' : 'inimigo'),
     texto: 'Coloca inimigos na fase: escolha o tipo na barra de cima (ex.: Zumbi) e clique no cenário (ele pisa no chão abaixo). Clique num inimigo para selecionar e arraste para mover; Del exclui.' },
   { id: 'personagens', ico: 'personagem', titulo: 'Personagens', atalho: 'K', acao: () => void abrirPersonagens(),
@@ -1218,6 +1249,9 @@ window.addEventListener('keydown', (e) => {
       else if (k === 'n') estado.definirModo(estado.modo === 'inimigo' ? 'selecionar' : 'inimigo');
       else if (k === 'u') void abrirHud();
       else if (k === 'm') void abrirMapa();
+      else if (k === 'y' && e.shiftKey) { estado.previaLuz = !estado.previaLuz; estado.emit('opcoes'); estado.avisar(`Prévia do escuro ${estado.previaLuz ? 'ligada' : 'desligada'}.`); }
+      else if (k === 'y') estado.definirModo(estado.modo === 'luz' ? 'selecionar' : 'luz');
+      else if (k === 'z') estado.definirModo(estado.modo === 'zona' ? 'selecionar' : 'zona');
       else if (k === 'l') painelLog.alternar();
       else if (k === 'x' && estado.modo === 'colisao') { estado.comportamentoNovo = estado.comportamentoNovo === 'solido' ? 'atravessavel' : 'solido'; atualizarOpcoesColisao(); }
       else if (k === 'c' && e.shiftKey) { estado.mostrarColisoes = !estado.mostrarColisoes; estado.emit('opcoes'); sincronizarAlternadores(); }

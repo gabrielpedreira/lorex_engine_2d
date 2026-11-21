@@ -26,6 +26,7 @@ export interface PonteTeste {
   irPara(fase: string, op?: { chegada?: string; transicao?: Partial<Transicao> | string }): void;
   passar(o: ObjetoFase): void;
   destinoDe(o: ObjetoFase): Viagem | null;
+  luzesFase(): import('../core/tipos').LuzFase[];
   apertou(acao: string): boolean;
   segurando(acao: string): boolean;
   hudDefinir(rotulo: string, valor: string): void;
@@ -142,12 +143,12 @@ export class MotorScripts {
     if (!j) return;
     const m = this.ponte.mundo();
     for (const s of this.scripts) {
-      if (s.dono !== 'objeto' || !s.idDono || !s.c.ganchos.aoTocar) continue;
+      if (s.dono !== 'objeto' || !s.idDono || (!s.c.ganchos.aoTocar && !s.c.ganchos.aoSair)) continue;
       const o = this.objeto(s.idDono);
       if (!o) continue;
-      const agora = m.visivel(o.id) && toca(j.caixa, m.caixa(o));
+      const agora = (m.visivel(o.id) || !o.asset) && toca(j.caixa, m.caixa(o));
       if (agora && !this.tocando.has(o.id)) { this.tocando.add(o.id); this.chamar(s, 'aoTocar'); }
-      if (!agora) this.tocando.delete(o.id);
+      if (!agora && this.tocando.has(o.id)) { this.tocando.delete(o.id); this.chamar(s, 'aoSair'); }
     }
   }
 
@@ -322,6 +323,32 @@ export class MotorScripts {
     return novo;
   }
 
+  private handlesLuz = new Map<string, unknown>();
+  /** Luz (ferramenta Iluminação) como o código enxerga. */
+  handleLuz(l: import('../core/tipos').LuzFase): unknown {
+    const h = this.handlesLuz.get(l.id);
+    if (h) return h;
+    const m = () => this.ponte.mundo();
+    const aj = () => { let a = m().ajusteLuz.get(l.id); if (!a) m().ajusteLuz.set(l.id, a = {}); return a; };
+    const novo = {
+      get id() { return l.id; },
+      get nome() { return l.nome; },
+      get x() { return l.x; },
+      get y() { return l.y; },
+      get ligada() { return m().luzes.get(l.id) ?? l.ligada; },
+      set ligada(v: boolean) { m().luzes.set(l.id, !!v); LOG.add({ cat: 'mundo', texto: `luz ${l.nome} ${v ? 'ligada' : 'desligada'} (código)` }); },
+      get raio() { return m().ajusteLuz.get(l.id)?.raio ?? l.raio; },
+      set raio(v: number) { aj().raio = Math.max(4, Number(v) || 0); },
+      get intensidade() { return m().ajusteLuz.get(l.id)?.intensidade ?? l.intensidade; },
+      set intensidade(v: number) { aj().intensidade = Math.max(0, Math.min(1, Number(v) || 0)); },
+      ligar() { novo.ligada = true; },
+      desligar() { novo.ligada = false; },
+      alternar() { novo.ligada = !novo.ligada; },
+    };
+    this.handlesLuz.set(l.id, novo);
+    return novo;
+  }
+
   private handlesInimigo = new Map<string, unknown>();
   /** Inimigo como o código enxerga. */
   private handleInimigo(ini: InimigoVivo): unknown {
@@ -443,6 +470,13 @@ export class MotorScripts {
       inimigos: (contem = '') => ponte.inimigos().filter((i) => `${i.nome} ${i.id} ${i.tipo.arquivo}`.toLowerCase().includes(contem.toLowerCase())).map((i) => motor.handleInimigo(i)),
       inimigo: (id: string) => { const i = ponte.inimigos().find((x) => x.id === id); return i ? motor.handleInimigo(i) : null; },
       objetos: (contem = '') => ponte.objetos().filter((o) => o.nome.toLowerCase().includes(contem.toLowerCase())).map((o) => motor.handle(o)),
+      luz: (nome: string) => {
+        const l = ponte.luzesFase().find((x) => x.id === nome) ?? ponte.luzesFase().find((x) => x.nome.toLowerCase() === String(nome).toLowerCase());
+        return l ? motor.handleLuz(l) : null;
+      },
+      luzes: () => ponte.luzesFase().map((l) => motor.handleLuz(l)),
+      get escura() { return ponte.mundo().escura; },
+      set escura(v: boolean) { ponte.mundo().escura = !!v; LOG.add({ cat: 'mundo', texto: `iluminação (código): sala ${v ? 'escura' : 'clara'}` }); },
       aviso: (t: string) => ponte.aviso(String(t)),
       mensagem: (t: string) => ponte.mensagem(String(t)),
       irPara: (f: string, op?: { chegada?: string; transicao?: Partial<Transicao> | string }) => ponte.irPara(String(f), op),
