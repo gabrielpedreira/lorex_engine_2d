@@ -441,6 +441,16 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   (mtime): `viewport.texturaRaiz`/`textura` recarregam quando a data mudou (`?m=<mtime>` na URL) e re-sincronizam a cena;
   o watcher de `jogo/assets` também recarrega as texturas.
 
+### 4.32 Pontas soltas e edição das ligações
+
+- `PontaConexao` com `fase ''` = ponta solta (`SOLTA()`, `pontaSolta`). `viagemDe` ignora conexões com ponta solta;
+  `normalizarMapa`/`limparSoltas` removem as conexões sem nenhuma ponta; `limparMapa` solta pontas de salas apagadas;
+  `conectar` e `soltarPassagem` soltam a ponta antiga em vez de apagar a conexão; `Conexao.pos` guarda o losango.
+- `EditorMapa.geometria(c)`: losango no meio da curva (duas pontas) ou em `pos` com um toco tracejado (uma ponta).
+  Bolinhas `data-ponta="id|a|b"`; `moverPonta` liga em passagem/início/sala (cria a passagem) ou solta no vazio.
+  `aplicarMudanca` envolve toda mudança: remove conexões sem pontas e apaga as passagens-zona (`PassagemSala.zona`)
+  que perderam a última conexão (`passagensUsadas` antes × depois).
+
 ### 4.18 Legendas e recarregar por fora
 
 - `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas

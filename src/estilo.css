@@ -651,10 +651,10 @@ body.corpo-codigo { margin: 0; height: 100vh; overflow: hidden; background: var(
 .mapa-caixa { width: min(1500px, calc(100vw - 32px)); height: min(900px, calc(100vh - 32px)); }
 .mapa-colunas { display: grid; grid-template-columns: 1fr var(--mapa-painel, 340px); min-height: 0; }
 .mapa-palco { position: relative; min-height: 0; border-right: 1px solid var(--borda); background: #101513; overflow: hidden; }
-.mapa-area { width: 100%; height: 100%; display: block; cursor: grab; user-select: none; touch-action: none; }
+.mapa-area { width: 100%; height: 100%; display: block; cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none; }
 .mapa-area:active { cursor: grabbing; }
 .mapa-area:focus { outline: none; }
-.mapa-ajuda { position: absolute; left: 10px; bottom: 8px; right: 10px; color: var(--texto-2); font-size: 11px; pointer-events: none; }
+.mapa-ajuda { user-select: none; position: absolute; left: 10px; bottom: 8px; right: 10px; color: var(--texto-2); font-size: 11px; pointer-events: none; }
 .mapa-legenda { display: flex; gap: 12px; align-items: center; color: var(--texto-2); font-size: 12px; }
 .mapa-legenda span { display: inline-flex; align-items: center; gap: 5px; }
 .mapa-legenda i { display: inline-block; }
@@ -755,3 +755,7 @@ body.redimensionando-x #app, body.redimensionando-y #app { transition: none; }
 .mapa-palco > .divisor { right: 0; }
 .esquerda > .divisor-x.divisor-fim { right: 0; }
 .direita > .divisor-x.divisor-inicio { left: 0; }
+.mapa-ponta { fill: #ffffff; stroke: #4f5bd5; stroke-width: 2; cursor: grab; }
+.mapa-ponta:hover { fill: var(--acento); }
+.mapa-ponta.solta { fill: var(--laranja); stroke: #101513; }
+.mapa-linha.solta { stroke: var(--laranja); stroke-dasharray: 5 4; }

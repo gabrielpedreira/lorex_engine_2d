@@ -112,6 +112,10 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 - **Passagens: como passa** — apertando Interagir (porta) ou **ao atravessar** (contínua: fim de rua, corredor). Escolhe-se
   no Mapa (painel da passagem ou da conexão) ou nas Propriedades. Quem chega por uma passagem contínua só volta depois de
   sair dela. Passagem fora dos limites da fase é avisada no Mapa e no Log.
+- **Editar ligações no Mapa**: cada linha tem uma bolinha em cada ponta; arraste-a até outra passagem ou sala para mudar
+  a ligação (a transição do ◆ continua), ou para o vazio para desligar aquela ponta (fica um toco laranja). Sem as duas
+  pontas, o ◆ some. Passagens criadas pelo Mapa que ficam sem nenhuma conexão são apagadas da sala; portas com imagem
+  ficam. Ligar uma passagem a outro lugar solta a ponta dela na conexão antiga.
 - **Setas de navegação**: no cenário, cada passagem que leva a outra sala ganha uma seta fora da fase (à esquerda ou à
   direita para passagens nas bordas, em cima para as do meio) com o nome da sala de destino; clicar abre aquela sala.
 - **Atualizar a biblioteca** (botão ⟳ ou `F9`): relê a pasta; imagens novas aparecem, apagadas somem e as trocadas (mesmo

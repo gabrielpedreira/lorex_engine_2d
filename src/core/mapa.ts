@@ -31,8 +31,12 @@ export interface Transicao {
   volume: number;
 }
 
-/** Uma ponta da conexão: uma passagem (id do objeto) numa sala; passagem '' = o início do jogador da sala. */
+/** Uma ponta da conexão: uma passagem (id do objeto) numa sala; passagem '' = o início do jogador da sala.
+ *  fase '' = ponta SOLTA (desligada no Mapa): a conexão (o losango) continua, mas não leva a lugar nenhum. */
 export interface PontaConexao { fase: string; passagem: string }
+
+export const pontaSolta = (p: PontaConexao) => !p.fase;
+export const SOLTA = (): PontaConexao => ({ fase: '', passagem: '' });
 
 export interface Conexao {
   id: string;
@@ -46,6 +50,8 @@ export interface Conexao {
   mesmoNosDoisSentidos: boolean;
   /** Volta (B → A), quando a ida e a volta são diferentes. */
   transicaoVolta?: Transicao;
+  /** Onde fica o losango no diagrama quando uma das pontas está solta. */
+  pos?: { x: number; y: number };
 }
 
 export interface Mapa {
@@ -97,14 +103,17 @@ export function normalizarMapa(d: unknown): Mapa {
   }
   const ponta = (p: unknown): PontaConexao | null => {
     const x = p as Partial<PontaConexao> | null;
-    return x && typeof x.fase === 'string' && x.fase ? { fase: x.fase, passagem: typeof x.passagem === 'string' ? x.passagem : '' } : null;
+    return x && typeof x.fase === 'string' ? (x.fase ? { fase: x.fase, passagem: typeof x.passagem === 'string' ? x.passagem : '' } : SOLTA()) : null;
   };
   const conexoes: Conexao[] = [];
   for (const c of Array.isArray(m.conexoes) ? m.conexoes : []) {
     const a = ponta(c?.a), b = ponta(c?.b);
-    if (!a || !b || !a.passagem) continue; // a origem sempre é uma passagem
+    if (!a || !b || (pontaSolta(a) && pontaSolta(b))) continue; // sem nenhuma ponta: o losango não faz mais sentido
+    if (!pontaSolta(a) && !a.passagem) continue; // a origem sempre é uma passagem (o início só pode ser chegada)
     const mesmo = c.mesmoNosDoisSentidos !== false;
+    const pos = c.pos && typeof c.pos === 'object' ? { x: Number(c.pos.x) || 0, y: Number(c.pos.y) || 0 } : undefined;
     conexoes.push({
+      ...(pos ? { pos } : {}),
       id: String(c.id ?? novoIdConexao({ salas, conexoes })), a, b, maoDupla: c.maoDupla !== false && !!b.passagem,
       transicao: normalizarTransicao(c.transicao), mesmoNosDoisSentidos: mesmo,
       ...(!mesmo && c.transicaoVolta ? { transicaoVolta: normalizarTransicao(c.transicaoVolta) } : {}),
@@ -129,6 +138,7 @@ export function conexaoDaPassagem(m: Mapa, fase: string, passagem: string): Cone
 /** Para onde a passagem leva (null = não está conectada, ou é a ponta de chegada de uma conexão só de ida). */
 export function viagemDe(m: Mapa, fase: string, passagem: string): Viagem | null {
   for (const c of m.conexoes) {
+    if (pontaSolta(c.a) || pontaSolta(c.b)) continue; // ponta desligada no Mapa: não leva a lugar nenhum
     if (mesma(c.a, fase, passagem)) return { fase: c.b.fase, chegada: c.b.passagem, transicao: c.transicao, deFase: fase, dePassagem: passagem, conexao: c.id };
     if (c.maoDupla && c.b.passagem && mesma(c.b, fase, passagem)) {
       const t = !c.mesmoNosDoisSentidos && c.transicaoVolta ? c.transicaoVolta : c.transicao;
@@ -138,20 +148,45 @@ export function viagemDe(m: Mapa, fase: string, passagem: string): Viagem | null
   return null;
 }
 
-/** Liga duas pontas. Uma passagem só leva a um lugar: conexões antigas dessas passagens saem. */
+/** Solta das outras conexões a ponta que usa esta passagem (uma passagem só leva a um lugar). */
+export function soltarPassagem(m: Mapa, p: PontaConexao, exceto?: Conexao) {
+  if (!p.passagem) return;
+  for (const c of m.conexoes) {
+    if (c === exceto) continue;
+    for (const lado of ['a', 'b'] as const) if (mesma(c[lado], p.fase, p.passagem)) c[lado] = SOLTA();
+  }
+}
+
+/** Tira as conexões sem nenhuma ponta ligada (o losango some). Devolve as removidas. */
+export function limparSoltas(m: Mapa): Conexao[] {
+  const fora = m.conexoes.filter((c) => pontaSolta(c.a) && pontaSolta(c.b));
+  m.conexoes = m.conexoes.filter((c) => !fora.includes(c));
+  return fora;
+}
+
+/** Liga duas pontas. Uma passagem só leva a um lugar: nas conexões antigas dela, essa ponta fica solta. */
 export function conectar(m: Mapa, a: PontaConexao, b: PontaConexao, transicao = transicaoPadrao()): { conexao: Conexao; removidas: Conexao[] } {
-  const removidas = m.conexoes.filter((c) => [a, b].some((p) => p.passagem && (mesma(c.a, p.fase, p.passagem) || (c.b.passagem && mesma(c.b, p.fase, p.passagem)))));
-  m.conexoes = m.conexoes.filter((c) => !removidas.includes(c));
+  soltarPassagem(m, a); soltarPassagem(m, b);
+  const removidas = limparSoltas(m);
   const conexao: Conexao = { id: novoIdConexao(m), a, b, maoDupla: !!b.passagem, transicao, mesmoNosDoisSentidos: true };
   m.conexoes.push(conexao);
   return { conexao, removidas };
+}
+
+/** Passagens (sala + id) usadas por alguma ponta ligada. */
+export function passagensUsadas(m: Mapa): Set<string> {
+  const s = new Set<string>();
+  for (const c of m.conexoes) for (const p of [c.a, c.b]) if (!pontaSolta(p) && p.passagem) s.add(`${p.fase}|${p.passagem}`);
+  return s;
 }
 
 /** Uma sala foi renomeada/apagada: tira conexões que apontam para arquivos que não existem mais. */
 export function limparMapa(m: Mapa, fasesExistentes: string[]): number {
   const ok = new Set(fasesExistentes);
   const antes = m.conexoes.length;
-  m.conexoes = m.conexoes.filter((c) => ok.has(c.a.fase) && ok.has(c.b.fase));
+  // Ponta numa sala que não existe mais vira solta; sem pontas, a conexão sai
+  for (const c of m.conexoes) for (const lado of ['a', 'b'] as const) if (!pontaSolta(c[lado]) && !ok.has(c[lado].fase)) c[lado] = SOLTA();
+  m.conexoes = m.conexoes.filter((c) => !(pontaSolta(c.a) && pontaSolta(c.b)));
   for (const k of Object.keys(m.salas)) if (!ok.has(k)) delete m.salas[k];
   return antes - m.conexoes.length;
 }

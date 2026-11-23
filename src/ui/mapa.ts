@@ -5,14 +5,14 @@
 // Salva sozinho em jogo/projeto.json → "mapa". O jogador nunca vê este diagrama.
 import { duracaoFolha, palpiteAnim, tamanhoQuadro } from '../core/folha';
 import {
-  EFEITOS_TRANSICAO, conectar, conexaoDaPassagem, resumoTransicao, type Conexao, type EfeitoTransicao, type Mapa, type PontaConexao, type Transicao,
+  EFEITOS_TRANSICAO, SOLTA, conectar, conexaoDaPassagem, limparSoltas, passagensUsadas, pontaSolta, resumoTransicao, soltarPassagem, type Conexao, type EfeitoTransicao, type Mapa, type PontaConexao, type Transicao,
 } from '../core/mapa';
 import { el, perguntar } from './dom';
 import { MODOS_PASSAGEM, type ModoPassagem } from '../core/comportamentos';
 import { dica } from './legenda';
 import { divisor } from './divisor';
 
-export interface PassagemSala { id: string; nome: string; x: number; y: number; w: number; h: number; requer: string; modo: ModoPassagem; /** fora da fase (o jogador não alcança) */ fora: boolean }
+export interface PassagemSala { id: string; nome: string; x: number; y: number; w: number; h: number; requer: string; modo: ModoPassagem; /** fora da fase (o jogador não alcança) */ fora: boolean; /** zona sem imagem (criada pelo Mapa ou pela ferramenta Zona) */ zona: boolean }
 export interface InfoSala {
   arquivo: string;
   nome: string;
@@ -163,13 +163,36 @@ export class EditorMapa {
     return g ? rel(g.x + g.w / 2, g.y + g.h / 2) : null;
   }
 
-  private caminho(c: Conexao) {
-    const a = this.pontoDe(c.a), b = this.pontoDe(c.b);
-    if (!a || !b) return null;
-    const d = Math.max(50, Math.abs(b.x - a.x) * 0.45);
-    const p1 = { x: a.x + a.lado * d, y: a.y }, p2 = { x: b.x + b.lado * d, y: b.y };
-    const meio = { x: (a.x + 3 * p1.x + 3 * p2.x + b.x) / 8, y: (a.y + 3 * p1.y + 3 * p2.y + b.y) / 8 };
-    return { d: `M${a.x},${a.y} C${p1.x},${p1.y} ${p2.x},${p2.y} ${b.x},${b.y}`, meio };
+  /**
+   * Desenho de uma conexão: o losango (meio) e, para cada ponta, a linha até ele e a bolinha que se arrasta.
+   * Ponta solta: o losango fica onde estava (c.pos) e a ponta vira um toco tracejado com a bolinha na ponta.
+   */
+  private geometria(c: Conexao) {
+    const a = pontaSolta(c.a) ? null : this.pontoDe(c.a), b = pontaSolta(c.b) ? null : this.pontoDe(c.b);
+    if (!a && !b) return null;
+    const bez = (p0: { x: number; y: number }, p1: { x: number; y: number }, p2: { x: number; y: number }, p3: { x: number; y: number }, t: number) => {
+      const u = 1 - t;
+      return { x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x, y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y };
+    };
+    if (a && b) {
+      const d = Math.max(50, Math.abs(b.x - a.x) * 0.45);
+      const p1 = { x: a.x + a.lado * d, y: a.y }, p2 = { x: b.x + b.lado * d, y: b.y };
+      return {
+        meio: bez(a, p1, p2, b, 0.5),
+        linhas: [{ d: `M${a.x},${a.y} C${p1.x},${p1.y} ${p2.x},${p2.y} ${b.x},${b.y}`, solta: false }],
+        alcas: { a: bez(a, p1, p2, b, 0.1), b: bez(a, p1, p2, b, 0.9) },
+      };
+    }
+    // Uma ponta solta
+    const presa = (a ?? b)!;
+    const meio = c.pos ?? { x: presa.x + presa.lado * 130, y: presa.y - 50 };
+    const p1 = { x: presa.x + presa.lado * 60, y: presa.y };
+    const dir = meio.x >= presa.x ? 1 : -1;
+    const fimSolto = { x: meio.x + dir * 70, y: meio.y };
+    const linhaPresa = { d: `M${presa.x},${presa.y} C${p1.x},${p1.y} ${meio.x},${meio.y} ${meio.x},${meio.y}`, solta: false };
+    const linhaSolta = { d: `M${meio.x},${meio.y} L${fimSolto.x},${fimSolto.y}`, solta: true };
+    const alcaPresa = bez(presa, p1, meio, meio, 0.15);
+    return { meio, linhas: [linhaPresa, linhaSolta], alcas: a ? { a: alcaPresa, b: fimSolto } : { a: fimSolto, b: alcaPresa } };
   }
 
   // ---------- Interface ----------
@@ -232,7 +255,7 @@ export class EditorMapa {
   private desenhar() {
     if (!this.grupo) return;
     this.aplicarVista();
-    const camadaLinhas = svg('g'), camadaSalas = svg('g'), camadaAcoes = svg('g');
+    const camadaLinhas = svg('g'), camadaSalas = svg('g'), camadaAcoes = svg('g'), camadaPontas = svg('g');
     for (const s of this.salas) {
       const b = this.caixaSala(s);
       const selSala = this.sel?.tipo === 'sala' && this.sel.arquivo === s.arquivo;
@@ -266,11 +289,19 @@ export class EditorMapa {
       camadaSalas.append(g);
     }
     for (const c of this.mapa.conexoes) {
-      const cam = this.caminho(c);
-      if (!cam) continue;
+      const geo = this.geometria(c);
+      if (!geo) continue;
       const selC = this.sel?.tipo === 'con' && this.sel.id === c.id;
-      camadaLinhas.append(svg('path', { class: 'mapa-linha' + (selC ? ' sel' : '') + (c.maoDupla ? '' : ' ida'), d: cam.d, 'data-con': c.id }));
-      const { x, y } = cam.meio;
+      for (const l of geo.linhas) camadaLinhas.append(svg('path', { class: 'mapa-linha' + (selC ? ' sel' : '') + (c.maoDupla ? '' : ' ida') + (l.solta ? ' solta' : ''), d: l.d, 'data-con': c.id }));
+      // Bolinhas das pontas: arraste para ligar a ponta em outra passagem/sala, ou para o vazio para desligar
+      for (const lado of ['a', 'b'] as const) {
+        const h = geo.alcas[lado];
+        const solta = pontaSolta(c[lado]);
+        const bol = svg('circle', { class: 'mapa-ponta' + (solta ? ' solta' : ''), cx: h.x, cy: h.y, r: solta ? 7 : 5, 'data-ponta': `${c.id}|${lado}` });
+        bol.append(svg('title', {}, solta ? 'Ponta solta: arraste até uma passagem ou sala para ligar de novo' : `Ponta em ${this.nomePonta(c[lado])}: arraste para outra passagem/sala para mudar a ligação, ou para o vazio para desligar`));
+        camadaPontas.append(bol);
+      }
+      const { x, y } = geo.meio;
       const vazio = c.transicao.efeito === 'corte' && !c.transicao.som && (!c.transicaoVolta || c.mesmoNosDoisSentidos || (c.transicaoVolta.efeito === 'corte' && !c.transicaoVolta.som));
       const g = svg('g', { class: 'mapa-acao' + (selC ? ' sel' : '') + (vazio ? ' vazia' : ''), 'data-con': c.id });
       g.append(svg('polygon', { points: `${x},${y - 11} ${x + 11},${y} ${x},${y + 11} ${x - 11},${y}` }),
@@ -279,7 +310,7 @@ export class EditorMapa {
       camadaAcoes.append(g);
     }
     const temp = svg('path', { class: 'mapa-linha temp', d: '' });
-    this.grupo.replaceChildren(camadaLinhas, camadaSalas, camadaAcoes, temp);
+    this.grupo.replaceChildren(camadaLinhas, camadaSalas, camadaAcoes, camadaPontas, temp);
   }
 
   private ponto(ev: { clientX: number; clientY: number }) {
@@ -312,6 +343,7 @@ export class EditorMapa {
       const sala = alvo.closest('[data-sala]')?.getAttribute('data-sala');
       const nome = alvo.closest('[data-nome]')?.getAttribute('data-nome');
       const conector = alvo.closest('[data-conector]')?.getAttribute('data-conector');
+      const pontaArr = alvo.closest('[data-ponta]')?.getAttribute('data-ponta');
       if (ev.button === 0 && nome) { ev.preventDefault(); this.editarNome(nome); return; }
       a.setPointerCapture(ev.pointerId);
       const p0 = this.ponto(ev);
@@ -322,6 +354,30 @@ export class EditorMapa {
         a.addEventListener('pointermove', fn);
         a.addEventListener('pointerup', up);
       };
+      if (ev.button === 0 && pontaArr) {
+        // Arrastar a ponta de uma conexão: muda onde ela liga (o losango e a transição ficam)
+        const [cid, lado] = pontaArr.split('|') as [string, 'a' | 'b'];
+        const c = this.conexao(cid);
+        const geo = c ? this.geometria(c) : null;
+        if (!c || !geo) return;
+        const temp = this.grupo.querySelector<SVGPathElement>('.temp')!;
+        fim((m) => {
+          moveu ||= Math.hypot(m.clientX - c0.x, m.clientY - c0.y) > 4;
+          const p = this.ponto(m);
+          temp.setAttribute('d', `M${geo.meio.x},${geo.meio.y} L${p.x},${p.y}`);
+        }, (m) => {
+          temp.setAttribute('d', '');
+          this.sel = { tipo: 'con', id: c.id };
+          if (!moveu) { this.desenhar(); this.renderPainel(); return; }
+          const sob = document.elementFromPoint(m.clientX, m.clientY);
+          void this.moverPonta(c, lado, geo.meio, {
+            porta: sob?.closest('[data-porta]')?.getAttribute('data-porta'),
+            inicio: sob?.closest('[data-inicio]')?.getAttribute('data-inicio'),
+            sala: sob?.closest('[data-sala]')?.getAttribute('data-sala') ?? sob?.closest('[data-conector]')?.getAttribute('data-conector')?.split('|')[0],
+          });
+        });
+        return;
+      }
       if (ev.button === 0 && (porta || conector)) {
         // Arrastar de uma passagem (ou da bolinha da borda): linha provisória até soltar em outra passagem ou sala
         const [fase, id] = (porta ?? conector)!.split('|');
@@ -377,18 +433,88 @@ export class EditorMapa {
   }
 
   private nomePonta(p: PontaConexao) {
+    if (pontaSolta(p)) return '(ponta solta)';
     const s = this.sala(p.fase);
     const nomeSala = s?.nome ?? p.fase;
     if (!p.passagem) return `${nomeSala} · início`;
     return `${nomeSala} · ${s?.passagens.find((x) => x.id === p.passagem)?.nome ?? p.passagem}`;
   }
 
-  private ligar(a: PontaConexao, b: PontaConexao) {
-    // Passagem que já estava ligada: a conexão antiga sai (uma passagem leva a um lugar só); mantém a transição
+  private async ligar(a: PontaConexao, b: PontaConexao) {
+    // Passagem que já estava ligada: na conexão antiga essa ponta fica solta (uma passagem leva a um lugar só)
     const antiga = conexaoDaPassagem(this.mapa, a.fase, a.passagem);
-    const { conexao, removidas } = conectar(this.mapa, a, b, antiga ? structuredClone(antiga.transicao) : undefined);
-    this.sel = { tipo: 'con', id: conexao.id };
-    this.mudou(`conectou ${this.nomePonta(a)} ${conexao.maoDupla ? '⇄' : '→'} ${this.nomePonta(b)}${removidas.length ? ` (substituiu ${removidas.length} conexão antiga)` : ''}`);
+    if (antiga) this.guardarPosLosango(antiga);
+    let texto = '';
+    await this.aplicarMudanca(() => {
+      const { conexao } = conectar(this.mapa, a, b, antiga ? structuredClone(antiga.transicao) : undefined);
+      this.sel = { tipo: 'con', id: conexao.id };
+      texto = `conectou ${this.nomePonta(a)} ${conexao.maoDupla ? '⇄' : '→'} ${this.nomePonta(b)}`;
+    }, () => texto);
+  }
+
+  /** Antes de soltar uma ponta, o losango fica parado onde estava. */
+  private guardarPosLosango(c: Conexao) {
+    const g = this.geometria(c);
+    if (g) c.pos = { x: Math.round(g.meio.x), y: Math.round(g.meio.y) };
+  }
+
+  /**
+   * Toda mudança de ligação passa por aqui: depois dela, conexões sem nenhuma ponta somem (o losango deixa de existir)
+   * e as passagens-zona (criadas pelo Mapa, sem imagem) que ficaram sem nenhuma conexão são apagadas da sala.
+   */
+  private async aplicarMudanca(fn: () => void | Promise<void>, motivo: () => string) {
+    const antes = passagensUsadas(this.mapa);
+    await fn();
+    const removidas = limparSoltas(this.mapa);
+    if (this.sel?.tipo === 'con' && !this.conexao(this.sel.id)) this.sel = null;
+    const agora = passagensUsadas(this.mapa);
+    const apagadas: string[] = [];
+    for (const k of antes) {
+      if (agora.has(k)) continue;
+      const [fase, id] = k.split('|');
+      const g = this.sala(fase)?.passagens.find((x) => x.id === id);
+      if (!g?.zona) continue; // porta com imagem (objeto do cenário) fica; só a zona criada para a ligação sai
+      try { this.salas = await this.acoes.excluirPassagem(fase, id); apagadas.push(`${g.nome} (${this.sala(fase)?.nome ?? fase})`); } catch { /* fica */ }
+    }
+    this.mudou(motivo() + (removidas.length ? ` · ${removidas.length} losango(s) sem pontas removido(s)` : '') + (apagadas.length ? ` · passagem(ns) sem conexão apagada(s): ${apagadas.join(', ')}` : ''));
+  }
+
+  /** Solta a ponta de uma conexão num lugar novo: passagem, início de sala, sala (cria a passagem) ou vazio (desliga). */
+  private async moverPonta(c: Conexao, lado: 'a' | 'b', meio: { x: number; y: number }, alvo: { porta?: string | null; inicio?: string | null; sala?: string | null }) {
+    const outro = lado === 'a' ? 'b' : 'a';
+    const antes = this.nomePonta(c[lado]);
+    let texto = '';
+    let nova: PontaConexao | null = null;
+    if (alvo.porta) {
+      const [fase, id] = alvo.porta.split('|');
+      if (fase === c[outro].fase && id === c[outro].passagem) return; // as duas pontas na mesma passagem: nada
+      nova = { fase, passagem: id };
+    } else if (alvo.inicio) {
+      nova = { fase: alvo.inicio, passagem: '' };
+    } else if (alvo.sala) {
+      // Meio de uma sala: cria lá uma passagem na borda virada para o losango
+      const sd = this.sala(alvo.sala);
+      if (!sd) return;
+      const bd = this.caixaSala(sd);
+      const outraSala = pontaSolta(c[outro]) ? null : this.sala(c[outro].fase);
+      try {
+        const r = await this.acoes.criarPassagem(alvo.sala, meio.x >= bd.x + bd.w / 2 ? 'direita' : 'esquerda', `Passagem → ${outraSala?.nome ?? 'conexão'}`);
+        this.salas = r.salas;
+        nova = { fase: alvo.sala, passagem: r.id };
+      } catch (err) { this.painel.prepend(el('p', { class: 'aviso-texto' }, `Não consegui criar a passagem: ${String(err)}`)); return; }
+    }
+    this.guardarPosLosango(c);
+    await this.aplicarMudanca(() => {
+      if (!nova) { c[lado] = SOLTA(); texto = `conexão ${c.id}: ponta em ${antes} desligada`; return; }
+      soltarPassagem(this.mapa, nova, c);
+      c[lado] = nova;
+      // A origem (a) tem de ser uma passagem: o início da sala só pode ser chegada
+      if (!c.a.passagem && !pontaSolta(c.a)) { const x = c.a; c.a = c.b; c.b = x; }
+      if (!c.b.passagem) c.maoDupla = false;
+      else if (!pontaSolta(c.a) && !pontaSolta(c.b) && !c.maoDupla && lado === 'b') c.maoDupla = true;
+      if (!pontaSolta(c.a) && !pontaSolta(c.b)) delete c.pos; // ligada nas duas pontas: o losango volta para o meio
+      texto = `conexão ${c.id}: ponta mudou de ${antes} para ${this.nomePonta(nova)}`;
+    }, () => texto);
   }
 
   /** Termina um arrasto de conexão. Soltar no meio de uma sala cria lá uma passagem na borda virada para a origem. */
@@ -536,10 +662,10 @@ export class EditorMapa {
     if (this.sel?.tipo !== 'con') return;
     const c = this.conexao(this.sel.id);
     if (!c) return;
-    if ((await perguntar('Excluir conexão', `Desligar ${this.nomePonta(c.a)} de ${this.nomePonta(c.b)}?`, ['Cancelar', 'Excluir'])) !== 1) { this.raiz.focus(); return; }
-    this.mapa.conexoes = this.mapa.conexoes.filter((x) => x !== c);
+    if ((await perguntar('Excluir conexão', `Desligar ${this.nomePonta(c.a)} de ${this.nomePonta(c.b)}? As passagens criadas pelo Mapa (zonas sem imagem) que ficarem sem conexão são apagadas; portas com imagem ficam.`, ['Cancelar', 'Excluir'])) !== 1) { this.raiz.focus(); return; }
+    const texto = `conexão excluída: ${this.nomePonta(c.a)} — ${this.nomePonta(c.b)}`;
+    await this.aplicarMudanca(() => { this.mapa.conexoes = this.mapa.conexoes.filter((x) => x !== c); }, () => texto);
     this.sel = null;
-    this.mudou(`conexão excluída: ${this.nomePonta(c.a)} — ${this.nomePonta(c.b)}`);
     this.raiz.focus();
   }
 
@@ -640,7 +766,8 @@ export class EditorMapa {
     volta.addEventListener('change', () => mudar(`conexão ${c.id}: ${volta.checked ? 'mão dupla' : 'só ida'}`, () => { c.maoDupla = volta.checked; }));
     const labVolta = el('label', { class: 'check' }, volta, 'Mão dupla (dá para voltar por ela)');
     dica(labVolta, 'Mão dupla', c.b.passagem ? 'Marcado: a passagem de chegada também leva de volta.' : 'A chegada é o início da sala (não é uma passagem), então só vai.');
-    const doisLados = c.maoDupla && !!c.b.passagem;
+    const temSolta = pontaSolta(c.a) || pontaSolta(c.b);
+    const doisLados = c.maoDupla && !!c.b.passagem && !temSolta;
     const igual = el('input', { type: 'checkbox' });
     igual.checked = c.mesmoNosDoisSentidos;
     igual.addEventListener('change', async () => {
@@ -672,10 +799,11 @@ export class EditorMapa {
       el('p', { class: 'mapa-rota' }, el('strong', {}, this.nomePonta(c.a)), el('span', {}, c.maoDupla ? ' ⇄ ' : ' → '), el('strong', {}, this.nomePonta(c.b))),
       labVolta,
       doisLados ? labIgual : '',
+      temSolta ? el('p', { class: 'aviso-texto' }, 'Uma ponta está solta: esta conexão não leva a lugar nenhum. Arraste a bolinha da ponta solta até uma passagem ou sala para ligar de novo (ou exclua a conexão).') : '',
     ];
     if (!doisLados || c.mesmoNosDoisSentidos) {
       blocos.push(el('h3', {}, doisLados ? 'Ida e volta' : 'Ida'),
-        doisLados ? this.seletorModoAmbos(c) : this.seletorModo(c.a.fase, c.a.passagem, `Como passa em ${this.nomePonta(c.a)}`),
+        doisLados ? this.seletorModoAmbos(c) : pontaSolta(c.a) ? '' : this.seletorModo(c.a.fase, c.a.passagem, `Como passa em ${this.nomePonta(c.a)}`),
         ...this.blocoTransicao(c, c.transicao, 'i', campoCom('i'), mudar));
     } else {
       blocos.push(el('div', { class: 'mapa-sentido' }, el('h3', {}, `Ida: ${this.nomePonta(c.a)} → ${this.nomePonta(c.b)}`),

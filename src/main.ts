@@ -235,6 +235,7 @@ new PainelPropriedades(painelProps, estado, {
     if (!c) return null;
     const ehA = c.a.fase === estado.arquivoFase && c.a.passagem === id;
     const outra = ehA ? c.b : c.a;
+    if (!outra.fase) return null; // a outra ponta foi desligada no Mapa
     if (!ehA && !c.maoDupla) return `chegada de ${outra.fase} (só ida: não leva de volta)`;
     return `${outra.fase}${outra.passagem ? ` (passagem ${outra.passagem})` : ' (início)'} · ${resumoTransicao(c.transicao)}${c.maoDupla ? '' : ' · só ida'}`;
   },
@@ -897,7 +898,7 @@ async function salasDoProjeto(): Promise<InfoSala[]> {
         passagens: f.objetos.flatMap((o) => {
           const c = comportamentoDe(o);
           return c?.tipo === 'saida' ? [{ id: o.id, nome: o.nome, x: o.x, y: o.y, w: o.w * o.escala, h: o.h * o.escala, requer: c.requer, modo: c.modo,
-            fora: o.x + o.w * o.escala < 0 || o.x > f.tamanho[0] || o.y + o.h * o.escala < 0 || o.y > f.tamanho[1] }] : [];
+            fora: o.x + o.w * o.escala < 0 || o.x > f.tamanho[0] || o.y + o.h * o.escala < 0 || o.y > f.tamanho[1], zona: !o.asset }] : [];
         }),
       });
     } catch (err) {

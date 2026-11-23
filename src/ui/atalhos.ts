@@ -43,6 +43,7 @@ export function gruposAtalhos(teclasTeste: [string, string][]): Grupo[] {
       ['+ Sala', 'Adicionar um local (área nova, com chão)'], ['Clique no nome', 'Renomear a sala'],
       ['Arrastar da bolinha azul da borda', 'Conectar a outra sala (cria as passagens nas duas)'],
       ['Arrastar de uma passagem ▭', 'Conectar a outra passagem, ao meio de uma sala (cria a passagem lá) ou ao ▼ início dela'],
+      ['Arrastar a bolinha ⚪ da ponta da linha', 'Mudar onde a conexão liga (outra passagem/sala) ou soltar no vazio para desligar; sem as duas pontas, o ◆ some'],
       ['Clique no ◆', 'Escolher a transição (corte, escurecer, tela cheia animada, som)'],
       ['Arrastar uma sala', 'Mover no diagrama'], ['Duplo clique na sala', 'Abrir a sala no editor'],
       ['Arrastar o fundo / roda', 'Mover a visão / zoom'], ['Del', 'Excluir a conexão ou a passagem selecionada'], ['Home', 'Enquadrar'], ['Esc', 'Fechar'],
