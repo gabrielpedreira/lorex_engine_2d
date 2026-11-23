@@ -39,6 +39,10 @@ export function gruposAtalhos(teclasTeste: [string, string][]): Grupo[] {
     { titulo: 'Inimigos (N)', itens: [
       ['Clique no vazio', 'Colocar o tipo escolhido (pisa no chão abaixo)'], ['Arrastar', 'Mover (gruda no chão; Alt solta)'], ['Del', 'Excluir'],
     ] },
+    { titulo: 'Salas (painel direito, abaixo de Camadas)', itens: [
+      ['Ctrl+P', 'Buscar sala (nome, arquivo ou região)'], ['Enter', 'Abrir a primeira encontrada'], ['Clique na sala', 'Abrir no editor'],
+      ['Esc', 'Limpar a busca'], ['Arrastar a borda de cima', 'Mudar a altura da lista'],
+    ] },
     { titulo: 'Mapa (M)', itens: [
       ['+ Sala', 'Adicionar um local (área nova, com chão)'], ['Clique no nome', 'Renomear a sala'],
       ['Arrastar da bolinha azul da borda', 'Conectar a outra sala (cria as passagens nas duas)'],

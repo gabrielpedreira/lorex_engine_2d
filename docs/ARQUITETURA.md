@@ -451,6 +451,14 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   `aplicarMudanca` envolve toda mudança: remove conexões sem pontas e apaga as passagens-zona (`PassagemSala.zona`)
   que perderam a última conexão (`passagensUsadas` antes × depois).
 
+### 4.33 Lista de Salas (painel direito)
+
+- `src/ui/salas.ts → PainelSalas`: bloco abaixo de Camadas (`.salas-bloco`, altura `--alt-salas`, divisor `editor-salas`).
+  `atualizar(atual, emMemoria)` lê todas as fases (`listarFases` + `lerFase`), ordena por região (sem região por último)
+  e nome; a sala aberta usa os dados em memória (nome editado antes de salvar). Busca sem acento por nome, arquivo e
+  região; Enter abre a primeira, Esc limpa; Ctrl+P foca a busca (`focarBusca`). Clique → `abrirFase` (pergunta se
+  houver alteração não salva). Atualiza em `atualizarListaFases` (abrir, salvar, Mapa, watcher) e 600 ms após `fase`.
+
 ### 4.18 Legendas e recarregar por fora
 
 - `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas

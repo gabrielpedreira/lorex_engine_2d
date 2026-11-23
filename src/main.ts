@@ -19,6 +19,7 @@ import type { FormaNova } from './editor/estado';
 import { ICONES, icone } from './ui/icones';
 import { FORMAS_LUZ, PainelPropriedades } from './ui/propriedades';
 import { divisor, ligarDivisoresAutomaticos } from './ui/divisor';
+import { PainelSalas } from './ui/salas';
 import { ModoTeste } from './editor/testar';
 import { EditorPersonagens } from './ui/personagens';
 import { EditorControles } from './ui/controles';
@@ -65,7 +66,9 @@ const painelProps = el('section', { class: 'bloco props-bloco' });
 const painelCamadas = el('section', { class: 'bloco camadas-bloco' });
 // Divisores arrastáveis: largura das laterais e altura do bloco de Camadas (tamanhos salvos no computador)
 const ancoraCamadas = el('div', { class: 'divisor-ancora' });
-direita.append(painelProps, ancoraCamadas, painelCamadas);
+const ancoraSalas = el('div', { class: 'divisor-ancora' });
+const blocoSalas = el('section', { class: 'bloco salas-bloco', 'aria-label': 'Salas' });
+direita.append(painelProps, ancoraCamadas, painelCamadas, ancoraSalas, blocoSalas);
 const status = el('footer', { class: 'status' });
 /** Linha logo abaixo da barra de menu: posição do mouse, camada ativa e a última mensagem do editor. */
 const barraInfo = el('div', { class: 'barra-info', role: 'status' });
@@ -75,6 +78,7 @@ const painelLog = new PainelLog();
 app.append(barra, barraInfo, esquerda, centro, painelLog.raiz, direita, status);
 esquerda.append(divisor({ id: 'editor-esquerda', eixo: 'x', alvo: app, variavel: '--larg-esq', padrao: 260, min: 170, max: () => Math.max(200, window.innerWidth * 0.4), sentido: 1, lado: 'fim', titulo: 'Largura da caixa de ferramentas / biblioteca' }));
 direita.append(divisor({ id: 'editor-direita', eixo: 'x', alvo: app, variavel: '--larg-dir', padrao: 300, min: 220, max: () => Math.max(260, window.innerWidth * 0.45), sentido: -1, lado: 'inicio', titulo: 'Largura do painel de propriedades' }));
+ancoraSalas.append(divisor({ id: 'editor-salas', eixo: 'y', alvo: direita, variavel: '--alt-salas', padrao: 220, min: 90, max: () => Math.max(120, window.innerHeight * 0.6), sentido: -1, lado: 'inicio', titulo: 'Altura da lista de salas' }));
 ancoraCamadas.append(divisor({ id: 'editor-camadas', eixo: 'y', alvo: direita, variavel: '--alt-camadas', padrao: 280, min: 90, max: () => Math.max(120, window.innerHeight * 0.7), sentido: -1, lado: 'inicio', titulo: 'Altura do bloco de camadas' }));
 ligarDivisoresAutomaticos();
 
@@ -1031,7 +1035,18 @@ async function abrirControles() {
   editorControles.abrir(normalizarControles(config.controles), await lerPersonagemTeste(false));
 }
 
+// ---------- Lista de Salas (abaixo de Camadas) ----------
+const painelSalas = new PainelSalas(blocoSalas, plat);
+painelSalas.aoAbrir = (arq) => { LOG.add({ cat: 'sistema', texto: `Salas: abrindo ${arq}` }); void abrirFase(arq); };
+const salaEmMemoria = () => (estado.arquivoFase ? {
+  arquivo: estado.arquivoFase, nome: estado.fase.nome, tipo: estado.fase.tipo, regiao: estado.fase.regiao,
+  passagens: estado.fase.objetos.filter((o) => o.comportamentos[0]?.tipo === 'saida').length,
+} : undefined);
+let timerSalas = 0;
+estado.on('fase', () => { clearTimeout(timerSalas); timerSalas = window.setTimeout(() => void painelSalas.atualizar(estado.arquivoFase ?? '', salaEmMemoria()), 600); });
+
 async function atualizarListaFases() {
+  void painelSalas.atualizar(estado.arquivoFase ?? '', salaEmMemoria());
   const fases = await plat.listarFases();
   seletorFases.replaceChildren();
   if (!estado.arquivoFase) seletorFases.append(el('option', { value: '' }, `${estado.fase.nome} (não salva)`));
@@ -1340,6 +1355,7 @@ window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (ctrl && k === 's') { e.preventDefault(); void salvar(); return; }
   if (ctrl && k === 'n') { e.preventDefault(); void novaFase(); return; }
+  if (ctrl && k === 'p' && !estado.testando) { e.preventDefault(); painelSalas.focarBusca(); return; }
   if (digitando()) return;
   if (estado.testando) return; // o modo Testar trata as próprias teclas
   if (e.key === 'F5') { e.preventDefault(); void alternarTeste(); return; }

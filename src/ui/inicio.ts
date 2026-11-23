@@ -173,7 +173,7 @@ export class TelaInicio {
     }
     const mapa = this.botao('Mapa das salas (M)', () => { this.esconder(); this.acoes.abrirMapa(); }, 'secundario largo');
     dica(mapa, 'Mapa', 'Diagrama das salas: conecte as passagens (portas, escadas) e escolha a transição entre elas (tela de loading animada, som).', 'M');
-    col.append(mapa);
+    col.append(mapa, el('p', { class: 'texto-suave' }, 'No editor, a lista Salas (à direita, abaixo de Camadas) troca de sala com um clique — Ctrl+P busca pelo nome.'));
     return col;
   }
 
