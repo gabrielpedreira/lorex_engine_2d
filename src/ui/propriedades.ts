@@ -139,7 +139,9 @@ export class PainelPropriedades {
       case 'coletavel':
         secao.append(
           texto('Nome do item', atual.item, (v) => { atual.item = v || o.nome; }, 'Como o item aparece no inventário. Portas que pedem este item usam o mesmo nome.'),
-          this.num('Quantidade', atual.quantidade, (v) => { atual.quantidade = Math.max(1, Math.round(v)); }, { min: 1 }));
+          this.num('Quantidade', atual.quantidade, (v) => { atual.quantidade = Math.max(1, Math.round(v)); }, { min: 1 }),
+          this.num('Cura (vida)', atual.cura ?? 0, (v) => { if (v > 0) atual.cura = v; else delete atual.cura; }, { min: 0 }),
+          el('p', { class: 'dica-campo' }, (atual.cura ?? 0) > 0 ? `Kit médico: cura ${atual.cura} de vida ao pegar (não vai para o inventário).` : 'Cura 0 = item comum (vai para o inventário). Acima de 0 vira kit médico: cura ao pegar.'));
         break;
       case 'porta':
         secao.append(

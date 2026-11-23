@@ -4,7 +4,11 @@ import type { Segmento } from './fisica';
 import type { Fase, ObjetoFase } from './tipos';
 import { quadroDaFolha } from './folha';
 
-export interface CompColetavel { tipo: 'coletavel'; /** nome do item no inventário (ex.: "chave vermelha") */ item: string; quantidade: number }
+export interface CompColetavel {
+  tipo: 'coletavel'; /** nome do item no inventário (ex.: "chave vermelha") */ item: string; quantidade: number;
+  /** Kit médico: cura esta vida ao pegar (e não vai para o inventário). 0/ausente = item comum. */
+  cura?: number;
+}
 export interface CompPorta { tipo: 'porta'; /** item necessário para abrir ('' = abre sem item) */ requer: string; consome: boolean; abertaNoInicio: boolean }
 export interface CompAlavanca { tipo: 'alavanca'; /** id do objeto que a alavanca aciona */ alvo: string; umaVez: boolean }
 /** Passagem (porta, escada, saída): para onde leva e o efeito ficam no MAPA (ferramenta Mapa, M).
@@ -33,7 +37,7 @@ export interface CompGatilho {
   /** Só dispara na primeira vez. */
   umaVez: boolean;
 }
-export type AcaoGatilho = 'nada' | 'mensagem' | 'acionar' | 'inimigos' | 'luzes' | 'escurecer' | 'clarear';
+export type AcaoGatilho = 'nada' | 'mensagem' | 'acionar' | 'inimigos' | 'luzes' | 'escurecer' | 'clarear' | 'checkpoint';
 export const ACOES_GATILHO: { id: AcaoGatilho; nome: string; texto: string }[] = [
   { id: 'nada', nome: 'Só o código', texto: 'Não faz nada sozinho: o código do objeto recebe aoTocar (entrou) e aoSair (saiu).' },
   { id: 'mensagem', nome: 'Mostrar mensagem', texto: 'Mostra um texto ao entrar (pensamento da personagem, aviso).' },
@@ -42,6 +46,7 @@ export const ACOES_GATILHO: { id: AcaoGatilho; nome: string; texto: string }[] =
   { id: 'luzes', nome: 'Ligar/desligar luz', texto: 'Liga, desliga ou alterna uma luz (ou todas) da ferramenta Iluminação.' },
   { id: 'escurecer', nome: 'Apagar as luzes da sala', texto: 'A fase fica escura (queda de energia).' },
   { id: 'clarear', nome: 'Acender a sala', texto: 'A fase deixa de ser escura.' },
+  { id: 'checkpoint', nome: 'Checkpoint', texto: 'Ao morrer, o jogador volta aqui (com a vida cheia). Entrar numa sala também marca um checkpoint na chegada.' },
 ];
 export interface CompMensagem { tipo: 'mensagem'; texto: string }
 
@@ -107,6 +112,8 @@ export interface ResultadoInteracao {
   surgir?: string;
   /** As luzes mudaram (redesenhar a iluminação). */
   luz?: boolean;
+  /** Gatilho de checkpoint: o jogador volta aqui ao morrer. */
+  checkpoint?: boolean;
 }
 
 /** Estado do mundo durante o jogo: inventário, portas abertas, itens pegos. */
@@ -234,6 +241,11 @@ export class MundoInterativo {
     return e.visivel;
   }
 
+  /** Vida curada por kits pegos (o modo Teste aplica e zera). */
+  curaPendente = 0;
+  /** O jogador pode ser curado agora? (com a vida cheia, o kit fica no chão) */
+  podeCurar: () => boolean = () => true;
+
   /** Pega os coletáveis que o jogador está tocando. Retorna os avisos. */
   coletar(jogador: Caixa): string[] {
     const avisos: string[] = [];
@@ -241,9 +253,11 @@ export class MundoInterativo {
       const c = comportamentoDe(o);
       const e = this.estados.get(o.id);
       if (c?.tipo !== 'coletavel' || !e || !e.visivel || !toca(jogador, this.caixa(o))) continue;
+      if (c.cura && c.cura > 0 && !this.podeCurar()) continue;
       if (!this.podeColetar(o)) continue;
       if (!e.visivel) continue; // o código escondeu ao coletar
       e.visivel = false;
+      if (c.cura && c.cura > 0) { this.curaPendente += c.cura * c.quantidade; avisos.push(`Usou: ${c.item} (+${c.cura * c.quantidade} de vida)`); continue; }
       this.inventario.set(c.item, (this.inventario.get(c.item) ?? 0) + c.quantidade);
       avisos.push(`Pegou: ${c.item}${c.quantidade > 1 ? ` ×${c.quantidade}` : ''}`);
     }
@@ -361,6 +375,7 @@ export class MundoInterativo {
       }
       case 'escurecer': this.escura = true; return { luz: true };
       case 'clarear': this.escura = false; return { luz: true };
+      case 'checkpoint': return { checkpoint: true };
       default: return {};
     }
   }

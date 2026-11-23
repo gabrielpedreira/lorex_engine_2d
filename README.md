@@ -147,7 +147,11 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 - **Arma do jogador** (Personagens → Arma): pente, dano, alcance, ações de tiro e recarga e animação "sem bala";
   tiro instantâneo (paredes param), recarga enche o pente ao fim da animação.
 - **HUD** (`U`): elementos de texto presos a cantos/bordas da tela do jogo (munição, inimigos vivos, `item:<nome>` ou
-  chaves do código via `jogo.hud.definir`), com prévia arrastável.
+  chaves do código via `jogo.hud.definir`), com prévia arrastável. Cada elemento pode ser **texto** ou **barra**
+  (valores "atual/máximo", como vida e munição).
+- **Vida do jogador** (Personagens → Vida): golpes dos inimigos tiram vida, o personagem pisca invulnerável por um
+  instante, vida 0 toca a animação Morte e volta no **último checkpoint** (chegada na sala ou gatilho Checkpoint) com a
+  vida cheia. Kit médico = coletável com "Cura". Código: `jogador.vida`, `curar`, `ferir`, `jogo.checkpoint()`, `aoMorrer`.
 - **Rodapé:** Log, **Teclas de atalho** (guia com busca, também em `F1`), versão e desenvolvedor. Posição do mouse,
   camada ativa e mensagens ficam na linha logo abaixo da barra de menu.
 - **Log** (`L`, ou o botão "Log" na barra de status): painel embaixo do cenário que registra, com o tempo do teste,

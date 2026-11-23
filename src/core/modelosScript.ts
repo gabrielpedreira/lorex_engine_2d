@@ -203,6 +203,14 @@ ${alvo?.porta ? `  alvo.aberta = !alvo.aberta;                    // porta: abre
 }
 `;
     case 'coletavel':
+      if (c.cura && c.cura > 0) return cab + doc('Kit médico: cura ao pegar. Retorne false para não pegar.') + `export function aoColetar(eu, jogo) {
+  // O pronto faz: some e cura ${c.cura * c.quantidade} de vida (não vai para o inventário)
+  // if (jogo.jogador.vida >= jogo.jogador.vidaMax) { jogo.aviso('Vida cheia.'); return false; }   // ideia: não pegar com a vida cheia
+  eu.esconder();
+  jogo.jogador.curar(${c.cura * c.quantidade});
+  return false;
+}
+`;
       return cab + doc('Antes de ir para o inventário. Retorne false para não pegar.') + `export function aoColetar(eu, jogo) {
   // O pronto faz: some e dá ${c.quantidade}× "${c.item}" no inventário
   eu.esconder();
@@ -232,6 +240,7 @@ ${c.consome ? `    jogo.inventario.tirar(${js(c.requer)});
         : c.acao === 'clarear' ? ['jogo.escura = false;']
         : c.acao === 'acionar' ? [`const alvo = jogo.objeto(${js(c.alvo || '')});`, 'if (alvo) alvo.visivel = !alvo.visivel;']
         : c.acao === 'inimigos' ? ['// os inimigos marcados com "Surge neste gatilho" aparecem (a engine faz)']
+        : c.acao === 'checkpoint' ? ['jogo.checkpoint();   // ao morrer, o jogador volta aqui']
         : ['// jogo.aviso("Entrou na área");'];
       const corpo = c.acao === 'nada' ? linhas.map((l) => '  ' + l)
         : ['  // Já feito pelo gatilho pronto (o mesmo, em código):', ...linhas.map((l) => '  // ' + l)];

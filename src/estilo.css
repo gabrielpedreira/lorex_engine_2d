@@ -626,6 +626,20 @@ textarea:focus { border-color: var(--acento); outline: none; }
   font-family: Consolas, 'Cascadia Code', monospace; text-shadow: 0 1px 0 #000, 0 0 3px #000; pointer-events: none;
 }
 .hud-elemento .hud-rotulo { color: #dbe7e2; font-weight: 400; opacity: 0.85; }
+.hud-elemento.hud-barra { align-items: center; }
+.hud-barra-fundo { display: block; position: relative; background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(0, 0, 0, 0.9); box-sizing: content-box; overflow: hidden; }
+.hud-barra-cheio { display: block; height: 100%; transition: width 0.15s linear; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25); }
+/* Morte no ▶ Testar */
+.teste-morte {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  background: radial-gradient(ellipse at center, rgba(60, 0, 0, 0.35), rgba(0, 0, 0, 0.75)); color: #ef6461; pointer-events: none;
+  font-family: Consolas, 'Cascadia Code', monospace; animation: morte-entra 0.8s ease-out; z-index: 6;
+}
+.teste-morte strong { font-size: 34px; letter-spacing: 4px; text-shadow: 0 2px 0 #000; }
+.teste-morte span { color: #dbe7e2; font-size: 13px; opacity: 0.85; }
+[hidden].teste-morte { display: none; }
+@keyframes morte-entra { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .teste-morte, .hud-barra-cheio { animation: none; transition: none; } }
 .hud-editavel { pointer-events: auto; cursor: move; padding: 1px 3px; border: 1px dashed transparent; border-radius: 3px; }
 .hud-editavel:hover { border-color: rgba(255, 255, 255, 0.35); }
 .hud-editavel.selecionado { border-color: var(--acento); }

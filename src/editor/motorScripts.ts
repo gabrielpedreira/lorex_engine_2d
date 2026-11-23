@@ -27,6 +27,14 @@ export interface PonteTeste {
   passar(o: ObjetoFase): void;
   destinoDe(o: ObjetoFase): Viagem | null;
   luzesFase(): import('../core/tipos').LuzFase[];
+  vida(): number;
+  vidaMax(): number;
+  definirVida(n: number): void;
+  ferir(n: number): void;
+  morto(): boolean;
+  invulneravel(): boolean;
+  morrer(): void;
+  checkpoint(x?: number, y?: number): void;
   apertou(acao: string): boolean;
   segurando(acao: string): boolean;
   hudDefinir(rotulo: string, valor: string): void;
@@ -121,6 +129,8 @@ export class MotorScripts {
     this.tempo = 0;
     this.timers = [];
     this.tocando.clear();
+    // Os inimigos são recriados ao (re)começar a sala (F6, volta no checkpoint): o código não pode ficar com os antigos
+    this.handlesInimigo.clear();
     for (const s of this.scripts) this.chamar(s, 'aoIniciar');
   }
 
@@ -208,6 +218,18 @@ export class MotorScripts {
     let ok = true;
     for (const s of this.scripts) if (s.dono === 'personagem' && this.chamar(s, 'aoSerAtingido', ataque, this.handleInimigo(ini), dano) === false) ok = false;
     return ok;
+  }
+
+  /** aoMorrer do personagem (vida chegou a 0): false = não morre (fica com 1 de vida). */
+  jogadorMorreu(motivo: string) {
+    let ok = true;
+    for (const s of this.scripts) if (s.dono === 'personagem' && this.chamar(s, 'aoMorrer', motivo) === false) ok = false;
+    return ok;
+  }
+
+  /** aoRenascer do personagem: voltou no checkpoint depois de morrer. */
+  jogadorRenasceu() {
+    for (const s of this.scripts) if (s.dono === 'personagem') this.chamar(s, 'aoRenascer');
   }
 
   /** aoPassar (jogo e fase): pode mudar o destino/transição ou cancelar (false). */
@@ -441,6 +463,14 @@ export class MotorScripts {
       /** Duração (s) de uma animação do personagem. */
       duracao: (nome: string) => ponte.duracaoAnim(nome),
       get agarrado() { return ponte.agarrado(); },
+      get vida() { return ponte.vida(); },
+      set vida(n: number) { ponte.definirVida(Number(n) || 0); },
+      get vidaMax() { return ponte.vidaMax(); },
+      ferir: (n: number) => ponte.ferir(Number(n) || 0),
+      curar: (n?: number) => ponte.definirVida(ponte.vida() + (n === undefined ? ponte.vidaMax() : Number(n) || 0)),
+      morrer: () => ponte.morrer(),
+      get morto() { return ponte.morto(); },
+      get invulneravel() { return ponte.invulneravel(); },
     };
     this.api = {
       jogador,
@@ -494,6 +524,7 @@ export class MotorScripts {
       },
       apertou: (a: string) => ponte.apertou(a),
       segurando: (a: string) => ponte.segurando(a),
+      checkpoint: (x?: number, y?: number) => ponte.checkpoint(x === undefined ? undefined : Number(x), y === undefined ? undefined : Number(y)),
       esperar: (seg: number, fn: () => void) => { motor.timers.push({ quando: motor.tempo + Math.max(0, Number(seg) || 0), fn, arquivo: motor.arquivoAtual || 'esperar' }); },
       log: (...v: unknown[]) => LOG.add({ cat: 'codigo', arquivo: motor.arquivoAtual || ponte.arquivoFase, texto: v.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ') }),
     };

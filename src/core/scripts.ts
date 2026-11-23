@@ -39,7 +39,8 @@ export const GANCHOS: Gancho[] = [
   { nome: 'aoPerder', donos: ['inimigo'], params: 'eu, jogo', texto: 'O jogador se afastou e o inimigo desistiu da perseguição.' },
   { nome: 'aoAtacar', donos: ['inimigo'], params: 'eu, jogo, ataque', texto: 'O inimigo vai atacar (ataque = "golpe", "mordida"…). Retorne false para cancelar.' },
   { nome: 'aoLevarDano', donos: ['inimigo'], params: 'eu, jogo, dano', texto: 'O inimigo levou um tiro. Retorne false para ignorar o dano.' },
-  { nome: 'aoMorrer', donos: ['inimigo'], params: 'eu, jogo', texto: 'O inimigo morreu.' },
+  { nome: 'aoMorrer', donos: ['inimigo', 'personagem'], params: 'eu, jogo, motivo', texto: 'Inimigo: morreu. Jogador: a vida chegou a 0 (motivo = o golpe, "código"…); retorne false para não morrer (fica com 1 de vida).' },
+  { nome: 'aoRenascer', donos: ['personagem'], params: 'eu, jogo', texto: 'O jogador voltou no último checkpoint depois de morrer (vida cheia).' },
   { nome: 'aoTrocarFase', donos: ['jogo'], params: 'eu, jogo, fase', texto: 'Quando o jogador chega numa fase ou área (fase = nome do arquivo).' },
   { nome: 'aoPassar', donos: ['jogo', 'fase'], params: 'eu, jogo, passagem, destino', texto: 'Antes de passar por uma passagem para outra sala (Mapa, M). destino = { fase, chegada, transicao } e pode ser mudado aqui (ex.: destino.transicao.efeito = "corte"). Retorne false para não passar.' },
 ];
@@ -70,7 +71,7 @@ const TIPO_EU: Record<DonoScript, string> = { jogo: 'Jogo', fase: 'Jogo', objeto
 export function modeloScript(dono: DonoScript, nome: string, extra = ''): string {
   const ganchos = GANCHOS.filter((g) => g.donos.includes(dono));
   const principais: Record<DonoScript, string[]> = {
-    jogo: ['aoIniciar', 'aoTrocarFase'], fase: ['aoIniciar'], objeto: ['aoInteragir'], personagem: ['aoAcao'], inimigo: ['aoVer', 'aoMorrer'],
+    jogo: ['aoIniciar', 'aoTrocarFase'], fase: ['aoIniciar'], objeto: ['aoInteragir'], personagem: ['aoAcao', 'aoMorrer'], inimigo: ['aoVer', 'aoMorrer'],
   };
   const linhas = [
     `// Script de ${nome}${extra ? ` (${extra})` : ''}.`,
@@ -95,6 +96,7 @@ export function modeloScript(dono: DonoScript, nome: string, extra = ''): string
 function exemploPara(dono: DonoScript, nome: string) {
   if (dono === 'objeto' && nome === 'aoInteragir') return "  jogo.aviso(`Você mexeu em ${eu.nome}`);\n  // return false; // descomente para cancelar o comportamento pronto";
   if (dono === 'personagem' && nome === 'aoAcao') return '  // if (acao === "tiro") { ... }';
+  if (dono === 'personagem' && nome === 'aoMorrer') return '  // jogo.log(`${eu.nome} morreu: ${motivo}`);\n  // return false; // descomente para não morrer (fica com 1 de vida)';
   if (dono === 'jogo' && nome === 'aoTrocarFase') return '  // jogo.log("Entrou em", fase);';
   if (nome === 'aoPassar') return '  // if (destino.fase === "laboratorio.json" && !jogo.variaveis.energia) { jogo.aviso("Sem energia."); return false; }';
   if (dono === 'inimigo' && nome === 'aoVer') return '  // jogo.log(`${eu.nome} viu o jogador`);';
@@ -241,6 +243,18 @@ interface Jogador {
   duracao(animacao: NomeAnimacao): number;
   /** Está preso num agarrão? */
   readonly agarrado: boolean;
+  /** Vida atual (mudar cura ou fere; 0 = morre). Vida cheia e tempo invulnerável: seção Vida em Personagens. */
+  vida: number;
+  readonly vidaMax: number;
+  /** Tira vida (o personagem fica invulnerável por um instante). */
+  ferir(dano: number): void;
+  /** Cura (sem número = vida cheia). */
+  curar(quantidade?: number): void;
+  /** Morre agora (volta no último checkpoint). */
+  morrer(): void;
+  readonly morto: boolean;
+  /** Piscando depois de um golpe (golpes não pegam). */
+  readonly invulneravel: boolean;
 }
 
 /** Um inimigo da fase durante o jogo. */
@@ -396,6 +410,8 @@ interface Jogo {
   apertou(acao: NomeAcao): boolean;
   /** A ação está segurada? */
   segurando(acao: NomeAcao): boolean;
+  /** Marca um checkpoint (onde o jogador volta ao morrer) na posição dada ou onde ele está. */
+  checkpoint(x?: number, y?: number): void;
   /** Chama a função depois de alguns segundos. */
   esperar(segundos: number, fn: () => void): void;
   /** Escreve na Saída do painel de Código. */

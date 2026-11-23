@@ -2,7 +2,7 @@
 // marca os pés e a caixa de colisão, e escolhe qual personagem o ▶ Testar usa.
 import {
   ESTADOS, TIPOS_PERSONAGEM, ancoraPes, animacaoPara, chaveAnimacao, ehBasica, extras, normalizarPersonagem, palpiteEstado, palpiteFolha,
-  personagemNovo, quadroEm, retanguloQuadro, type Animacao, type Personagem,
+  personagemNovo, quadroEm, retanguloQuadro, vidaPadrao, type Animacao, type Personagem,
 } from '../core/personagem';
 import { controlesPadrao, textoAtalho, type Controles } from '../core/controles';
 import { COMPORTAMENTOS_INIMIGO, armaPadrao, inimigoPadrao } from '../core/inimigos';
@@ -432,8 +432,21 @@ export class EditorPersonagens {
         this.num('Caixa largura', this.p.caixa.largura, (v) => { this.p.caixa.largura = Math.max(2, Math.round(v)); }, 'Largura do corpo para colisão (mais estreita que o desenho fica mais natural).', 1, 2),
         this.num('Caixa altura', this.p.caixa.altura, (v) => { this.p.caixa.altura = Math.max(2, Math.round(v)); }, 'Altura do corpo para colisão.', 1, 2)),
       detectar);
-    col.append(...(this.p.tipo === 'npc' ? this.secaoInimigo() : this.secaoArma()));
+    col.append(...(this.p.tipo === 'npc' ? this.secaoInimigo() : [...this.secaoVida(), ...this.secaoArma()]));
     return col;
+  }
+
+  /** Jogador: vida (dano dos inimigos, morte, checkpoint). */
+  private secaoVida(): HTMLElement[] {
+    const titulo = el('h3', {}, 'Vida');
+    dica(titulo, 'Vida', 'Golpes dos inimigos tiram vida (o dano de cada ataque fica no inimigo). Depois de um golpe o personagem pisca e fica invulnerável por um instante. Vida 0: toca a animação Morte e volta no último checkpoint (chegada na sala ou gatilho Checkpoint). A vida aparece no HUD (chave "vida").');
+    const v = this.p.vida ?? (this.p.vida = vidaPadrao());
+    return [titulo,
+      el('div', { class: 'linha2' },
+        this.num('Vida cheia', v.maxima, (n) => { v.maxima = Math.max(1, Math.round(n)); }, 'Quanto de dano aguenta (golpe do zumbi = 1, mordida = 2).', 1, 1),
+        this.num('Invulnerável (s)', v.invulneravel, (n) => { v.invulneravel = Math.max(0, n); }, 'Tempo piscando depois de um golpe, em que outros golpes não pegam.', 0.1, 0)),
+      this.num('Volta após (s)', v.renascer, (n) => { v.renascer = Math.max(0.5, n); }, 'Segundos entre morrer e voltar no checkpoint (Enter volta antes).', 0.5, 0.5),
+      ...(this.p.animacoes.morte ? [] : [el('p', { class: 'dica-campo' }, 'Sem animação "Morte": ao morrer o personagem fica parado até voltar.')])];
   }
 
   /** Jogador: arma (munição, tiro, recarga). */

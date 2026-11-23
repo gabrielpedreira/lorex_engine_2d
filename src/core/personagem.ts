@@ -13,8 +13,8 @@ export const ESTADOS: { id: EstadoAnim; nome: string; texto: string; obrigatorio
   { id: 'pulando', nome: 'Pulando', texto: 'Subindo no pulo. Se faltar, usa Parado.' },
   { id: 'caindo', nome: 'Caindo', texto: 'Descendo no ar. Se faltar, usa Pulando (ou Parado).' },
   { id: 'aterrissando', nome: 'Aterrissando', texto: 'Ao tocar o chão depois de cair (toca uma vez). Opcional.' },
-  { id: 'dano', nome: 'Dano', texto: 'Ao levar dano (toca uma vez). Usado quando houver combate.' },
-  { id: 'morte', nome: 'Morte', texto: 'Ao morrer (toca uma vez). Usado quando houver combate.' },
+  { id: 'dano', nome: 'Dano', texto: 'Ao levar um golpe de inimigo (toca uma vez).' },
+  { id: 'morte', nome: 'Morte', texto: 'Ao morrer (vida 0): toca uma vez e fica no último quadro até voltar no checkpoint.' },
 ];
 
 const SUBSTITUTOS: Record<string, string[]> = {
@@ -77,8 +77,29 @@ export interface Personagem {
   script?: string;
   /** Jogador: arma (munição, tiro, recarga). */
   arma?: ConfigArma;
+  /** Jogador: vida (barra no HUD, dano dos inimigos, morte e volta ao checkpoint). */
+  vida?: ConfigVida;
   /** NPC: comportamento de inimigo (IA, vida, ataques). */
   inimigo?: ConfigInimigo;
+}
+
+/** Vida do jogador. */
+export interface ConfigVida {
+  /** Vida cheia. */
+  maxima: number;
+  /** Segundos invulnerável depois de levar um golpe (o personagem pisca). */
+  invulneravel: number;
+  /** Segundos entre morrer e voltar no último checkpoint. */
+  renascer: number;
+}
+
+export function vidaPadrao(): ConfigVida { return { maxima: 10, invulneravel: 1.2, renascer: 2.5 }; }
+
+export function normalizarVida(d: unknown): ConfigVida {
+  const b = vidaPadrao();
+  const v = (d && typeof d === 'object' ? d : {}) as Partial<ConfigVida>;
+  const n = (x: unknown, p: number, min: number) => (Number.isFinite(Number(x)) ? Math.max(min, Number(x)) : p);
+  return { maxima: Math.max(1, Math.round(n(v.maxima, b.maxima, 1))), invulneravel: n(v.invulneravel, b.invulneravel, 0), renascer: n(v.renascer, b.renascer, 0.5) };
 }
 
 const IDS_BASICOS = new Set<string>(ESTADOS.map((e) => e.id));
@@ -128,6 +149,7 @@ export function normalizarPersonagem(d: unknown): Personagem {
     ...base, ...p, versao: 1, animacoes,
     tipo: p.tipo === 'npc' ? 'npc' : 'jogador',
     arma: p.tipo === 'npc' ? undefined : normalizarArma(p.arma),
+    vida: p.tipo === 'npc' ? undefined : normalizarVida(p.vida),
     inimigo: p.tipo === 'npc' && p.inimigo ? normalizarInimigo(p.inimigo) : undefined,
     pes: Array.isArray(p.pes) && p.pes.length === 2 ? [Number(p.pes[0]) || 0, Number(p.pes[1]) || 0] : base.pes,
     caixa: { largura: Math.max(2, Number(p.caixa?.largura) || base.caixa.largura), altura: Math.max(2, Number(p.caixa?.altura) || base.caixa.altura) },

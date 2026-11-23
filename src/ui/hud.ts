@@ -1,7 +1,7 @@
 // Ferramenta HUD: edita o que aparece na tela do jogo (munição, inimigos vivos, itens, valores do código).
 // À esquerda a lista de elementos, no centro a prévia da tela do jogador (arraste para posicionar), à direita
 // as propriedades. Salva sozinho em jogo/projeto.json → "hud".
-import { ANCORAS, CHAVES_HUD, deslocamentoHud, hudPadrao, posicaoHud, type ConfigHud, type ElementoHud } from '../core/hud';
+import { ANCORAS, CHAVES_HUD, ESTILOS_HUD, deslocamentoHud, fracaoHud, hudPadrao, posicaoHud, type ConfigHud, type ElementoHud } from '../core/hud';
 import { el, perguntar } from './dom';
 import { dica } from './legenda';
 
@@ -48,7 +48,7 @@ export class EditorHud {
   private novo() {
     let n = 1;
     while (this.h.elementos.some((e) => e.id === `elemento_${n}`)) n++;
-    const e: ElementoHud = { id: `elemento_${n}`, rotulo: 'Texto', chave: `valor_${n}`, ancora: 'se', x: 8, y: 8 + this.h.elementos.length * 14, tamanho: 10, cor: '#ffffff', mostrarRotulo: true, visivel: true };
+    const e: ElementoHud = { id: `elemento_${n}`, rotulo: 'Texto', chave: `valor_${n}`, ancora: 'se', x: 8, y: 8 + this.h.elementos.length * 14, tamanho: 10, cor: '#ffffff', mostrarRotulo: true, visivel: true, estilo: 'texto', largura: 60 };
     this.h.elementos.push(e);
     this.sel = e.id;
     this.mudou();
@@ -107,10 +107,10 @@ export class EditorHud {
     tela.style.width = `${rw * this.escala}px`;
     tela.style.height = `${rh * this.escala}px`;
     for (const e of this.h.elementos) {
-      const d = el('div', { class: 'hud-elemento hud-editavel' + (e.id === this.sel ? ' selecionado' : '') + (e.visivel ? '' : ' oculto') },
-        e.mostrarRotulo && e.rotulo ? el('span', { class: 'hud-rotulo' }, e.rotulo) : '', el('strong', {}, this.exemplo(e.chave)));
-      d.style.fontSize = `${e.tamanho * this.escala}px`;
-      d.style.color = e.cor;
+      const d = elementoHud(e, this.exemplo(e.chave), this.escala);
+      d.classList.add('hud-editavel');
+      if (e.id === this.sel) d.classList.add('selecionado');
+      if (!e.visivel) d.classList.add('oculto');
       tela.append(d);
       dica(d, e.rotulo || e.id, 'Arraste para posicionar. A posição é medida a partir do canto/borda escolhido em "Preso a".');
       d.addEventListener('pointerdown', (ev) => this.arrastar(ev, e, d, tela));
@@ -188,6 +188,9 @@ export class EditorHud {
     });
     const cor = el('input', { type: 'color', value: e.cor });
     cor.addEventListener('change', () => { e.cor = cor.value; this.mudou(); });
+    const estilo = el('select', {}, ...ESTILOS_HUD.map((x) => el('option', { value: x.id }, x.nome)));
+    estilo.value = e.estilo;
+    estilo.addEventListener('change', () => { e.estilo = estilo.value === 'barra' ? 'barra' : 'texto'; this.mudou(); });
     const rotuloVis = el('input', { type: 'checkbox' }); rotuloVis.checked = e.mostrarRotulo;
     rotuloVis.addEventListener('change', () => { e.mostrarRotulo = rotuloVis.checked; this.mudou(); });
     const vis = el('input', { type: 'checkbox' }); vis.checked = e.visivel;
@@ -205,12 +208,37 @@ export class EditorHud {
       el('div', { class: 'linha2' },
         campo('Distância X', numero(e.x, (v) => { e.x = Math.round(v); }), 'Distância horizontal (px do jogo) a partir do canto/borda.'),
         campo('Distância Y', numero(e.y, (v) => { e.y = Math.round(v); }), 'Distância vertical (px do jogo) a partir do canto/borda.')),
+      campo('Mostrar como', estilo, ESTILOS_HUD.map((x) => `${x.nome}: ${x.texto}`).join(' ')),
       el('div', { class: 'linha2' },
-        campo('Tamanho', numero(e.tamanho, (v) => { e.tamanho = Math.max(4, v); }), 'Tamanho da letra em px do jogo.'),
-        campo('Cor', cor, 'Cor do valor.')),
+        campo(e.estilo === 'barra' ? 'Altura' : 'Tamanho', numero(e.tamanho, (v) => { e.tamanho = Math.max(4, v); }), e.estilo === 'barra' ? 'Altura da barra (px do jogo).' : 'Tamanho da letra em px do jogo.'),
+        campo('Cor', cor, e.estilo === 'barra' ? 'Cor da parte cheia da barra.' : 'Cor do valor.')),
+      ...(e.estilo === 'barra' ? [campo('Comprimento', numero(e.largura, (v) => { e.largura = Math.max(8, Math.round(v)); }), 'Comprimento da barra (px do jogo).')] : []),
       el('label', { class: 'check' }, rotuloVis, 'Mostrar rótulo'),
       el('label', { class: 'check' }, vis, 'Visível'),
       el('div', { class: 'secao acoes' }, remover));
     return col;
   }
+}
+
+/** Um elemento do HUD na tela (texto ou barra), na escala dada. Usado na prévia e no ▶ Testar. */
+export function elementoHud(e: ElementoHud, valor: string, escala: number): HTMLElement {
+  const rotulo = e.mostrarRotulo && e.rotulo ? el('span', { class: 'hud-rotulo' }, e.rotulo) : '';
+  const f = e.estilo === 'barra' ? fracaoHud(valor) : null;
+  if (f !== null) {
+    const cheio = el('span', { class: 'hud-barra-cheio' });
+    cheio.style.width = `${f * 100}%`;
+    cheio.style.background = e.cor;
+    const fundo = el('span', { class: 'hud-barra-fundo' }, cheio);
+    fundo.style.width = `${e.largura * escala}px`;
+    fundo.style.height = `${e.tamanho * escala}px`;
+    fundo.style.borderWidth = `${Math.max(1, Math.round(escala))}px`;
+    const d = el('div', { class: 'hud-elemento hud-barra', title: valor }, rotulo, fundo);
+    d.style.fontSize = `${Math.max(6, e.tamanho) * escala}px`;
+    d.style.color = e.cor;
+    return d;
+  }
+  const d = el('div', { class: 'hud-elemento' }, rotulo, el('strong', {}, valor));
+  d.style.fontSize = `${e.tamanho * escala}px`;
+  d.style.color = e.cor;
+  return d;
 }

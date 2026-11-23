@@ -1,6 +1,6 @@
 // ▶ Testar: joga a fase dentro do editor, com o jogador correndo e pulando sobre as colisões desenhadas.
 import { Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
-import { Animador, ancoraPes, estadoDoJogador, extras, retanguloQuadro, type Personagem } from '../core/personagem';
+import { Animador, animacaoPara, ancoraPes, estadoDoJogador, extras, retanguloQuadro, vidaPadrao, type ConfigVida, type Personagem } from '../core/personagem';
 import { EntradaJogo, TECLAS_RESERVADAS, controlesPadrao, nomeTecla, normalizarCodigo, textoAtalho, type Controles } from '../core/controles';
 import { LOG } from '../core/log';
 import { Jogador, JOGADOR_PADRAO, montarSegmentos, type ConfigJogador, type Entrada, type Segmento } from '../core/fisica';
@@ -11,6 +11,7 @@ import type { ObjetoFase } from '../core/tipos';
 import { InimigoVivo, raioTiro, type TipoInimigo } from './inimigosTeste';
 import type { AtaqueInimigo, EventoIA } from '../core/inimigos';
 import { normalizarHud, posicaoHud, type ConfigHud } from '../core/hud';
+import { elementoHud } from '../ui/hud';
 import { el } from '../ui/dom';
 import { dica } from '../ui/legenda';
 import type { Estado } from './estado';
@@ -79,6 +80,17 @@ export class ModoTeste {
   private agarradoAte = 0;
   private agarradoPor = '';
   private tempoJogo = 0;
+  // ---------- Vida, morte e checkpoint ----------
+  private vida = 10;
+  private invulAte = 0;
+  /** Momento (tempoJogo) da morte; null = vivo. */
+  private mortoEm: number | null = null;
+  /** Onde o jogador volta ao morrer (na sala atual): chegada na sala ou gatilho de checkpoint. */
+  private checkpoint: { x: number; y: number; direita: boolean; nome: string } | null = null;
+  private elMorte: HTMLElement;
+  private get cfgVida(): ConfigVida { return this.pers?.dados.vida ?? vidaPadrao(); }
+  private get morto() { return this.mortoEm !== null; }
+  private renascendo = false;
   private rastro: { x0: number; y0: number; x1: number; y1: number; t: number; acertou: boolean } | null = null;
   /** Munição levada para a próxima área. */
   private municaoLevada: number | null = null;
@@ -153,6 +165,14 @@ export class ModoTeste {
       mudouCena: () => { t.cenaMudou = true; },
       interagir: (o: ObjetoFase) => t.interagirCom(o),
       luzesFase: () => t.estado.fase.luzes,
+      vida: () => t.vida,
+      vidaMax: () => t.cfgVida.maxima,
+      definirVida: (n: number) => t.definirVida(n, 'código'),
+      ferir: (n: number) => t.ferir(n, 'código'),
+      morto: () => t.morto,
+      invulneravel: () => t.tempoJogo < t.invulAte,
+      morrer: () => t.morrer('código'),
+      checkpoint: (x?: number, y?: number) => { if (t.jogador) t.marcarCheckpoint(x ?? t.jogador.x, y ?? t.jogador.y, 'código'); },
     };
   }
   private cenaMudou = false;
@@ -204,6 +224,9 @@ export class ModoTeste {
     this.elMensagem = el('div', { class: 'teste-mensagem', role: 'dialog' });
     this.elHudJogo = el('div', { class: 'teste-hud-jogo' });
     this.elHudTela = el('div', { class: 'teste-hud-tela' });
+    this.elMorte = el('div', { class: 'teste-morte', role: 'status' });
+    this.elMorte.hidden = true;
+    centro.append(this.elMorte);
     centro.append(this.elHudTela);
     this.elHudTela.hidden = true;
     for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem, this.elHudJogo]) { x.hidden = true; centro.append(x); }
@@ -232,6 +255,10 @@ export class ModoTeste {
     this.reiniciarJogador();
     this.reiniciarMundo(continuando);
     this.posicionarChegada();
+    if (!continuando) { this.vida = this.cfgVida.maxima; LOG.add({ cat: 'personagem', texto: `vida: ${this.vida}/${this.cfgVida.maxima}` }); }
+    this.mortoEm = null; this.invulAte = 0; this.elMorte.hidden = true;
+    // Entrar numa sala marca um checkpoint na chegada
+    if (this.jogador) this.marcarCheckpoint(this.jogador.x, this.jogador.y, continuando ? 'chegada na sala' : 'início do teste', true);
     this.viajando = false;
     this.entradaJogo.limpar();
 
@@ -273,7 +300,9 @@ export class ModoTeste {
     window.removeEventListener('keyup', this.soltarTecla, true);
     window.removeEventListener('blur', this.perderFoco);
     this.hud.hidden = true;
-    for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem, this.elHudJogo]) x.hidden = true;
+    for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem, this.elHudJogo, this.elMorte]) x.hidden = true;
+    this.mortoEm = null;
+    this.spritePers.alpha = 1;
     this.hudJogo.clear();
     this.viewport.deslocamentoTeste = null;
     for (const i of this.inimigos) i.remover();
@@ -315,9 +344,10 @@ export class ModoTeste {
       for (const [id, v] of mem.luzes) mundo.luzes.set(id, v);
       mundo.escura = mem.escura;
       mundo.marcarMudanca();
-      LOG.add({ cat: 'mundo', texto: `sala já visitada: estado anterior restaurado${mem.mortos.size ? ` (${mem.mortos.size} inimigo(s) continuam mortos)` : ''}` });
+      LOG.add({ cat: 'mundo', texto: `${this.renascendo ? 'sala recomeça do checkpoint (portas e itens como estavam)' : 'sala já visitada: estado anterior restaurado'}${mem.mortos.size ? ` (${mem.mortos.size} inimigo(s) continuam mortos)` : ''}` });
     }
     this.viewport.quadroTeste = (o) => mundo.quadroAnim(o);
+    mundo.podeCurar = () => !this.morto && this.vida < this.cfgVida.maxima;
     this.viewport.luzTeste = {
       escura: () => mundo.escura,
       luz: (l) => ({ ligada: mundo.luzes.get(l.id) ?? l.ligada, raio: mundo.ajusteLuz.get(l.id)?.raio ?? l.raio, intensidade: mundo.ajusteLuz.get(l.id)?.intensidade ?? l.intensidade, angulo: mundo.ajusteLuz.get(l.id)?.angulo ?? l.angulo }),
@@ -360,7 +390,7 @@ export class ModoTeste {
     if (this.motor) {
       this.motor.prepararMundo(this.mundo);
       this.motor.iniciar();
-      this.motor.trocouFase(this.estado.arquivoFase ?? '');
+      if (!this.renascendo) this.motor.trocouFase(this.estado.arquivoFase ?? '');
     }
     this.aplicarVisibilidade();
     this.atualizarInventario();
@@ -395,6 +425,7 @@ export class ModoTeste {
     if (r.mensagem) LOG.add({ cat: 'mundo', texto: `mensagem: ${r.mensagem}` });
     if (r.acionado && origem && this.motor) this.motor.acionado(r.acionado, origem);
     if (r.surgir) this.surgirInimigos(r.surgir);
+    if (r.checkpoint && this.jogador) { this.marcarCheckpoint(this.jogador.x, this.jogador.y, origem?.nome ?? 'gatilho'); this.toast('Checkpoint'); }
     if (r.luz && this.mundo) LOG.add({ cat: 'mundo', texto: `iluminação: ${this.mundo.escura ? 'sala escura' : 'sala clara'} · luzes ligadas: ${[...this.mundo.luzes].filter(([, v]) => v).map(([id]) => this.estado.luz(id)?.nome ?? id).join(', ') || 'nenhuma'}` });
     if (r.aviso) this.toast(r.aviso);
     if (r.mensagem) {
@@ -434,18 +465,21 @@ export class ModoTeste {
     LOG.add({ cat: 'mundo', texto: `passagem${origem ? ` ${origem.nome}` : ''} → ${v.fase}${v.chegada ? ` (chega em ${v.chegada})` : ''} · ${resumoTransicao(v.transicao)}` });
     this.saindo = true;
     // Memória da sala que fica para trás (portas abertas, itens pegos, inimigos mortos)
-    if (this.mundo) {
-      this.memoriaSalas.set(v.deFase || (this.estado.arquivoFase ?? ''), {
-        estados: new Map([...this.mundo.estados].map(([id, e]) => [id, { ...e }])),
-        mortos: new Set([...this.estado.fase.inimigos.map((d) => d.id)].filter((id) => !this.aguardando.some((d) => d.id === id) && !this.inimigos.some((i) => i.id === id && i.vivo))),
-        luzes: new Map(this.mundo.luzes),
-        escura: this.mundo.escura,
-      });
-    }
+    this.guardarMemoriaSala(v.deFase || (this.estado.arquivoFase ?? ''));
     this.inventarioLevado = this.mundo ? new Map(this.mundo.inventario) : null;
     this.municaoLevada = this.pers?.dados.arma ? this.municao : null;
     this.levarCodigo = this.motor ? { variaveis: this.motor.variaveis, jogador: this.motor.dadosJogador } : null;
     setTimeout(() => this.aoIrPara(v));
+  }
+
+  private guardarMemoriaSala(arquivo: string) {
+    if (!this.mundo) return;
+    this.memoriaSalas.set(arquivo, {
+      estados: new Map([...this.mundo.estados].map(([id, e]) => [id, { ...e }])),
+      mortos: new Set([...this.estado.fase.inimigos.map((d) => d.id)].filter((id) => !this.aguardando.some((d) => d.id === id) && !this.inimigos.some((i) => i.id === id && i.vivo))),
+      luzes: new Map(this.mundo.luzes),
+      escura: this.mundo.escura,
+    });
   }
 
   /** Viagem pedida pelo código: jogo.irPara(fase, { chegada, transicao }). */
@@ -500,7 +534,13 @@ export class ModoTeste {
     const alvo = ev.target as HTMLElement | null;
     if (alvo && this.hud.contains(alvo) && alvo.tagName === 'INPUT') return; // ajustando um controle do HUD
     if (ev.key === 'Escape' || ev.key === 'F5') { ev.preventDefault(); this.parar(); return; }
-    if (ev.key === 'F6') { ev.preventDefault(); LOG.add({ cat: 'sistema', texto: 'Fase reiniciada (F6)' }); this.reiniciarJogador(); this.reiniciarMundo(); this.posicionarCamera(true); this.toast('Fase reiniciada'); return; }
+    if (ev.key === 'F6') { ev.preventDefault(); LOG.add({ cat: 'sistema', texto: 'Fase reiniciada (F6)' }); this.reiniciarTudo(); this.toast('Fase reiniciada'); return; }
+    // Morto: Enter (ou Interagir) volta logo no checkpoint
+    if (this.mortoEm !== null && (ev.key === 'Enter' || this.ehDaAcao(ev.code, 'interagir'))) {
+      ev.preventDefault(); ev.stopPropagation();
+      if (this.tempoJogo - this.mortoEm > 0.8) this.renascer();
+      return;
+    }
     if (ev.code === 'KeyC' && ev.shiftKey && !this.usada('KeyC')) { this.estado.mostrarColisoes = !this.estado.mostrarColisoes; this.estado.emit('opcoes'); return; }
     if (this.mensagemAberta && (ev.key === 'Enter' || this.ehDaAcao(ev.code, 'interagir'))) {
       ev.preventDefault();
@@ -533,7 +573,7 @@ export class ModoTeste {
   private entrada(): Entrada {
     const e = this.entradaJogo;
     const esquerda = e.segurando('esquerda'), direita = e.segurando('direita');
-    const agarrado = this.tempoJogo < this.agarradoAte;
+    const agarrado = this.tempoJogo < this.agarradoAte || this.morto;
     const trava = agarrado || (this.pers?.animador.travaMovimento(esquerda !== direita) ?? false);
     return {
       esquerda: esquerda && !trava,
@@ -558,8 +598,9 @@ export class ModoTeste {
     for (const a of ent.disparadasAgora) LOG.add({ cat: 'entrada', texto: `dispara a ação "${a}"` });
     if (ent.apertou('pular')) this.puloApertado = true;
     if (ent.apertou('interagir')) this.interagirApertado = true;
+    if (this.morto) { this.puloApertado = false; this.interagirApertado = false; }
     // Ações do personagem (animações extras): tiro, recarga…
-    if (this.pers) {
+    if (this.pers && !this.morto) {
       for (const [chave, anim] of extras(this.pers.dados)) {
         if (!ent.apertou(chave)) continue;
         if (this.tratarArma(chave)) continue;
@@ -572,6 +613,8 @@ export class ModoTeste {
     const dtQ = Math.min(ms / 1000, 0.1);
     this.tempoJogo += dtQ;
     m.tempo = this.tempoJogo; // relógio das animações dos objetos
+    // Morto: depois do tempo de "renascer" (seção Vida em Personagens), volta no checkpoint
+    if (this.mortoEm !== null && this.tempoJogo - this.mortoEm >= this.cfgVida.renascer) { this.renascer(); return; }
     // Recarga termina quando a animação acaba: pente cheio
     if (this.recargaAte && this.tempoJogo >= this.recargaAte) {
       this.recargaAte = 0;
@@ -584,7 +627,9 @@ export class ModoTeste {
       // Com aoPensar no código do tipo, é o código que decide (perambular, perseguir…); sem ele, a IA pronta
       const motor = this.motor;
       const externo = motor?.pensaPorCodigo(ini) ? () => motor.pensar(ini, dtQ) : undefined;
-      this.tratarEventosInimigo(ini, ini.pensar(dtQ, { x: j.x, y: j.y, largura: j.cfg.largura }, segsInimigos, externo));
+      // Morto: os inimigos deixam de enxergar o jogador (alvo longe)
+      const alvo = this.morto ? { x: j.x, y: j.y - 100000, largura: 0 } : { x: j.x, y: j.y, largura: j.cfg.largura };
+      this.tratarEventosInimigo(ini, ini.pensar(dtQ, alvo, segsInimigos, externo));
     }
     this.acumulado = Math.min(this.acumulado + ms / 1000, 0.25);
     while (this.acumulado >= PASSO) {
@@ -594,10 +639,9 @@ export class ModoTeste {
       this.puloApertado = false;
       this.acumulado -= PASSO;
       if (!vivo) {
-        LOG.add({ cat: 'mundo', texto: `caiu para fora da fase em (${Math.round(j.x)}, ${Math.round(j.y)}); voltando ao início` });
-        this.estado.avisar('Caiu para fora da fase: voltando ao início.');
-        this.reiniciarJogador();
-        this.posicionarCamera(true);
+        LOG.add({ cat: 'mundo', texto: `caiu para fora da fase em (${Math.round(j.x)}, ${Math.round(j.y)}); voltando ao checkpoint` });
+        this.estado.avisar('Caiu para fora da fase: voltando ao checkpoint.');
+        this.irAoCheckpoint();
         return;
       }
     }
@@ -620,7 +664,8 @@ export class ModoTeste {
     }
     if (this.saindo) return;
     // Coletáveis tocados
-    const pegos = m.coletar(this.caixaJogador());
+    const pegos = this.morto ? [] : m.coletar(this.caixaJogador());
+    if (m.curaPendente) { const c = m.curaPendente; m.curaPendente = 0; this.definirVida(this.vida + c, `kit (+${c})`); }
     if (pegos.length) { LOG.add({ cat: 'mundo', texto: pegos.join(' · ') }); this.toast(pegos.join(' · ')); this.aplicarVisibilidade(); this.atualizarInventario(); }
     // Objeto interagível por perto (tecla E)
     const prox = m.proximo(this.caixaJogador());
@@ -687,10 +732,15 @@ export class ModoTeste {
       this.estavaNoChao = j.noChao;
       const p = this.pers.dados;
       const animador = this.pers.animador;
-      const estado = estadoDoJogador(j, p.animacoes.aterrissando ? this.aterrissouHa : 9);
+      const estado = this.morto ? 'morte' : estadoDoJogador(j, p.animacoes.aterrissando ? this.aterrissouHa : 9);
       const acao = animador.acaoAtual;
       const andando = j.noChao && Math.abs(j.vx) > 12;
-      const r = animador.atualizar(dt, estado, andando, acao ? this.entradaJogo.segurando(acao) : false);
+      let r = animador.atualizar(dt, estado, andando, acao ? this.entradaJogo.segurando(acao) : false);
+      // Morte: toca uma vez e fica no último quadro (mesmo que a animação esteja marcada para repetir)
+      if (this.mortoEm !== null) {
+        const m = p.animacoes.morte ? animacaoPara(p, 'morte') : null;
+        if (m) r = { chave: m.estado, anim: m.anim, quadro: Math.min(m.anim.quadros - 1, Math.floor((this.tempoJogo - this.mortoEm) * m.anim.fps)) };
+      }
       if (acao && !animador.acaoAtual) { this.mostrarAcao(null); LOG.add({ cat: 'personagem', texto: `fim da animação: ${p.animacoes[acao]?.nome ?? acao}` }); }
       this.registrarEstado(estado);
       const frames = r ? this.pers.quadros.get(r.chave) : undefined;
@@ -704,6 +754,8 @@ export class ModoTeste {
         sp.scale.set(espelhar ? -esc : esc, esc);
         sp.position.set(Math.round(j.x), Math.round(j.y));
         sp.visible = true;
+        // Invulnerável depois de um golpe: pisca
+        sp.alpha = !this.morto && this.tempoJogo < this.invulAte ? (Math.floor(this.tempoJogo * 14) % 2 ? 0.35 : 1) : 1;
       }
       if (this.estado.mostrarColisoes) {
         const w = j.cfg.largura, h = j.cfg.altura;
@@ -818,10 +870,11 @@ export class ModoTeste {
     }
   }
 
-  /** Um inimigo acertou o jogador (sem barra de vida por enquanto: reação e registro). */
+  /** Um inimigo acertou o jogador: tira vida (com tempo invulnerável depois), empurra ou prende, e pode matar. */
   private jogadorAtingido(ini: InimigoVivo, ataque: AtaqueInimigo, segurar: number) {
     const j = this.jogador;
-    if (!j || !this.pers && !j) return;
+    if (!j || this.morto) return;
+    if (this.tempoJogo < this.invulAte) { LOG.add({ cat: 'personagem', texto: `golpe de ${ini.nome} não pegou (invulnerável por mais ${(this.invulAte - this.tempoJogo).toFixed(1)} s)` }); return; }
     if (this.motor && !this.motor.jogadorAtingido(ini, ataque.animacao, ataque.dano)) {
       LOG.add({ cat: 'personagem', texto: `golpe de ${ini.nome} ignorado pelo código (aoSerAtingido)` });
       return;
@@ -831,13 +884,98 @@ export class ModoTeste {
       this.agarradoAte = this.tempoJogo + segurar;
       this.agarradoPor = ini.id;
       j.vx = 0;
-      LOG.add({ cat: 'personagem', texto: `${nome} foi agarrada por ${ini.nome} (${ataque.animacao}, dano ${ataque.dano}, presa por ${segurar.toFixed(1)} s)` });
+      LOG.add({ cat: 'personagem', texto: `${nome} foi agarrada por ${ini.nome} (${ataque.animacao}, presa por ${segurar.toFixed(1)} s)` });
     } else {
       const lado = j.x >= ini.corpo.x ? 1 : -1;
       j.vx = 140 * lado; j.vy = -140;
-      LOG.add({ cat: 'personagem', texto: `${nome} levou ${ataque.animacao} de ${ini.nome} (dano ${ataque.dano}; sem barra de vida por enquanto)` });
     }
-    this.pers?.animador.tocar('dano');
+    this.ferir(ataque.dano, `${ataque.animacao} de ${ini.nome}`);
+    if (!this.morto) this.pers?.animador.tocar('dano');
+  }
+
+  // ---------- Vida, morte e checkpoint ----------
+
+  /** Muda a vida (limitada entre 0 e a vida cheia); chegando a 0, morre. */
+  private definirVida(n: number, motivo: string) {
+    if (this.morto) return;
+    const max = this.cfgVida.maxima;
+    const antes = this.vida;
+    this.vida = Math.max(0, Math.min(max, Math.round(n * 10) / 10));
+    if (this.vida !== antes) LOG.add({ cat: 'personagem', texto: `vida ${antes} → ${this.vida}/${max} (${motivo})` });
+    if (this.vida > antes) this.toast(`+${Math.round((this.vida - antes) * 10) / 10} de vida`);
+    if (this.vida <= 0) this.morrer(motivo);
+  }
+
+  /** Tira vida e deixa o jogador invulnerável por um instante (seção Vida em Personagens). */
+  private ferir(dano: number, motivo: string) {
+    if (this.morto || dano <= 0) return;
+    this.invulAte = this.tempoJogo + this.cfgVida.invulneravel;
+    this.definirVida(this.vida - dano, motivo);
+  }
+
+  /** Vida chegou a 0: animação de morte, controles travados e, depois de um tempo, volta ao checkpoint. */
+  private morrer(motivo: string) {
+    if (this.morto) return;
+    if (this.motor && !this.motor.jogadorMorreu(motivo)) {
+      this.vida = Math.max(this.vida, 1);
+      LOG.add({ cat: 'personagem', texto: `morte cancelada pelo código (aoMorrer): vida ${this.vida}` });
+      return;
+    }
+    this.vida = 0;
+    this.mortoEm = this.tempoJogo;
+    this.agarradoAte = 0; this.agarradoPor = '';
+    this.recargaAte = 0;
+    this.pers?.animador.parar();
+    this.mostrarAcao(null);
+    const nome = this.pers?.dados.nome ?? 'Jogador';
+    LOG.add({ cat: 'personagem', texto: `${nome} morreu (${motivo}); volta ${this.checkpoint ? `no checkpoint "${this.checkpoint.nome}"` : 'no início'} em ${this.cfgVida.renascer.toFixed(1)} s` });
+    this.elMorte.replaceChildren(el('strong', {}, 'VOCÊ MORREU'), el('span', {}, 'Voltando ao último checkpoint… (Enter para ir já)'));
+    this.elMorte.hidden = false;
+    this.elPrompt.hidden = true;
+  }
+
+  /** Volta no checkpoint com a vida cheia. Os inimigos vivos da sala voltam aos lugares; portas e itens ficam como estão. */
+  private renascer() {
+    if (!this.morto) return;
+    this.mortoEm = null;
+    this.elMorte.hidden = true;
+    this.vida = this.cfgVida.maxima;
+    // Recomeça a sala lembrando o que já mudou (como ao voltar a uma sala visitada)
+    this.guardarMemoriaSala(this.estado.arquivoFase ?? '');
+    this.inventarioLevado = this.mundo ? new Map(this.mundo.inventario) : null;
+    this.municaoLevada = this.pers?.dados.arma ? this.pers.dados.arma.pente : null;
+    this.reiniciarJogador();
+    this.renascendo = true;
+    this.reiniciarMundo(true);
+    this.renascendo = false;
+    this.irAoCheckpoint();
+    this.invulAte = this.tempoJogo + 1.5;
+    LOG.add({ cat: 'personagem', texto: `voltou no checkpoint "${this.checkpoint?.nome ?? 'início'}" com vida ${this.vida}/${this.cfgVida.maxima}` });
+    this.motor?.jogadorRenasceu();
+  }
+
+  /** Leva o jogador ao checkpoint (ou ao início da sala, se não houver). */
+  private irAoCheckpoint() {
+    const j = this.jogador;
+    if (!j) return;
+    const cp = this.checkpoint;
+    if (cp) { j.x = cp.x; j.y = cp.y; j.olhandoDireita = cp.direita; } else { [j.x, j.y] = this.estado.fase.spawnJogador; }
+    j.vx = 0; j.vy = 0;
+    this.posicionarCamera(true);
+  }
+
+  private marcarCheckpoint(x: number, y: number, nome: string, silencioso = false) {
+    this.checkpoint = { x, y, direita: this.jogador?.olhandoDireita ?? true, nome };
+    if (!silencioso || nome !== 'início do teste') LOG.add({ cat: 'personagem', texto: `checkpoint: ${nome} (${Math.round(x)}, ${Math.round(y)})` });
+  }
+
+  /** F6: a sala volta ao começo, com vida cheia. */
+  private reiniciarTudo() {
+    this.mortoEm = null; this.elMorte.hidden = true; this.invulAte = 0;
+    this.vida = this.cfgVida.maxima;
+    this.reiniciarJogador(); this.reiniciarMundo();
+    if (this.jogador) this.marcarCheckpoint(this.jogador.x, this.jogador.y, 'início da sala', true);
+    this.posicionarCamera(true);
   }
 
   /** Inimigos no agarrão (ataque que agarra) ficam NA FRENTE do jogador, para o braço aparecer por cima. */
@@ -869,6 +1007,7 @@ export class ModoTeste {
   private valorHud(chave: string): string | null {
     const arma = this.pers?.dados.arma;
     if (chave === 'municao') return arma ? `${this.municao}/${arma.pente}` : null;
+    if (chave === 'vida') return `${this.vida}/${this.cfgVida.maxima}`;
     if (chave === 'inimigos') return String(this.inimigos.filter((i) => i.vivo).length);
     if (chave.startsWith('item:')) return String(this.mundo?.inventario.get(chave.slice(5)) ?? 0);
     return this.valoresHud.get(chave) ?? null;
@@ -891,10 +1030,7 @@ export class ModoTeste {
     els.forEach((e, k) => {
       const v = valores[k];
       if (v === null) return;
-      const d = el('div', { class: 'hud-elemento' },
-        e.mostrarRotulo && e.rotulo ? el('span', { class: 'hud-rotulo' }, e.rotulo) : '', el('strong', {}, v));
-      d.style.fontSize = `${e.tamanho * z}px`;
-      d.style.color = e.cor;
+      const d = elementoHud(e, v, z);
       this.elHudTela.append(d);
       const w = d.offsetWidth / z, h = d.offsetHeight / z;
       const p = posicaoHud(e, w, h, rw, rh);
@@ -943,7 +1079,7 @@ export class ModoTeste {
     parar.addEventListener('click', () => this.parar());
     const reiniciar = el('button', { type: 'button', class: 'secundario' }, 'Reiniciar');
     dica(reiniciar, 'Reiniciar', 'Volta o jogador para a bandeira de início.', 'F6');
-    reiniciar.addEventListener('click', () => { this.reiniciarJogador(); this.reiniciarMundo(); this.posicionarCamera(true); });
+    reiniciar.addEventListener('click', () => this.reiniciarTudo());
 
     const ajustes = el('details', { class: 'hud-ajustes' }, el('summary', {}, 'Ajustes do jogador'));
     const campo = (rotulo: string, chave: keyof ConfigJogador, min: number, max: number, passo: number, un: string, texto: string) => {

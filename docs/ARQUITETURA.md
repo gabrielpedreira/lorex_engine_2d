@@ -451,6 +451,20 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   `aplicarMudanca` envolve toda mudança: remove conexões sem pontas e apaga as passagens-zona (`PassagemSala.zona`)
   que perderam a última conexão (`passagensUsadas` antes × depois).
 
+### 4.34 Vida do jogador, morte e checkpoint
+
+- `Personagem.vida: ConfigVida { maxima, invulneravel, renascer }` (só jogador; `normalizarVida` dá o padrão 10 / 1,2 s / 2,5 s).
+- `ModoTeste`: `vida`, `invulAte`, `mortoEm`, `checkpoint`. `jogadorAtingido` → `ferir` (ignora se invulnerável) →
+  `definirVida` → `morrer` (gancho `aoMorrer` do personagem pode cancelar). Morto: entrada travada, inimigos recebem
+  um alvo distante, animação `morte` congelada no último quadro, overlay `.teste-morte`. `renascer()` guarda a memória
+  da sala, recomeça com `reiniciarMundo(true)` (flag `renascendo`: sem `aoTrocarFase`) e leva ao checkpoint.
+- Checkpoint: marcado ao iniciar/chegar numa sala, pelo gatilho `acao: 'checkpoint'` (`ResultadoInteracao.checkpoint`)
+  ou por `jogo.checkpoint(x?, y?)`. Cair para fora da fase volta ao checkpoint.
+- Kit: `CompColetavel.cura` → `MundoInterativo.curaPendente` (não vai ao inventário); `podeCurar` impede pegar com vida cheia.
+- HUD: `ElementoHud.estilo 'texto' | 'barra'` + `largura`; `fracaoHud("8/10")`; `elementoHud()` (ui/hud.ts) desenha
+  o elemento na prévia e no teste. Chave `vida`.
+- `MotorScripts.iniciar()` limpa `handlesInimigo` (os inimigos são recriados em F6/checkpoint).
+
 ### 4.33 Lista de Salas (painel direito)
 
 - `src/ui/salas.ts → PainelSalas`: bloco abaixo de Camadas (`.salas-bloco`, altura `--alt-salas`, divisor `editor-salas`).
