@@ -116,6 +116,12 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
   direita para passagens nas bordas, em cima para as do meio) com o nome da sala de destino; clicar abre aquela sala.
 - **Atualizar a biblioteca** (botão ⟳ ou `F9`): relê a pasta; imagens novas aparecem, apagadas somem e as trocadas (mesmo
   nome) são recarregadas no cenário, nas miniaturas e nas cópias de `jogo/assets` (menos as otimizadas `_LxA`).
+- **Áreas redimensionáveis**: passe o mouse na linha entre duas áreas (seta de redimensionar) e arraste: caixa de
+  ferramentas/biblioteca, propriedades, camadas, Log; no Código, a lista de elementos, os ganchos/API e a Saída; no Mapa,
+  o painel; nas telas em colunas (Personagens, HUD), as colunas laterais. Os tamanhos ficam salvos; duplo clique na
+  linha volta ao padrão.
+- **Imagens trocadas na pasta**: ao colocar de novo uma imagem cujo original foi alterado, a cópia em `jogo/assets` é
+  atualizada; o cenário recarrega imagens que mudaram no disco.
 - **Tela do jogo** (`Q`): ajusta o quadro laranja (o pedaço do cenário que o jogador vê). Arraste os cantos
   (mantém a proporção, passos de 16 px) ou escolha 320×180 / 480×270 / 640×360 / 960×540; mostra se a escala fica
   nítida em Full HD. "Padrão do projeto" vale para as fases novas; "Aplicar em todas" muda todas as fases.

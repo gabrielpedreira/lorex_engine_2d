@@ -14,6 +14,7 @@ interface ApiLorex {
   listarAssets(): Promise<string[]>;
   listarSons(): Promise<string[]>;
   atualizarCopias(pares: [string, string][]): Promise<string[]>;
+  dataArquivo(rel: string): Promise<number>;
   garantirEmUso(relRaiz: string, categoria?: string): Promise<string>;
   listarDados(pasta: string): Promise<string[]>;
   lerDados(pasta: string, nome: string): Promise<string>;
@@ -51,6 +52,7 @@ export class PlataformaElectron implements Plataforma {
   listarAssets() { return this.api.listarAssets(); }
   listarSons() { return this.api.listarSons(); }
   atualizarCopias(p: [string, string][]) { return this.api.atualizarCopias(p); }
+  dataArquivo(rel: string) { return this.api.dataArquivo(rel); }
   garantirEmUso(c: string, categoria?: string) { return this.api.garantirEmUso(c, categoria); }
   listarDados(p: PastaDados) { return this.api.listarDados(p); }
   lerDados(p: PastaDados, n: string) { return this.api.lerDados(p, n); }

@@ -430,6 +430,17 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   e folhas dos inimigos; ignora otimizadas `_LxA`), `novaVersaoImagens()` muda o `anticache()` das URLs (miniaturas e
   texturas), `viewport.recarregarTexturas()` esvazia os caches e recarrega.
 
+### 4.31 Divisores e imagens trocadas
+
+- `ui/divisor.ts`: `divisor({ id, eixo, alvo, variavel, padrao, min, max, sentido, lado })` cria a alça (cursor
+  ew/ns-resize), grava o tamanho numa variável CSS do alvo e em `localStorage['lorex.divisores']`; duplo clique volta ao
+  padrão. Usado em `#app` (--larg-esq, --larg-dir), bloco de camadas (--alt-camadas), Código (--cod-exp, --cod-api,
+  --cod-saida, com `editor.layout()`), Mapa (--mapa-painel). `ligarDivisoresAutomaticos()` observa o DOM e põe alças nas
+  `.pers-colunas` (--pers-esq, --pers-dir). A biblioteca usa grade `auto-fill` para acompanhar a largura.
+- `assets:garantirEmUso` recopia quando o original é mais novo (2 s de folga) ou tem outro tamanho. `arquivo:data`
+  (mtime): `viewport.texturaRaiz`/`textura` recarregam quando a data mudou (`?m=<mtime>` na URL) e re-sincronizam a cena;
+  o watcher de `jogo/assets` também recarrega as texturas.
+
 ### 4.18 Legendas e recarregar por fora
 
 - `src/ui/legenda.ts`: `dica(el, título, texto, atalho)` + conversão automática de `title`. O cenário mostra legendas

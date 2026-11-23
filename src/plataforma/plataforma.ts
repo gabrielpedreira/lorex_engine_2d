@@ -67,6 +67,8 @@ export interface Plataforma {
   listarAssets(): Promise<string[]>;
   /** Recopia para jogo/assets as imagens cujo original (apoio) é mais novo que a cópia. Devolve as atualizadas. */
   atualizarCopias(pares: [string, string][]): Promise<string[]>;
+  /** Data de modificação (ms) de um arquivo relativo à raiz; 0 = não existe ou indisponível. */
+  dataArquivo(caminhoRaiz: string): Promise<number>;
   /** Sons do projeto (.ogg, .mp3, .wav), caminhos relativos à raiz. */
   listarSons(): Promise<string[]>;
   /** Garante que o asset esteja em jogo/assets e devolve o caminho relativo a jogo/. categoria: subpasta (ex.: "personagens/lorena"). */

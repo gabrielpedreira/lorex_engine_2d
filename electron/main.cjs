@@ -184,6 +184,11 @@ function registrarIpc() {
     return lista.sort((a, b) => a.localeCompare(b, 'pt-BR'));
   });
 
+  // Data de modificação de um arquivo do projeto (para recarregar imagens trocadas); 0 = não existe
+  ipcMain.handle('arquivo:data', async (_e, rel) => {
+    try { return fs.statSync(resolverDentroDoProjeto(String(rel))).mtimeMs; } catch { return 0; }
+  });
+
   ipcMain.handle('assets:listarSons', async () => {
     if (!raizProjeto) return [];
     const lista = [];
@@ -201,7 +206,7 @@ function registrarIpc() {
         if (/_\d+x\d+\.png$/i.test(asset)) continue;
         const o = resolverDentroDoProjeto(origem), d = resolverDentroDoProjeto('jogo/' + asset);
         const so = fs.statSync(o), sd = fs.existsSync(d) ? fs.statSync(d) : null;
-        if (sd && so.mtimeMs <= sd.mtimeMs && so.size === sd.size) continue;
+        if (sd && so.mtimeMs <= sd.mtimeMs + 2000 && so.size === sd.size) continue;
         marcarEscrita(d);
         await fsp.mkdir(path.dirname(d), { recursive: true });
         await fsp.copyFile(o, d);
@@ -223,7 +228,13 @@ function registrarIpc() {
     const relJogo = `assets/${categoria}/${partes[partes.length - 1]}`;
     const destino = resolverDentroDoProjeto('jogo/' + relJogo);
     await fsp.mkdir(path.dirname(destino), { recursive: true });
-    if (!fs.existsSync(destino)) { marcarEscrita(destino); await fsp.copyFile(origem, destino); }
+    // Copia se ainda não existe OU se o original foi trocado depois da cópia (imagem alterada na pasta de apoio)
+    let copiar = !fs.existsSync(destino);
+    if (!copiar) {
+      const so = fs.statSync(origem), sd = fs.statSync(destino);
+      copiar = so.mtimeMs > sd.mtimeMs + 2000 || so.size !== sd.size; // 2 s de folga (cópias que preservam a data)
+    }
+    if (copiar) { marcarEscrita(destino); await fsp.copyFile(origem, destino); }
     return relJogo;
   });
 

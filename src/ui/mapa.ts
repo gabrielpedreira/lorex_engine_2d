@@ -10,6 +10,7 @@ import {
 import { el, perguntar } from './dom';
 import { MODOS_PASSAGEM, type ModoPassagem } from '../core/comportamentos';
 import { dica } from './legenda';
+import { divisor } from './divisor';
 
 export interface PassagemSala { id: string; nome: string; x: number; y: number; w: number; h: number; requer: string; modo: ModoPassagem; /** fora da fase (o jogador não alcança) */ fora: boolean }
 export interface InfoSala {
@@ -207,6 +208,7 @@ export class EditorMapa {
       el('header', { class: 'pers-topo' }, el('h2', {}, 'Mapa'), legenda, el('div', { class: 'espaco' }),
         el('span', { class: 'dica-campo' }, 'Salvo automaticamente em jogo/projeto.json'), nova, organizar, enq, fechar),
       el('div', { class: 'mapa-colunas' }, el('div', { class: 'mapa-palco' }, this.area,
+        divisor({ id: 'mapa-painel', eixo: 'x', alvo: this.raiz, variavel: '--mapa-painel', padrao: 340, min: 260, max: () => window.innerWidth * 0.5, sentido: -1, lado: 'fim', titulo: 'Largura do painel do Mapa' }),
         el('div', { class: 'mapa-ajuda' }, 'Arraste de uma passagem ▭ até outra · clique no ◆ para a transição · arraste das bolinhas azuis até outra sala para conectar · clique no nome para renomear · arraste as salas · roda = zoom · arraste o fundo = mover · duplo clique na sala = abrir')),
       this.painel)));
     this.desenhar();

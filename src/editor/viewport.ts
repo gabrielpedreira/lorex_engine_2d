@@ -384,12 +384,17 @@ export class Viewport {
   private texturasRaiz = new Map<string, Texture>();
 
   /** Textura de um arquivo pelo caminho relativo à raiz do projeto (ex.: o original de apoio). */
+  /** Data de cada imagem quando foi carregada: se o arquivo mudou no disco, carrega de novo (imagem trocada na pasta). */
+  private datas = new Map<string, number>();
+
   async texturaRaiz(caminhoRaiz: string): Promise<Texture> {
+    const data = await this.plat.dataArquivo(caminhoRaiz);
     const cache = this.texturasRaiz.get(caminhoRaiz);
-    if (cache) return cache;
-    const tex = await Assets.load<Texture>({ src: this.plat.urlRaiz(caminhoRaiz) + anticache(), parser: 'texture' });
+    if (cache && this.datas.get('r:' + caminhoRaiz) === data) return cache;
+    const tex = await Assets.load<Texture>({ src: this.plat.urlRaiz(caminhoRaiz) + (data ? `?m=${Math.round(data)}` : anticache()), parser: 'texture' });
     tex.source.scaleMode = 'nearest';
     this.texturasRaiz.set(caminhoRaiz, tex);
+    this.datas.set('r:' + caminhoRaiz, data);
     return tex;
   }
 
@@ -399,6 +404,7 @@ export class Viewport {
     this.texturasRaiz.clear();
     this.quadrosFolha.clear();
     this.carregando.clear();
+    this.datas.clear();
     this.sincronizar();
   }
 
@@ -409,11 +415,19 @@ export class Viewport {
   }
 
   async textura(asset: string): Promise<Texture> {
+    const data = await this.plat.dataArquivo('jogo/' + asset);
     const cache = this.texturas.get(asset);
-    if (cache) return cache;
-    const tex = await Assets.load<Texture>({ src: urlAsset(this.plat, asset) + anticache(), parser: 'texture' });
+    if (cache && this.datas.get('j:' + asset) === data) return cache;
+    const tex = await Assets.load<Texture>({ src: urlAsset(this.plat, asset) + (data ? `?m=${Math.round(data)}` : anticache()), parser: 'texture' });
     tex.source.scaleMode = 'nearest';
+    const trocou = !!cache;
     this.texturas.set(asset, tex);
+    this.datas.set('j:' + asset, data);
+    if (trocou) {
+      // A imagem mudou no disco: os objetos que já usavam a antiga passam a mostrar a nova
+      for (const k of [...this.quadrosFolha.keys()]) if (k.startsWith(asset + '|')) this.quadrosFolha.delete(k);
+      this.sincronizar();
+    }
     return tex;
   }
 

@@ -18,6 +18,7 @@ import { Legendas, dica } from './ui/legenda';
 import type { FormaNova } from './editor/estado';
 import { ICONES, icone } from './ui/icones';
 import { FORMAS_LUZ, PainelPropriedades } from './ui/propriedades';
+import { divisor, ligarDivisoresAutomaticos } from './ui/divisor';
 import { ModoTeste } from './editor/testar';
 import { EditorPersonagens } from './ui/personagens';
 import { EditorControles } from './ui/controles';
@@ -62,7 +63,9 @@ const centro = el('main', { class: 'cenario', 'aria-label': 'Cenário' });
 const direita = el('aside', { class: 'painel direita' });
 const painelProps = el('section', { class: 'bloco props-bloco' });
 const painelCamadas = el('section', { class: 'bloco camadas-bloco' });
-direita.append(painelProps, painelCamadas);
+// Divisores arrastáveis: largura das laterais e altura do bloco de Camadas (tamanhos salvos no computador)
+const ancoraCamadas = el('div', { class: 'divisor-ancora' });
+direita.append(painelProps, ancoraCamadas, painelCamadas);
 const status = el('footer', { class: 'status' });
 /** Linha logo abaixo da barra de menu: posição do mouse, camada ativa e a última mensagem do editor. */
 const barraInfo = el('div', { class: 'barra-info', role: 'status' });
@@ -70,6 +73,10 @@ const barraInfo = el('div', { class: 'barra-info', role: 'status' });
 capturarErrosGlobais();
 const painelLog = new PainelLog();
 app.append(barra, barraInfo, esquerda, centro, painelLog.raiz, direita, status);
+esquerda.append(divisor({ id: 'editor-esquerda', eixo: 'x', alvo: app, variavel: '--larg-esq', padrao: 260, min: 170, max: () => Math.max(200, window.innerWidth * 0.4), sentido: 1, lado: 'fim', titulo: 'Largura da caixa de ferramentas / biblioteca' }));
+direita.append(divisor({ id: 'editor-direita', eixo: 'x', alvo: app, variavel: '--larg-dir', padrao: 300, min: 220, max: () => Math.max(260, window.innerWidth * 0.45), sentido: -1, lado: 'inicio', titulo: 'Largura do painel de propriedades' }));
+ancoraCamadas.append(divisor({ id: 'editor-camadas', eixo: 'y', alvo: direita, variavel: '--alt-camadas', padrao: 280, min: 90, max: () => Math.max(120, window.innerHeight * 0.7), sentido: -1, lado: 'inicio', titulo: 'Altura do bloco de camadas' }));
+ligarDivisoresAutomaticos();
 
 // Painel lateral esquerdo: abas Ferramentas / Biblioteca, recolhível
 const abaFerr = el('button', { type: 'button', class: 'aba ativa', role: 'tab', 'aria-selected': 'true' }, 'Ferramentas');
@@ -1411,7 +1418,8 @@ let recarregandoBib = 0;
 plat.aoMudarProjeto(async (m) => {
   if (m.tipo === 'assets') {
     clearTimeout(recarregandoBib);
-    recarregandoBib = window.setTimeout(async () => { await biblioteca.recarregar(); ferramentas.definir(ferramentasAtuais, biblioteca.caminhos); }, 300);
+    // Imagem nova, apagada ou TROCADA em jogo/assets: biblioteca e cenário mostram a versão atual
+    recarregandoBib = window.setTimeout(async () => { novaVersaoImagens(); viewport.recarregarTexturas(); await biblioteca.recarregar(); ferramentas.definir(ferramentasAtuais, biblioteca.caminhos); }, 300);
     return;
   }
   if (m.tipo === 'personagem') { await editorPersonagens.mudouPorFora(m.nome); await carregarTiposInimigo(); if (painelCodigo.aberta) await painelCodigo.atualizarElementos(); return; }

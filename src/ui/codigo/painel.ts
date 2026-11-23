@@ -9,6 +9,7 @@ import type { Plataforma } from '../../plataforma/plataforma';
 import { el, perguntar } from '../dom';
 import { dica } from '../legenda';
 import { icone } from '../icones';
+import { divisor } from '../divisor';
 
 export interface ElementoCodigo {
   /** Chave única no explorador (ex.: "obj:fase_01.json:obj_003"). */
@@ -347,13 +348,18 @@ export class PainelCodigo {
     this.elApi = el('aside', { class: 'cod-api' });
     this.elSaida = el('section', { class: 'cod-saida' });
 
+    // Divisores: largura do explorador e da API (ganchos), altura da Saída
+    const layout = () => this.editor?.layout();
+    const dExp = divisor({ id: 'codigo-explorador', eixo: 'x', alvo: this.raiz, variavel: '--cod-exp', padrao: 250, min: 160, max: () => window.innerWidth * 0.45, sentido: 1, lado: 'fim', titulo: 'Largura da lista de elementos', aoMudar: layout });
+    const dApi = divisor({ id: 'codigo-api', eixo: 'x', alvo: this.raiz, variavel: '--cod-api', padrao: 290, min: 200, max: () => window.innerWidth * 0.5, sentido: -1, lado: 'inicio', titulo: 'Largura da caixa de ganchos e API', aoMudar: layout });
+    const dSaida = divisor({ id: 'codigo-saida', eixo: 'y', alvo: this.raiz, variavel: '--cod-saida', padrao: 170, min: 70, max: () => window.innerHeight * 0.7, sentido: -1, lado: 'inicio', titulo: 'Altura da Saída', aoMudar: layout });
     this.raiz.append(el('div', { class: 'cod-caixa' },
       el('header', { class: 'pers-topo' }, el('h2', {}, 'Código'), this.elTitulo, el('div', { class: 'espaco' }), this.elAviso, api, salvar, salvarTudo, testar, fechar),
       el('div', { class: 'cod-corpo' },
-        this.elExplorador,
+        el('div', { class: 'cod-lado' }, this.elExplorador, dExp),
         el('div', { class: 'cod-centro' }, this.elAbas, el('div', { class: 'cod-area' }, this.elEditor, this.elVazio)),
-        this.elApi),
-      this.elSaida));
+        el('div', { class: 'cod-lado cod-lado-api' }, this.elApi, dApi)),
+      el('div', { class: 'cod-lado cod-lado-saida' }, this.elSaida, dSaida)));
   }
 
   private desenharExplorador() {
