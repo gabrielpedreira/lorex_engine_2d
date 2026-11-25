@@ -80,7 +80,10 @@ export class InimigoVivo {
     if (!this.movendo) this.corpo.olhandoDireita = olhando;
   }
 
-  atingido() { this.flash = 0.12; }
+  atingido() { this.piscar(0.12, '#ff7070'); }
+  private corFlash = 0xff7070;
+  /** Fica com a cor (vermelho) por um tempo: tiro levado ou eu.piscar(segundos, cor) no código. */
+  piscar(segundos: number, cor: string) { this.flash = Math.max(0, segundos); this.corFlash = Number.parseInt(cor.replace('#', ''), 16) || 0xff7070; }
 
   /** Animação conforme o estado da IA. */
   desenhar(dt: number) {
@@ -105,7 +108,7 @@ export class InimigoVivo {
     sp.scale.set(espelhar ? -esc : esc, esc);
     sp.position.set(Math.round(this.corpo.x), Math.round(this.corpo.y));
     this.flash = Math.max(0, this.flash - dt);
-    sp.tint = this.flash > 0 ? 0xff7070 : 0xffffff;
+    sp.tint = this.flash > 0 ? this.corFlash : 0xffffff;
     sp.visible = true;
   }
 

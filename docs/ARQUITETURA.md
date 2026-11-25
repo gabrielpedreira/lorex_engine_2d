@@ -463,6 +463,9 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
 - ▶ Testar: golpe pinta o jogador de vermelho (`tint`, como os inimigos) e pisca vermelho enquanto invulnerável; a tela
   do jogo fica abaixo do painel "Testando" (`margemTopo` no zoom e na câmera). `ConfigArma.nome` (chave `arma`).
 - `limparNaoUsados` considera as imagens do HUD em uso.
+- Reação ao dano: `ModoTeste.reagirAoDano` → com `aoReagirAoDano` no script do personagem (`MotorScripts.reageAoDanoPorCodigo`)
+  o código decide; senão a pronta (`invulneravelPor`, `piscar(ConfigVida.piscar)`, empurrão, animação `dano`).
+  `piscar` = cor sólida por 0,12 s e depois alterna a cada 0,07 s. `InimigoVivo.piscar(seg, cor)` para os inimigos.
 
 ### 4.34 Vida do jogador, morte e checkpoint
 

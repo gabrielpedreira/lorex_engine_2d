@@ -98,8 +98,10 @@ export class ModoTeste {
   hudConfig: ConfigHud = normalizarHud(null);
   /** URL de uma imagem (caminho relativo a jogo/), para o HUD. */
   urlImagem: (c: string) => string = (c) => c;
-  /** Golpe recebido: pisca em vermelho (como os inimigos). */
-  private flashDano = 0;
+  /** Piscar depois de um golpe (reação pronta ou eu.piscar() no código). */
+  private piscarDe = 0;
+  private piscarAte = 0;
+  private piscarCor = 0xff6060;
   private elHudTela: HTMLElement;
   private valoresHud = new Map<string, string>();
 
@@ -173,6 +175,9 @@ export class ModoTeste {
       vidaMax: () => t.cfgVida.maxima,
       definirVida: (n: number) => t.definirVida(n, 'código'),
       ferir: (n: number) => t.ferir(n, 'código'),
+      piscar: (seg?: number, cor?: string) => t.piscar(seg ?? t.cfgVida.piscar, cor ? Number.parseInt(cor.replace('#', ''), 16) || 0xff6060 : 0xff6060),
+      invulneravelPor: (seg?: number) => t.invulneravelPor(seg ?? t.cfgVida.invulneravel),
+      tocarDano: () => { t.pers?.animador.tocar('dano'); },
       morto: () => t.morto,
       invulneravel: () => t.tempoJogo < t.invulAte,
       morrer: () => t.morrer('código'),
@@ -771,10 +776,10 @@ export class ModoTeste {
         sp.scale.set(espelhar ? -esc : esc, esc);
         sp.position.set(Math.round(j.x), Math.round(j.y));
         sp.visible = true;
-        // Golpe: fica vermelho como os inimigos; invulnerável, pisca em vermelho até acabar
-        this.flashDano = Math.max(0, this.flashDano - dt);
-        const piscando = !this.morto && this.tempoJogo < this.invulAte && Math.floor(this.tempoJogo * 10) % 2 === 0;
-        sp.tint = this.flashDano > 0 || piscando ? 0xff6060 : 0xffffff;
+        // Golpe: vermelho logo após o dano e depois pisca rápido até acabar (como os inimigos)
+        const tp = this.tempoJogo - this.piscarDe;
+        const piscando = !this.morto && this.tempoJogo < this.piscarAte && (tp < 0.12 || Math.floor((tp - 0.12) / 0.07) % 2 === 1);
+        sp.tint = piscando ? this.piscarCor : 0xffffff;
         sp.alpha = 1;
       }
       if (this.estado.mostrarColisoes) {
@@ -905,13 +910,29 @@ export class ModoTeste {
       this.agarradoPor = ini.id;
       j.vx = 0;
       LOG.add({ cat: 'personagem', texto: `${nome} foi agarrada por ${ini.nome} (${ataque.animacao}, presa por ${segurar.toFixed(1)} s)` });
-    } else {
-      const lado = j.x >= ini.corpo.x ? 1 : -1;
-      j.vx = 140 * lado; j.vy = -140;
     }
-    this.ferir(ataque.dano, `${ataque.animacao} de ${ini.nome}`);
-    if (!this.morto) this.pers?.animador.tocar('dano');
+    this.ferir(ataque.dano, `${ataque.animacao} de ${ini.nome}`, ini);
   }
+
+  /**
+   * Reação ao dano: com aoReagirAoDano no código do personagem, quem decide é o código (piscar, invulnerável,
+   * empurrão, animação); sem ele, a reação pronta abaixo (a mesma que o modelo do código mostra).
+   */
+  private reagirAoDano(dano: number, ini: InimigoVivo | null) {
+    if (this.motor?.reageAoDanoPorCodigo()) { this.motor.reagirAoDano(dano, ini); return; }
+    const j = this.jogador;
+    this.invulneravelPor(this.cfgVida.invulneravel);
+    this.piscar(this.cfgVida.piscar, 0xff6060);
+    if (j && ini && this.tempoJogo >= this.agarradoAte) { const lado = j.x >= ini.corpo.x ? 1 : -1; j.vx = 140 * lado; j.vy = -140; }
+    this.pers?.animador.tocar('dano');
+  }
+
+  private piscar(segundos: number, cor: number) {
+    this.piscarDe = this.tempoJogo;
+    this.piscarAte = this.tempoJogo + Math.max(0, segundos);
+    this.piscarCor = cor;
+  }
+  private invulneravelPor(segundos: number) { this.invulAte = Math.max(this.invulAte, this.tempoJogo + Math.max(0, segundos)); }
 
   // ---------- Vida, morte e checkpoint ----------
 
@@ -927,11 +948,10 @@ export class ModoTeste {
   }
 
   /** Tira vida e deixa o jogador invulnerável por um instante (seção Vida em Personagens). */
-  private ferir(dano: number, motivo: string) {
+  private ferir(dano: number, motivo: string, ini: InimigoVivo | null = null) {
     if (this.morto || dano <= 0) return;
-    this.invulAte = this.tempoJogo + this.cfgVida.invulneravel;
-    this.flashDano = 0.15;
     this.definirVida(this.vida - dano, motivo);
+    if (!this.morto) this.reagirAoDano(dano, ini);
   }
 
   /** Vida chegou a 0: animação de morte, controles travados e, depois de um tempo, volta ao checkpoint. */

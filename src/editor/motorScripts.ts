@@ -35,6 +35,9 @@ export interface PonteTeste {
   invulneravel(): boolean;
   morrer(): void;
   checkpoint(x?: number, y?: number): void;
+  piscar(seg?: number, cor?: string): void;
+  invulneravelPor(seg?: number): void;
+  tocarDano(): void;
   apertou(acao: string): boolean;
   segurando(acao: string): boolean;
   hudDefinir(rotulo: string, valor: string): void;
@@ -218,6 +221,16 @@ export class MotorScripts {
     let ok = true;
     for (const s of this.scripts) if (s.dono === 'personagem' && this.chamar(s, 'aoSerAtingido', ataque, this.handleInimigo(ini), dano) === false) ok = false;
     return ok;
+  }
+
+  /** O código do personagem tem aoReagirAoDano? (então a reação ao golpe é dele) */
+  reageAoDanoPorCodigo() {
+    return this.scripts.some((s) => s.dono === 'personagem' && s.c.ganchos.aoReagirAoDano && !s.desligados.has('aoReagirAoDano'));
+  }
+
+  /** aoReagirAoDano(eu, jogo, dano, inimigo): piscar, invulnerável, empurrão, animação de dano. */
+  reagirAoDano(dano: number, ini: InimigoVivo | null) {
+    for (const s of this.scripts) if (s.dono === 'personagem') this.chamar(s, 'aoReagirAoDano', dano, ini ? this.handleInimigo(ini) : null);
   }
 
   /** aoMorrer do personagem (vida chegou a 0): false = não morre (fica com 1 de vida). */
@@ -425,6 +438,7 @@ export class MotorScripts {
       liberar() { ia.forcar = null; },
       dano(n = 1) { ponte.danoInimigo(ini, n); },
       matar() { ponte.danoInimigo(ini, ia.vida); },
+      piscar(seg = 0.12, cor = '#ff7070') { ini.piscar(Number(seg) || 0, String(cor)); },
     };
     this.handlesInimigo.set(ini.id, novo);
     return novo;
@@ -469,6 +483,8 @@ export class MotorScripts {
       ferir: (n: number) => ponte.ferir(Number(n) || 0),
       curar: (n?: number) => ponte.definirVida(ponte.vida() + (n === undefined ? ponte.vidaMax() : Number(n) || 0)),
       morrer: () => ponte.morrer(),
+      piscar: (seg?: number, cor?: string) => ponte.piscar(seg === undefined ? undefined : Number(seg), cor === undefined ? undefined : String(cor)),
+      invulneravelPor: (seg?: number) => ponte.invulneravelPor(seg === undefined ? undefined : Number(seg)),
       get morto() { return ponte.morto(); },
       get invulneravel() { return ponte.invulneravel(); },
     };

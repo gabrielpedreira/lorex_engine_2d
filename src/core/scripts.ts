@@ -33,6 +33,7 @@ export const GANCHOS: Gancho[] = [
   { nome: 'aoAcao', donos: ['personagem'], params: 'eu, jogo, acao', texto: 'Quando o jogador dispara uma ação (ex.: "tiro", "recarga"). Retorne false para cancelar a animação.' },
   { nome: 'aoUsarArma', donos: ['personagem'], params: 'eu, jogo, acao', texto: 'Regras da arma: chamado quando o jogador aperta a ação de tiro ou de recarga (seção Arma em Personagens). Com este gancho, quem decide é o código (pente, sem bala, recarga); sem ele, a engine usa as regras prontas.' },
   { nome: 'aoAtirar', donos: ['personagem'], params: 'eu, jogo, alvo', texto: 'Depois de cada tiro da arma (alvo = inimigo acertado, ou null se errou).' },
+  { nome: 'aoReagirAoDano', donos: ['personagem'], params: 'eu, jogo, dano, inimigo', texto: 'Como o personagem reage a um golpe (a vida já foi tirada): piscar, ficar invulnerável, ser empurrado, animação de dano. inimigo = quem bateu (ou null). Com este gancho, quem decide é o código; sem ele, a engine usa a reação pronta (Personagens › Vida).' },
   { nome: 'aoSerAtingido', donos: ['personagem'], params: 'eu, jogo, ataque, inimigo, dano', texto: 'Quando um inimigo acerta o jogador (ataque = "golpe", "mordida"…). Retorne false para ignorar o golpe.' },
   { nome: 'aoPensar', donos: ['inimigo'], params: 'eu, jogo, dt', texto: 'O CÉREBRO do inimigo, a cada quadro: decide andar, parar, perseguir, atacar (eu.andar, eu.atacar, eu.estado = "perseguir"…). Ataque, dano e morte em andamento são da engine (eu.ocupado). Sem este gancho, a engine usa a IA pronta.' },
   { nome: 'aoVer', donos: ['inimigo'], params: 'eu, jogo', texto: 'O inimigo viu o jogador e começou a perseguir.' },
@@ -71,7 +72,7 @@ const TIPO_EU: Record<DonoScript, string> = { jogo: 'Jogo', fase: 'Jogo', objeto
 export function modeloScript(dono: DonoScript, nome: string, extra = ''): string {
   const ganchos = GANCHOS.filter((g) => g.donos.includes(dono));
   const principais: Record<DonoScript, string[]> = {
-    jogo: ['aoIniciar', 'aoTrocarFase'], fase: ['aoIniciar'], objeto: ['aoInteragir'], personagem: ['aoAcao', 'aoMorrer'], inimigo: ['aoVer', 'aoMorrer'],
+    jogo: ['aoIniciar', 'aoTrocarFase'], fase: ['aoIniciar'], objeto: ['aoInteragir'], personagem: ['aoAcao', 'aoReagirAoDano', 'aoMorrer'], inimigo: ['aoVer', 'aoMorrer'],
   };
   const linhas = [
     `// Script de ${nome}${extra ? ` (${extra})` : ''}.`,
@@ -96,6 +97,17 @@ export function modeloScript(dono: DonoScript, nome: string, extra = ''): string
 function exemploPara(dono: DonoScript, nome: string) {
   if (dono === 'objeto' && nome === 'aoInteragir') return "  jogo.aviso(`Você mexeu em ${eu.nome}`);\n  // return false; // descomente para cancelar o comportamento pronto";
   if (dono === 'personagem' && nome === 'aoAcao') return '  // if (acao === "tiro") { ... }';
+  if (dono === 'personagem' && nome === 'aoReagirAoDano') return [
+    '  // A reação pronta da engine, escrita aqui para você mudar:',
+    '  eu.piscar(1, "#ff6060");          // pisca em vermelho por 1 s (eu.piscar() = tempo de Personagens › Vida)',
+    '  eu.invulneravelPor(1.2);          // outros golpes não pegam por 1,2 s',
+    '  if (inimigo && !eu.agarrado) {    // empurrão para longe de quem bateu',
+    '    const lado = eu.x >= inimigo.x ? 1 : -1;',
+    '    eu.vx = 140 * lado;',
+    '    eu.vy = -140;',
+    '  }',
+    '  eu.tocar("dano");',
+  ].join('\n');
   if (dono === 'personagem' && nome === 'aoMorrer') return '  // jogo.log(`${eu.nome} morreu: ${motivo}`);\n  // return false; // descomente para não morrer (fica com 1 de vida)';
   if (dono === 'jogo' && nome === 'aoTrocarFase') return '  // jogo.log("Entrou em", fase);';
   if (nome === 'aoPassar') return '  // if (destino.fase === "laboratorio.json" && !jogo.variaveis.energia) { jogo.aviso("Sem energia."); return false; }';
@@ -252,6 +264,10 @@ interface Jogador {
   curar(quantidade?: number): void;
   /** Morre agora (volta no último checkpoint). */
   morrer(): void;
+  /** Pisca numa cor por alguns segundos (sem números: o tempo de Personagens › Vida, em vermelho). Ex.: eu.piscar(0.5, "#ff6060"). */
+  piscar(segundos?: number, cor?: string): void;
+  /** Golpes não pegam por alguns segundos (sem número: o tempo de Personagens › Vida). */
+  invulneravelPor(segundos?: number): void;
   readonly morto: boolean;
   /** Piscando depois de um golpe (golpes não pegam). */
   readonly invulneravel: boolean;
@@ -316,6 +332,8 @@ interface Inimigo {
   liberar(): void;
   dano(quantidade?: number): void;
   matar(): void;
+  /** Fica com a cor por alguns segundos (padrão: vermelho rápido, como ao levar tiro). */
+  piscar(segundos?: number, cor?: string): void;
 }
 
 interface Inventario {
