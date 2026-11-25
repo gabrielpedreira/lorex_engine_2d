@@ -3,6 +3,8 @@
 // padrão daqui. Para mudar uma regra do jogo inteiro (ex.: como a linha do tiro some), edite e salve o módulo.
 // Novos sistemas entram nesta lista conforme as regras saem da engine para o jogo.
 
+import { MODELO_DEFINICOES } from './definicoes';
+
 export interface ModuloSistema {
   /** Nome curto usado pela engine (ex.: "armas"). */
   id: string;
@@ -84,6 +86,12 @@ export function usarArma(eu, jogo, acao, arma) {
 `;
 
 export const SISTEMAS: ModuloSistema[] = [
+  {
+    id: 'definicoes', arquivo: 'definicoes.js', nome: 'Definições do jogo',
+    descricao: 'Os campos novos que o seu jogo cria (ex.: dano do ataque forte, foge da luz) para personagens, inimigos, armas, objetos e fases. Viram campos no editor, no bloco config e no código (eu.campos).',
+    funcoes: ['campos.personagem', 'campos.inimigo', 'campos.arma', 'campos.objeto', 'campos.fase'],
+    texto: MODELO_DEFINICOES,
+  },
   {
     id: 'armas', arquivo: 'sistema.armas.js', nome: 'Armas e tiro',
     descricao: 'Dano por distância, como a linha do tiro aparece e some, regras do tiro e da recarga.',

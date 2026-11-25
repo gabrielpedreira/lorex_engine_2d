@@ -102,6 +102,7 @@ function normalizarObjeto(o: Partial<ObjetoFase>, camadaPadrao: string): ObjetoF
     visivel: o.visivel !== false,
     efeitos: normalizarEfeitos(o.efeitos), comportamentos: normalizarComportamentos(o.comportamentos),
     conexoes: o.conexoes ?? {}, script: o.script ?? null,
+    ...(o.campos && typeof o.campos === 'object' ? { campos: { ...o.campos } } : {}),
   };
 }
 

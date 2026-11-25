@@ -9,6 +9,8 @@ export const FORMAS_LUZ: { id: FormaLuz; nome: string; texto: string }[] = [
 ];
 import { NOMES_FORMA, caixa, reescalar } from '../editor/colisoes';
 import { dica } from './legenda';
+import { secaoCamposJogo } from './camposJogo';
+import { aoMudarDefinicoes } from '../core/definicoes';
 import { EFEITOS_PADRAO, type Efeito, type TipoEfeito } from '../core/efeitos';
 import { ACOES_GATILHO, MODOS_PASSAGEM, NOMES_COMPORTAMENTO, comportamentoPadrao, type AcaoGatilho, type Comportamento, type ModoPassagem, type TipoComportamento } from '../core/comportamentos';
 import { el } from './dom';
@@ -56,6 +58,7 @@ export class PainelPropriedades {
     raiz.append(el('div', { class: 'painel-titulo' }, 'Propriedades'), this.corpo);
     estado.on('selecao', () => this.render(true));
     estado.on('fase', () => this.render(false));
+    aoMudarDefinicoes(() => this.render(true));
     this.render(true);
   }
 
@@ -432,6 +435,7 @@ export class PainelPropriedades {
       this.secaoComportamento(o),
       o.asset ? this.secaoAnimacao(o) : '',
       this.secaoEfeitos(o),
+      el('div', { class: 'secao' }, ...secaoCamposJogo('objeto', o.campos, (k, v) => { this.estado.alterar(() => { o.campos = { ...(o.campos ?? {}), [k]: v }; }); })),
       el('div', { class: 'secao acoes' },
         botao('Trazer p/ frente', () => this.acoes.ordem('frente')),
         botao('Enviar p/ trás', () => this.acoes.ordem('tras')),
@@ -706,6 +710,7 @@ export class PainelPropriedades {
         el('div', { class: 'dica' }, `${f.objetos.length} objeto(s) · ${f.colisoes.length} colisão(ões). Selecione algo no cenário para editar.`),
       ),
       this.secaoIluminacao(),
+      el('div', { class: 'secao' }, ...secaoCamposJogo('fase', f.campos, (k, v) => { this.estado.alterar(() => { f.campos = { ...(f.campos ?? {}), [k]: v }; }); })),
       this.secaoCodigoFase(),
     );
   }

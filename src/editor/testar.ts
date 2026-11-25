@@ -166,6 +166,8 @@ export class ModoTeste {
       recarregar: () => { const a = t.pers?.dados.arma; if (a) t.tratarArma(a.acaoRecarga); },
       disparar: () => { const a = t.pers?.dados.arma; return a && t.jogador ? t.disparar(a) : null; },
       arma: () => t.pers?.dados.arma ?? null,
+      camposPersonagem: () => t.pers?.dados.campos,
+      camposFase: () => t.estado.fase.campos,
       duracaoAnim: (nome: string) => t.duracaoAnim(nome),
       agarrado: () => t.tempoJogo < t.agarradoAte,
       danoInimigo: (ini: InimigoVivo, n: number) => { ini.atingido(); t.tratarEventosInimigo(ini, ini.ia.levarDano(n, t.jogador?.x ?? ini.corpo.x, { duracao: ini.duracao })); },

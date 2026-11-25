@@ -323,6 +323,8 @@ export interface ConfigArma {
   imagens: ImagensArma;
   /** Script da arma (jogo/scripts/), se houver. */
   script?: string;
+  /** Campos do jogo (Definições do jogo). */
+  campos?: Record<string, number | string | boolean>;
 }
 
 export interface FaixaDano { ate: number; dano: number }
@@ -375,5 +377,6 @@ export function normalizarArma(d: unknown): ConfigArma | undefined {
       bala: typeof a.imagens?.bala === 'string' ? a.imagens.bala : '', menu: typeof a.imagens?.menu === 'string' ? a.imagens.menu : '',
     },
     ...(typeof a.script === 'string' && a.script ? { script: a.script } : {}),
+    ...(a.campos && typeof a.campos === 'object' ? { campos: { ...a.campos } } : {}),
   };
 }

@@ -35,8 +35,10 @@ import { normalizarHud } from './core/hud';
 import { LOG, capturarErrosGlobais } from './core/log';
 import { ACOES_SISTEMA, normalizarControles } from './core/controles';
 import { PainelCodigo, type ElementoCodigo } from './ui/codigo/painel';
-import { arquivoScript, modeloScript, tiposApi } from './core/scripts';
+import { arquivoScript, importarModulo, modeloScript, tiposApi } from './core/scripts';
 import { SISTEMAS } from './core/sistemaPadrao';
+import { definirDefinicoes, normalizarDefinicoes } from './core/definicoes';
+import { ligacoesCampos } from './ui/camposJogo';
 import { aplicarBlocoArma, aplicarBlocoFase, aplicarBlocoJogo, aplicarBlocoObjeto, aplicarBlocoPersonagem, blocoArma, blocoFase, blocoJogo, blocoObjeto, blocoPersonagem, escreverBloco, lerBloco, mesmosValores } from './core/configScript';
 import { modeloArma, modeloComportamento, modeloInimigoZumbi } from './core/modelosScript';
 import type { Personagem as DadosPersonagem } from './core/personagem';
@@ -943,6 +945,7 @@ function sincronizarBlocosDepois(ms = 900) { clearTimeout(timerBlocos); timerBlo
 
 /** Código → dados: o script foi salvo; os valores do bloco config voltam para quem usa o script. */
 async function aplicarBlocoDoScript(arquivo: string) {
+  if (arquivo === 'definicoes.js') { await carregarDefinicoes(); sincronizarBlocosDepois(300); avisarCodigoMudou(); return; }
   const texto = await lerScript(arquivo);
   const b = texto ? lerBloco(texto) : null;
   if (!b) return;
@@ -1680,8 +1683,29 @@ plat.aoMudarProjeto(async (m) => {
 });
 
 // ---------- Início ----------
+/** Definições do jogo (definicoes.js, ou o modelo padrão): os campos próprios que o editor e o código passam a ter. */
+async function carregarDefinicoes() {
+  let texto = SISTEMAS.find((s) => s.id === 'definicoes')!.texto;
+  try { if ((await plat.listarDados('scripts')).includes('definicoes.js')) texto = await plat.lerDados('scripts', 'definicoes.js'); } catch { /* usa o padrão */ }
+  try {
+    const m = await importarModulo('definicoes.js', texto, async (a) => { try { return await plat.lerDados('scripts', a); } catch { return null; } });
+    const d = normalizarDefinicoes(m.campos);
+    definirDefinicoes(d);
+    const n = Object.values(d).reduce((t, x) => t + Object.keys(x).length, 0);
+    if (n) LOG.add({ cat: 'sistema', texto: `Definições do jogo: ${n} campo(s) próprio(s) (${Object.entries(d).filter(([, x]) => Object.keys(x).length).map(([k, x]) => `${k}: ${Object.keys(x).join(', ')}`).join(' · ')})` });
+  } catch (err) {
+    LOG.add({ cat: 'erro', arquivo: 'definicoes.js', texto: `Definições do jogo com erro: ${err instanceof Error ? err.message : String(err)}` });
+    estado.avisar('Erro em definicoes.js (veja Código › Saída).');
+  }
+}
+ligacoesCampos.abrirDefinicoes = () => {
+  if (editorArmas.aberta) editorArmas.fechar();
+  void abrirCodigo('sis:definicoes');
+};
+
 async function carregarProjeto(nome: string) {
   nomeProjeto.textContent = nome;
+  await carregarDefinicoes();
   plat.progresso('Lendo a biblioteca de assets…');
   await biblioteca.recarregar();
   config = { ...CONFIG_PADRAO, ...((await plat.lerConfigProjeto()) ?? {}) };

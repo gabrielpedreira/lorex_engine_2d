@@ -145,6 +145,12 @@ export async function compilarComImports(arquivo: string, codigo: string, ler: (
   return { arquivo, url, ganchos };
 }
 
+/** Importa um script do projeto e devolve tudo o que ele exporta (ex.: as definições em definicoes.js). */
+export async function importarModulo(arquivo: string, codigo: string, ler: (arquivo: string) => Promise<string | null>): Promise<Record<string, unknown>> {
+  const url = await urlModulo(arquivo, codigo, ler, new Map(), []);
+  return (await import(/* @vite-ignore */ url)) as Record<string, unknown>;
+}
+
 /** Caminho de um import relativo ("./x.js", "../lib/y") a partir do arquivo que importa (pasta jogo/scripts). */
 export function resolverImport(de: string, especificador: string): string {
   const partes = de.split('/').slice(0, -1);
@@ -233,6 +239,8 @@ type NomeItem = ${uniao(c.itens)} | (string & {});
 
 /** Um objeto da fase, durante o jogo. */
 interface Objeto {
+  /** Campos do seu jogo (Código › Sistema do jogo › Definições do jogo), ex.: eu.campos.danoAtaqueForte. */
+  campos: Record<string, any>;
   readonly id: string;
   readonly nome: string;
   /** Posição (canto superior esquerdo). Mudar move o objeto. */
@@ -274,6 +282,8 @@ interface Objeto {
 
 /** O jogador (personagem do teste). */
 interface Jogador {
+  /** Campos do seu jogo (Código › Sistema do jogo › Definições do jogo), ex.: eu.campos.danoAtaqueForte. */
+  campos: Record<string, any>;
   /** Posição dos pés. */
   x: number;
   y: number;
@@ -320,6 +330,8 @@ interface Jogador {
 
 /** A arma equipada (ferramenta Armas; os valores ficam no bloco config do script da arma). */
 interface Arma {
+  /** Campos do seu jogo (Código › Sistema do jogo › Definições do jogo), ex.: eu.campos.danoAtaqueForte. */
+  campos: Record<string, any>;
   readonly nome: string;
   /** Balas no pente (pode mudar). */
   municao: number;
@@ -338,6 +350,8 @@ interface Arma {
 
 /** Um inimigo da fase durante o jogo. */
 interface Inimigo {
+  /** Campos do seu jogo (Código › Sistema do jogo › Definições do jogo), ex.: eu.campos.danoAtaqueForte. */
+  campos: Record<string, any>;
   readonly id: string;
   readonly nome: string;
   /** Arquivo do tipo (ex.: "zumbi.json"). */
@@ -464,6 +478,8 @@ interface Jogo {
   variaveis: Record<string, any>;
   /** Arquivo da fase atual. */
   readonly fase: string;
+  /** Campos do seu jogo para esta fase (Definições do jogo). */
+  readonly camposFase: Record<string, any>;
   /** Segundos desde que a fase começou. */
   readonly tempo: number;
   objeto(nomeOuId: NomeObjeto): Objeto | null;

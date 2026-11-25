@@ -11,6 +11,14 @@ import { el, pedirTexto, perguntar } from '../dom';
 import { dica } from '../legenda';
 import { icone } from '../icones';
 import { divisor } from '../divisor';
+import { DEFINICOES_ENGINE } from '../../core/definicoesEngine';
+
+const GRUPO_ENGINE = 'Definições da engine (só leitura)';
+/** O código-fonte da engine (igual nas duas janelas, por isso o painel mesmo acrescenta). */
+const elementosEngine = (): ElementoCodigo[] => DEFINICOES_ENGINE.map((d) => ({
+  chave: 'eng:' + d.id, grupo: GRUPO_ENGINE, nome: d.nome, detalhe: d.detalhe, dono: 'modulo', arquivo: null, arquivoNovo: '',
+  leitura: { texto: d.texto, caminho: d.arquivo },
+}));
 
 export interface ElementoCodigo {
   /** Chave única no explorador (ex.: "obj:fase_01.json:obj_003"). */
@@ -32,6 +40,8 @@ export interface ElementoCodigo {
   modelo?: string;
   /** Comportamento que já funciona sem script (explicado no painel antes de criar). */
   pronto?: string;
+  /** Só leitura (Definições da engine): o código-fonte TypeScript da engine, sem salvar. */
+  leitura?: { texto: string; caminho: string };
 }
 
 export type FonteCodigo = () => Promise<ElementoCodigo[]>;
@@ -43,6 +53,8 @@ interface Aba {
   arquivo: string; modelo: import('monaco-editor').editor.ITextModel; salvo: number; titulo: string; dono: DonoScript;
   /** Rascunho: o script ainda não existe no disco; o primeiro Ctrl+S cria o arquivo e liga ao dono. */
   novo?: ElementoCodigo;
+  /** Só leitura: código da engine (caminho em lorex_engine_2d/). */
+  leitura?: string;
 }
 
 type Monaco = typeof import('monaco-editor');
@@ -165,7 +177,7 @@ export class PainelCodigo {
 
   /** Atualiza a lista da esquerda (chamado sozinho quando a fase muda: objeto ou inimigo novo aparece na hora). */
   async atualizarElementos() {
-    this.elementos = await this.coletarElementos();
+    this.elementos = [...await this.coletarElementos(), ...elementosEngine()];
     if (this.definirTipos) this.definirTipos(await this.tipos());
     // Rascunhos não mexidos acompanham os dados (ex.: mudou a vida em Personagens → o bloco config do rascunho muda)
     for (const a of [...this.abas]) {
@@ -203,7 +215,8 @@ export class PainelCodigo {
     const e = this.elemento(chave);
     if (!e) return;
     this.selecionado = chave;
-    if (e.arquivo) await this.abrirArquivo(e.arquivo, e.dono, e.nome);
+    if (e.leitura) this.abrirLeitura(e);
+    else if (e.arquivo) await this.abrirArquivo(e.arquivo, e.dono, e.nome);
     else this.abrirRascunho(e);
     this.desenharExplorador();
   }
@@ -221,6 +234,22 @@ export class PainelCodigo {
       const texto = e.modelo ?? modeloScript(e.dono, e.nome, e.detalhe);
       const modelo = this.monaco.editor.getModel(uri) ?? this.monaco.editor.createModel(texto, 'javascript', uri);
       aba = { arquivo: chave, modelo, salvo: modelo.getAlternativeVersionId(), titulo: e.nome, dono: e.dono, novo: e };
+      this.abas.push(aba);
+    }
+    this.atual = chave;
+    this.editor.setModel(aba.modelo);
+    this.desenharEditor();
+  }
+
+  /** Definição da engine: abre o código-fonte TypeScript só para leitura. */
+  private abrirLeitura(e: ElementoCodigo) {
+    if (!this.monaco || !this.editor || !e.leitura) return;
+    const chave = `engine:${e.chave}`;
+    let aba = this.abas.find((a) => a.arquivo === chave);
+    if (!aba) {
+      const uri = this.monaco.Uri.parse(`file:///engine/${e.leitura.caminho}`);
+      const modelo = this.monaco.editor.getModel(uri) ?? this.monaco.editor.createModel(e.leitura.texto, 'typescript', uri);
+      aba = { arquivo: chave, modelo, salvo: modelo.getAlternativeVersionId(), titulo: e.nome, dono: e.dono, leitura: e.leitura.caminho };
       this.abas.push(aba);
     }
     this.atual = chave;
@@ -299,6 +328,7 @@ export class PainelCodigo {
   }
 
   private async salvar(aba: Aba) {
+    if (aba.leitura) { this.aoAvisar('Definições da engine são só leitura. Para criar as suas bases, use Sistema do jogo › Definições do jogo.'); return; }
     if (aba.novo) {
       // Rascunho: cria o arquivo com o texto atual e liga ao dono; a aba passa a ser do arquivo de verdade
       const e = aba.novo;
@@ -332,7 +362,7 @@ export class PainelCodigo {
   }
 
   async salvarTudo() {
-    const sujos = this.abas.filter((a) => a.modelo.getAlternativeVersionId() !== a.salvo);
+    const sujos = this.abas.filter((a) => !a.leitura && a.modelo.getAlternativeVersionId() !== a.salvo);
     for (const a of sujos) await this.salvar(a);
     if (sujos.length) this.aoAvisar(`${sujos.length} script(s) salvo(s).`);
   }
@@ -446,7 +476,9 @@ export class PainelCodigo {
     busca.addEventListener('input', () => { this.busca = busca.value; const pos = busca.selectionStart; this.desenharExplorador(); const b = this.elExplorador.querySelector('input'); if (b) { b.focus(); b.setSelectionRange(pos, pos); } });
     const filtro = this.busca.trim().toLowerCase();
     const grupos = new Map<string, ElementoCodigo[]>();
-    for (const e of this.elementos) {
+    // O código do jogo primeiro: o jogo, o Sistema do jogo (as regras) e os seus módulos; depois fase, objetos, personagens…
+    const ordem = (g: string) => (g === 'Jogo' ? 0 : g === 'Sistema do jogo' ? 1 : g.startsWith('Meus módulos') ? 2 : g === GRUPO_ENGINE ? 4 : 3);
+    for (const e of [...this.elementos].sort((a, b) => ordem(a.grupo) - ordem(b.grupo))) {
       if (filtro && !`${e.nome} ${e.detalhe ?? ''} ${e.arquivo ?? ''}`.toLowerCase().includes(filtro)) continue;
       if (!grupos.has(e.grupo)) grupos.set(e.grupo, []);
       grupos.get(e.grupo)!.push(e);
@@ -457,12 +489,14 @@ export class PainelCodigo {
     const filhos: HTMLElement[] = [busca, novoMod];
     for (const [g, lista] of grupos) {
       filhos.push(el('h3', {}, g));
+      if (g === 'Sistema do jogo') filhos.push(el('p', { class: 'dica-campo cod-grupo-dica' }, 'As regras do JOGO (não da engine), em JavaScript. A engine roda este código. Em "Definições do jogo" você cria as suas bases (campos e ações próprias).'));
+      if (g === GRUPO_ENGINE) filhos.push(el('p', { class: 'dica-campo cod-grupo-dica' }, 'Onde a engine define o que é escala, ataque, vida, caixa… Código-fonte real, só leitura.'));
       for (const e of lista) {
         const b = el('button', { type: 'button', class: 'cod-item' + (e.chave === this.selecionado ? ' ativo' : '') + (e.arquivo ? ' tem' : '') },
-          el('span', { class: 'cod-ico' }, e.arquivo ? '{ }' : e.pronto ? '⚙' : '+'),
+          el('span', { class: 'cod-ico' }, e.leitura ? 'TS' : e.arquivo ? '{ }' : e.pronto ? '⚙' : '+'),
           el('span', { class: 'cod-nome' }, e.nome),
           e.detalhe ? el('span', { class: 'cod-det' }, e.detalhe) : null);
-        dica(b, e.nome, e.arquivo
+        dica(b, e.nome, e.leitura ? `Código da engine (só leitura): lorex_engine_2d/${e.leitura.caminho}. ${e.detalhe ?? ''}` : e.arquivo
           ? `Script: jogo/scripts/${e.arquivo}${e.compartilhado ? ` (compartilhado com mais ${e.compartilhado})` : ''}.`
           : e.pronto ? `Comportamento pronto (${e.pronto}). Clique para ver e editar em código (Ctrl+S cria o arquivo).` : 'Clique para ver e editar o código (valores e ganchos já escritos). Ctrl+S cria o arquivo.');
         b.addEventListener('click', () => void this.selecionar(e.chave));
@@ -478,17 +512,21 @@ export class PainelCodigo {
       const sujo = a.modelo.getAlternativeVersionId() !== a.salvo;
       const x = el('button', { type: 'button', class: 'cod-aba-fechar', 'aria-label': `Fechar ${a.arquivo}` }, sujo ? '●' : '×');
       x.addEventListener('click', (ev) => { ev.stopPropagation(); void this.fecharAba(a.arquivo); });
-      const nome = a.novo ? `${a.novo.arquivoNovo} (novo)` : a.arquivo;
+      const nome = a.novo ? `${a.novo.arquivoNovo} (novo)` : a.leitura ? `${a.leitura.split('/').pop()} (engine)` : a.arquivo;
       const t = el('div', { class: 'cod-aba' + (a.arquivo === this.atual ? ' ativa' : '') + (a.novo ? ' nova' : ''), role: 'tab' }, el('span', {}, nome), x);
-      dica(t, a.titulo, a.novo ? `Ainda não existe no disco: Ctrl+S cria jogo/scripts/${a.novo.arquivoNovo}.` : `jogo/scripts/${a.arquivo}${sujo ? ' · não salvo' : ''}`);
+      dica(t, a.titulo, a.leitura ? `Só leitura: lorex_engine_2d/${a.leitura}` : a.novo ? `Ainda não existe no disco: Ctrl+S cria jogo/scripts/${a.novo.arquivoNovo}.` : `jogo/scripts/${a.arquivo}${sujo ? ' · não salvo' : ''}`);
       t.addEventListener('click', () => {
         if (a.novo) { this.selecionado = a.novo.chave; this.abrirRascunho(a.novo); this.desenharExplorador(); return; }
+        if (a.leitura) { this.atual = a.arquivo; this.editor?.setModel(a.modelo); this.selecionado = a.arquivo.slice(7); this.desenharEditor(); this.desenharExplorador(); return; }
         const e = this.elementos.find((x) => x.arquivo === a.arquivo); if (e) this.selecionado = e.chave; void this.abrirArquivo(a.arquivo, a.dono, a.titulo); this.desenharExplorador();
       });
       return t;
     }));
     const aba = this.abas.find((a) => a.arquivo === this.atual);
-    this.elTitulo.textContent = !aba ? '' : aba.novo
+    this.editor?.updateOptions({ readOnly: !!aba?.leitura });
+    this.elTitulo.textContent = !aba ? '' : aba.leitura
+      ? `${aba.titulo} — lorex_engine_2d/${aba.leitura} (definição da engine, só leitura)`
+      : aba.novo
       ? `${aba.titulo} — ainda sem arquivo: ${aba.novo.pronto ? 'o comportamento pronto continua valendo até' : 'nada muda no jogo até'} salvar (Ctrl+S cria jogo/scripts/${aba.novo.arquivoNovo})`
       : `${aba.titulo} — jogo/scripts/${aba.arquivo}${aba.modelo.getAlternativeVersionId() !== aba.salvo ? ' ●' : ''}`;
   }
@@ -534,6 +572,13 @@ export class PainelCodigo {
       blocos.splice(0, 2, el('h3', {}, 'Sistema do jogo'),
         el('p', { class: 'dica-campo' }, `${s.descricao} Estas são as regras do JOGO, não da engine: a engine só chama as funções abaixo. Salvar cria jogo/scripts/${s.arquivo}, que passa a valer no lugar do padrão.`),
         ...s.funcoes.map((f) => el('div', { class: 'cod-ref' }, el('code', {}, f))));
+    }
+    if (aba?.leitura) {
+      this.elApi.replaceChildren(el('h3', {}, 'Definição da engine'),
+        el('p', { class: 'dica-campo' }, 'Este é o código TypeScript da própria Lorex: aqui está definido o que cada nome significa (ex.: escala, ataques, vida). Ele é só leitura porque muda a engine para todos os jogos.'),
+        el('p', { class: 'dica-campo' }, 'Para criar bases suas (ex.: ataque_forte, medo de luz, peso), abra Sistema do jogo › Definições do jogo: os campos que você declarar lá aparecem no editor, no bloco config e no código (eu.campos.x).'),
+        el('p', { class: 'dica-campo' }, 'Dica: Ctrl+F procura dentro do arquivo.'));
+      return;
     }
     if (dono === 'modulo') {
       blocos.splice(0, 2, el('h3', {}, 'Módulo'),

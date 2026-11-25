@@ -5,6 +5,7 @@ import type { InimigoVivo } from './inimigosTeste';
 import { toca, type MundoInterativo } from '../core/comportamentos';
 import { LOG } from '../core/log';
 import { danoNaDistancia } from '../core/inimigos';
+import { definicoes, valoresCampos } from '../core/definicoes';
 import type { Transicao, Viagem } from '../core/mapa';
 import { compilarComImports, linhaDoErro, type DonoScript, type ScriptCompilado } from '../core/scripts';
 
@@ -55,6 +56,8 @@ export interface PonteTeste {
   disparar(): InimigoVivo | null;
   /** Arma equipada (ou null). */
   arma(): import('../core/inimigos').ConfigArma | null;
+  camposPersonagem(): Record<string, unknown> | undefined;
+  camposFase(): Record<string, unknown> | undefined;
   duracaoAnim(nome: string): number;
   agarrado(): boolean;
 }
@@ -86,6 +89,10 @@ export class MotorScripts {
   private tocando = new Set<string>();
   private handles = new Map<string, unknown>();
   private dadosObjetos = new Map<string, Record<string, unknown>>();
+  /** Campos do jogo durante a partida (mudáveis pelo código). */
+  camposJogador: Record<string, number | string | boolean> | undefined;
+  camposArma: Record<string, number | string | boolean> | undefined;
+  camposFase: Record<string, number | string | boolean> | undefined;
   /** Variáveis livres e dados do jogador seguem de uma fase para outra. */
   variaveis: Record<string, unknown> = {};
   dadosJogador: Record<string, unknown> = {};
@@ -382,7 +389,10 @@ export class MotorScripts {
     const motor = this;
     const m = () => ponte.mundo();
     const est = () => m().estados.get(o.id);
+    const campos = valoresCampos(definicoes().objeto, o.campos);
     const novo = {
+      /** Campos do jogo (Definições do jogo). */
+      campos,
       get id() { return o.id; },
       get nome() { return o.nome; },
       get x() { return m().caixa(o).x; },
@@ -458,6 +468,8 @@ export class MotorScripts {
     const ia = ini.ia;
     const dir = (d: number) => (d < 0 ? -1 : 1) as -1 | 1;
     const novo = {
+      /** Campos do jogo (Definições do jogo) deste inimigo. */
+      campos: valoresCampos(definicoes().inimigo, ini.tipo.p.campos),
       get id() { return ini.id; },
       get nome() { return ini.nome; },
       get tipo() { return ini.tipo.arquivo; },
@@ -528,7 +540,10 @@ export class MotorScripts {
       teleportar: (x: number, y: number) => ponte.teleportar(x, y),
       empurrar: (vx: number, vy: number) => ponte.empurrar(vx, vy),
       get dados() { return motor.dadosJogador; },
+      /** Campos do jogo (Definições do jogo) do personagem. */
+      get campos() { return motor.camposJogador ??= valoresCampos(definicoes().personagem, ponte.camposPersonagem()); },
       arma: {
+        get campos() { return motor.camposArma ??= valoresCampos(definicoes().arma, ponte.arma()?.campos); },
         get nome() { return ponte.arma()?.nome ?? ''; },
         get municao() { return ponte.municao(); },
         set municao(n: number) { ponte.definirMunicao(n); },
@@ -573,6 +588,8 @@ export class MotorScripts {
         definir: (r: string, v: string | number) => ponte.hudDefinir(String(r), String(v)),
         remover: (r: string) => ponte.hudRemover(String(r)),
       },
+      /** Campos do jogo da fase aberta (Definições do jogo). */
+      get camposFase() { return motor.camposFase ??= valoresCampos(definicoes().fase, ponte.camposFase()); },
       get variaveis() { return motor.variaveis; },
       set variaveis(v: Record<string, unknown>) { motor.variaveis = v ?? {}; },
       get fase() { return ponte.arquivoFase; },

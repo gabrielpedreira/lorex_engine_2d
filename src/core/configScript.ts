@@ -9,6 +9,7 @@ import type { ConfigJogador } from './fisica';
 import { normalizarArma, normalizarInimigo, type ConfigArma } from './inimigos';
 import { normalizarVida, type Personagem } from './personagem';
 import type { Fase, ObjetoFase } from './tipos';
+import { definicoes, valoresCampos, type AlvoCampo } from './definicoes';
 
 type Valor = number | string | boolean | null | Valor[] | { [k: string]: Valor };
 export type Bloco = Record<string, Valor>;
@@ -170,6 +171,24 @@ export function escreverBloco(texto: string, valores: Bloco, comentarios: Record
 /** Os valores do bloco são iguais (ignora formatação)? */
 export const mesmosValores = (a: Bloco | null, b: Bloco | null) => JSON.stringify(a) === JSON.stringify(b);
 
+// ---------- Campos do jogo (Definições do jogo) ----------
+
+/** Põe os campos do jogo no bloco (se o jogo definiu algum para este tipo de coisa). */
+function comCampos(alvo: AlvoCampo, salvos: Record<string, unknown> | undefined, r: { valores: Bloco; comentarios: Record<string, string> }) {
+  const defs = definicoes()[alvo];
+  if (!Object.keys(defs).length) return r;
+  r.valores.campos = valoresCampos(defs, salvos);
+  r.comentarios.campos = 'campos do seu jogo (Sistema do jogo › Definições do jogo); no código: eu.campos.nome';
+  for (const [k, c] of Object.entries(defs)) r.comentarios[`campos.${k}`] = c.nome + (c.texto ? ` — ${c.texto}` : '');
+  return r;
+}
+function camposDoBloco(b: Bloco, atuais: Record<string, number | string | boolean> | undefined) {
+  if (!b.campos || typeof b.campos !== 'object' || Array.isArray(b.campos)) return atuais;
+  const r: Record<string, number | string | boolean> = { ...(atuais ?? {}) };
+  for (const [k, v] of Object.entries(b.campos as Bloco)) if (typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean') r[k] = v;
+  return r;
+}
+
 // ---------- Leitura/escrita de cada tipo ----------
 
 const num = (v: unknown, p: number) => (typeof v === 'number' && Number.isFinite(v) ? v : p);
@@ -198,11 +217,13 @@ export function blocoPersonagem(p: Personagem): { valores: Bloco; comentarios: R
     base.armaEquipada = p.armaEquipada ?? '';
     com.armaEquipada = 'arquivo da arma em jogo/armas (ferramenta Armas); os números dela ficam no script da arma';
   }
-  return { valores: base, comentarios: com };
+  return comCampos(p.tipo === 'npc' ? 'inimigo' : 'personagem', p.campos, { valores: base, comentarios: com });
 }
 
 export function aplicarBlocoPersonagem(p: Personagem, b: Bloco): Personagem {
   const r: Personagem = structuredClone(p);
+  const campos = camposDoBloco(b, r.campos);
+  if (campos) r.campos = campos;
   r.escala = Math.max(0.05, num(b.escala, r.escala));
   r.caixa = { largura: Math.max(2, Math.round(num(b.largura, r.caixa.largura))), altura: Math.max(2, Math.round(num(b.altura, r.caixa.altura))) };
   if (r.tipo === 'npc' && r.inimigo) {
@@ -224,7 +245,7 @@ function pegar(b: Bloco, chaves: string[]) {
 
 /** Arma (ferramenta Armas): tudo, inclusive o dano por distância, a linha do tiro e as imagens. */
 export function blocoArma(a: ConfigArma): { valores: Bloco; comentarios: Record<string, string> } {
-  return {
+  return comCampos('arma', a.campos, {
     valores: {
       nome: a.nome, pente: a.pente, slots: a.slots, alcance: a.alcance, alturaTiro: a.alturaTiro, dano: a.dano,
       danoPorDistancia: a.danoPorDistancia.map((f) => ({ ate: f.ate, dano: f.dano })),
@@ -239,7 +260,7 @@ export function blocoArma(a: ConfigArma): { valores: Bloco; comentarios: Record<
       'imagens.hud': 'arma carregada no HUD', 'imagens.hudVazia': 'arma descarregada no HUD', 'imagens.bala': 'cada bala no HUD', 'imagens.menu': 'no menu/inventário',
       acaoTiro: 'animação do personagem ao atirar', acaoRecarga: 'animação ao recarregar', animacaoSemBala: 'animação com o pente vazio',
     },
-  };
+  });
 }
 
 export function aplicarBlocoArma(a: ConfigArma, b: Bloco): ConfigArma {
@@ -249,6 +270,7 @@ export function aplicarBlocoArma(a: ConfigArma, b: Bloco): ConfigArma {
     danoPorDistancia: Array.isArray(d) ? d : a.danoPorDistancia,
     linha: b.linha && typeof b.linha === 'object' ? { ...a.linha, ...(b.linha as object) } : a.linha,
     imagens: b.imagens && typeof b.imagens === 'object' ? { ...a.imagens, ...(b.imagens as object) } : a.imagens,
+    ...(camposDoBloco(b, a.campos) ? { campos: camposDoBloco(b, a.campos) } : {}),
   }) ?? a;
 }
 
@@ -266,10 +288,12 @@ export function blocoObjeto(o: ObjetoFase): { valores: Bloco; comentarios: Recor
     com.comportamento = 'o comportamento pronto (Propriedades → Interação)';
   }
   if (o.anim) { v.animacao = { quadros: o.anim.quadros, fps: o.anim.fps, modo: o.anim.modo }; com.animacao = 'modo: "loop", "umaVez" ou "parado"'; }
-  return { valores: v, comentarios: com };
+  return comCampos('objeto', o.campos, { valores: v, comentarios: com });
 }
 
 export function aplicarBlocoObjeto(o: ObjetoFase, b: Bloco) {
+  const campos = camposDoBloco(b, o.campos);
+  if (campos) o.campos = campos;
   o.x = num(b.x, o.x); o.y = num(b.y, o.y);
   const L = num(b.largura, Math.round(o.w * o.escala)), A = num(b.altura, Math.round(o.h * o.escala));
   if (!o.asset) { o.w = Math.max(2, L); o.h = Math.max(2, A); o.escala = 1; }
@@ -292,16 +316,18 @@ export function aplicarBlocoObjeto(o: ObjetoFase, b: Bloco) {
 
 /** Fase/área: tamanho, tela, início do jogador e iluminação. */
 export function blocoFase(f: Fase): { valores: Bloco; comentarios: Record<string, string> } {
-  return {
+  return comCampos('fase', f.campos, {
     valores: {
       nome: f.nome, largura: f.tamanho[0], altura: f.tamanho[1], tela: [...f.resolucaoBase], corFundo: f.corFundo, inicio: [...f.spawnJogador],
       escura: f.iluminacao.escura, escuridao: f.iluminacao.escuridao, lanterna: f.iluminacao.lanterna,
     },
     comentarios: { largura: 'tamanho da fase (px)', altura: 'tamanho da fase (px)', tela: 'tela do jogo [largura, altura] (ferramenta Q)', inicio: 'pés do jogador ao começar [x, y]', escura: 'sala no escuro', escuridao: '0 a 1', lanterna: 'raio da luz do jogador (0 = sem)' },
-  };
+  });
 }
 
 export function aplicarBlocoFase(f: Fase, b: Bloco) {
+  const campos = camposDoBloco(b, f.campos);
+  if (campos) f.campos = campos;
   if (typeof b.nome === 'string' && b.nome.trim()) f.nome = b.nome.trim();
   f.tamanho = [Math.max(16, Math.round(num(b.largura, f.tamanho[0]))), Math.max(16, Math.round(num(b.altura, f.tamanho[1])))];
   if (Array.isArray(b.tela) && b.tela.length === 2) f.resolucaoBase = [Math.max(32, Math.round(num(b.tela[0], f.resolucaoBase[0]))), Math.max(32, Math.round(num(b.tela[1], f.resolucaoBase[1])))];

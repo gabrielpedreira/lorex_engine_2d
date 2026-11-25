@@ -451,6 +451,25 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   `aplicarMudanca` envolve toda mudança: remove conexões sem pontas e apaga as passagens-zona (`PassagemSala.zona`)
   que perderam a última conexão (`passagensUsadas` antes × depois).
 
+### 4.39 Definições: as bases do jogo e as da engine
+
+- **Definições do jogo** (`jogo/scripts/definicoes.js`, Código › Sistema do jogo › Definições do jogo): o jogo declara
+  campos próprios por tipo de coisa — `export const campos = { personagem, inimigo, arma, objeto, fase }`. Cada campo
+  tem `tipo` (`numero`, `texto`, `sim_nao`, `lista`, `acao`, `cor`), `nome`, `padrao` e opcionais (`min`, `max`,
+  `passo`, `opcoes`, `dica`). Forma curta aceita: `peso: 2` (número), `medo: true` (sim/não).
+- Cada campo aparece sozinho em três lugares: na seção **Campos do jogo** do editor (Personagens, Armas,
+  Propriedades de objeto/fase), no bloco `config.campos` do script daquela coisa e no código em tempo real
+  (`eu.campos.x`, `arma.campos.x`, `jogo.objeto("a").campos.x`, `jogo.camposFase.x`). Valores salvos no JSON
+  (`campos`); sem valor salvo vale o padrão.
+- Tipo `acao`: o valor é a chave de uma animação/ação do personagem (lista sugerida). Ex.: `eu.tocar(eu.campos.ataqueForte)`.
+- `core/definicoes.ts` (normalizar, valores, store com `aoMudarDefinicoes`); `main.ts → carregarDefinicoes()` lê o
+  arquivo (ou o modelo comentado) com `importarModulo` ao abrir o projeto e sempre que `definicoes.js` é salvo ou
+  muda por fora; as telas abertas redesenham e os blocos config são ressincronizados.
+- **Definições da engine (só leitura)**: grupo no fim do explorador do Código com o código-fonte TypeScript real
+  (`?raw`) de `personagem.ts`, `inimigos.ts`, `comportamentos.ts`, `tipos.ts`, `hud.ts`, `scripts.ts` e
+  `definicoes.ts` — onde estão definidos escala, ataques, vida, caixa, ganchos… Aba com `readOnly`, sem salvar, sem
+  diagnósticos de TS (`core/definicoesEngine.ts`). O painel acrescenta esse grupo sozinho (vale nas duas janelas).
+
 ### 4.38 Código do jogo: Sistema do jogo e módulos
 
 - Três camadas: **engine** (TypeScript: desenho, física, editor), **sistema do jogo** (regras do jogo em JS, editáveis)

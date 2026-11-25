@@ -46,6 +46,9 @@ js.setCompilerOptions({
 });
 js.setDiagnosticsOptions({ noSemanticValidation: false, noSyntaxValidation: false });
 
+// Código da engine (Definições da engine) é só para ler: sem sublinhados de erro (os imports dela não estão aqui)
+monaco.typescript.typescriptDefaults.setDiagnosticsOptions({ noSemanticValidation: true, noSyntaxValidation: true });
+
 let libTipos: monaco.IDisposable | null = null;
 /** Troca as declarações da API (chamado sempre que o contexto do projeto muda). */
 export function definirTipos(dts: string) {

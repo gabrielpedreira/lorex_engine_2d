@@ -59,6 +59,7 @@ export function gruposAtalhos(teclasTeste: [string, string][]): Grupo[] {
       ['Ctrl+S', 'Salvar o script'], ['Ctrl+Shift+S', 'Salvar todos'], ['F5', 'Salvar e testar'],
       ['Ctrl+Espaço', 'Sugestões (objetos, ações, animações…)'], ['Ctrl+F / Ctrl+H', 'Buscar / substituir'],
       ['Ctrl+/', 'Comentar ou descomentar a linha'], ['Alt+↑ / Alt+↓', 'Mover a linha'], ['F12', 'Ir para a definição'],
+      ['Sistema do jogo › Definições do jogo', 'Criar campos/ações próprias (aparecem no editor e em eu.campos)'], ['Definições da engine', 'Ler onde a engine define escala, ataque, vida… (só leitura)'],
     ] },
     { titulo: 'Personagens (K) e outras telas', itens: [
       ['Ctrl+S', 'Salvar o personagem'], ['Esc', 'Fechar a tela'],

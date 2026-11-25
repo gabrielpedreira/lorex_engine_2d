@@ -11,6 +11,8 @@ import type { Plataforma } from '../plataforma/plataforma';
 import { urlAsset } from '../plataforma/plataforma';
 import { el, pedirTexto, perguntar } from './dom';
 import { dica } from './legenda';
+import { secaoCamposJogo } from './camposJogo';
+import { aoMudarDefinicoes } from '../core/definicoes';
 
 /** Carrega uma imagem como bitmap (permite ler os pixels). */
 async function carregarBitmap(url: string): Promise<ImageBitmap> {
@@ -109,6 +111,7 @@ export class EditorPersonagens {
   }
 
   constructor(private plat: Plataforma) {
+    aoMudarDefinicoes(() => { if (this.aberta) void this.render(); });
     this.raiz = el('div', { class: 'tela-personagens', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Personagens' });
     this.raiz.hidden = true;
     document.body.append(this.raiz);
@@ -436,7 +439,8 @@ export class EditorPersonagens {
         this.num('Caixa largura', this.p.caixa.largura, (v) => { this.p.caixa.largura = Math.max(2, Math.round(v)); }, 'Largura do corpo para colisão (mais estreita que o desenho fica mais natural).', 1, 2),
         this.num('Caixa altura', this.p.caixa.altura, (v) => { this.p.caixa.altura = Math.max(2, Math.round(v)); }, 'Altura do corpo para colisão.', 1, 2)),
       detectar);
-    col.append(...(this.p.tipo === 'npc' ? this.secaoInimigo() : [...this.secaoVida(), ...this.secaoArma()]));
+    col.append(...(this.p.tipo === 'npc' ? this.secaoInimigo() : [...this.secaoVida(), ...this.secaoArma()]),
+      ...secaoCamposJogo(this.p.tipo === 'npc' ? 'inimigo' : 'personagem', this.p.campos, (k, v) => { this.p.campos = { ...(this.p.campos ?? {}), [k]: v }; this.mudou(); }, Object.keys(this.p.animacoes)));
     return col;
   }
 

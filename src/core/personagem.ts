@@ -75,6 +75,8 @@ export interface Personagem {
   animacoes: Record<string, Animacao>;
   /** Script do personagem (arquivo em jogo/scripts/), se houver. */
   script?: string;
+  /** Campos do jogo (Código › Sistema do jogo › Definições do jogo). */
+  campos?: Record<string, number | string | boolean>;
   /** Jogador: arma equipada (arquivo em jogo/armas/, ferramenta Armas). */
   armaEquipada?: string;
   /** Jogador: arma em uso. Vem de "armaEquipada" (o editor carrega o arquivo da arma); antigo: guardada aqui dentro. */

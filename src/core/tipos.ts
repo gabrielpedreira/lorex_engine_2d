@@ -59,6 +59,8 @@ export interface ObjetoFase {
   script: string | null;
   /** Objeto animado: a imagem é um spritesheet (w/h passam a ser o tamanho de UM quadro). */
   anim?: AnimFolha;
+  /** Campos do jogo (Definições do jogo). */
+  campos?: Record<string, number | string | boolean>;
 }
 
 /** Um inimigo colocado na fase. O tipo (animações, IA, vida) vem do personagem NPC. */
@@ -141,4 +143,6 @@ export interface Fase {
   /** Pontos de luz (ferramenta Iluminação). */
   luzes: LuzFase[];
   iluminacao: Iluminacao;
+  /** Campos do jogo (Definições do jogo). */
+  campos?: Record<string, number | string | boolean>;
 }

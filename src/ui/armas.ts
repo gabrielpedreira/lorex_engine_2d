@@ -7,6 +7,8 @@ import { nomeArquivoFase } from '../core/fase';
 import type { Plataforma } from '../plataforma/plataforma';
 import { el, pedirTexto } from './dom';
 import { dica } from './legenda';
+import { secaoCamposJogo } from './camposJogo';
+import { aoMudarDefinicoes } from '../core/definicoes';
 
 export interface AcoesArmas {
   imagens(): Promise<string[]>;
@@ -34,6 +36,7 @@ export class EditorArmas {
     this.raiz = el('div', { class: 'tela-personagens tela-armas', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Armas', tabindex: -1 });
     this.raiz.hidden = true;
     document.body.append(this.raiz);
+    aoMudarDefinicoes(() => { if (this.aberta) this.render(); });
     this.raiz.addEventListener('keydown', (e) => {
       e.stopPropagation();
       const digitando = e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement;
@@ -254,7 +257,8 @@ export class EditorArmas {
       el('div', { class: 'linha2' },
         campo('Atirar', textoAnim(a.acaoTiro, (v) => { a.acaoTiro = v; }), 'Ação/animação do personagem que atira (ex.: tiro). A tecla vem da ferramenta Controles.'),
         campo('Recarregar', textoAnim(a.acaoRecarga, (v) => { a.acaoRecarga = v; }), 'Ação que recarrega; o pente enche quando a animação termina.')),
-      campo('Sem bala', textoAnim(a.animacaoSemBala, (v) => { a.animacaoSemBala = v; }), 'Animação ao tentar atirar com o pente vazio.'));
+      campo('Sem bala', textoAnim(a.animacaoSemBala, (v) => { a.animacaoSemBala = v; }), 'Animação ao tentar atirar com o pente vazio.'),
+      ...secaoCamposJogo('arma', a.campos, (k, v) => { a.campos = { ...(a.campos ?? {}), [k]: v }; this.mudou(); }, this.animacoes));
     return col;
   }
 
