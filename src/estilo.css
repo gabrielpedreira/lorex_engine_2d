@@ -812,3 +812,5 @@ body.redimensionando-x #app, body.redimensionando-y #app { transition: none; }
 .mapa-ponta:hover { fill: var(--acento); }
 .mapa-ponta.solta { fill: var(--laranja); stroke: #101513; }
 .mapa-linha.solta { stroke: var(--laranja); stroke-dasharray: 5 4; }
+
+.cod-aba.nova span { font-style: italic; opacity: 0.85; }

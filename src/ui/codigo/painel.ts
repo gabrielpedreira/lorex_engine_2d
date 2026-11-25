@@ -38,7 +38,11 @@ export type FonteCodigo = () => Promise<ElementoCodigo[]>;
 /** A Saída do painel mostra só o que é de código: logs, ganchos e erros. */
 const linhasSaida = (): LinhaLog[] => LOG.linhas.filter((l) => l.cat === 'codigo' || l.cat === 'erro');
 
-interface Aba { arquivo: string; modelo: import('monaco-editor').editor.ITextModel; salvo: number; titulo: string; dono: DonoScript }
+interface Aba {
+  arquivo: string; modelo: import('monaco-editor').editor.ITextModel; salvo: number; titulo: string; dono: DonoScript;
+  /** Rascunho: o script ainda não existe no disco; o primeiro Ctrl+S cria o arquivo e liga ao dono. */
+  novo?: ElementoCodigo;
+}
 
 type Monaco = typeof import('monaco-editor');
 
@@ -66,6 +70,8 @@ export class PainelCodigo {
   aoAvisar: (m: string) => void = () => {};
   /** Testar a fase (o painel fecha e o teste começa). */
   aoTestar: () => void = () => {};
+  /** Um script foi salvo pelo painel (o editor aplica o bloco config nos dados). */
+  aoSalvarScript: (arquivo: string) => void = () => {};
   /** Declarações da API atualizadas com o contexto do projeto (nomes de objetos, ações…). */
   tipos: () => Promise<string> = async () => '';
 
@@ -119,7 +125,10 @@ export class PainelCodigo {
       const r = await perguntar('Código não salvo', `${sujos.map((a) => a.arquivo).join(', ')} tem alterações não salvas.`, ['Cancelar', 'Descartar', 'Salvar tudo']);
       if (r === 0 || r === -1) return false;
       if (r === 2) await this.salvarTudo();
-      if (r === 1) for (const a of sujos) { a.modelo.setValue(await this.ler(a.arquivo) ?? ''); a.salvo = a.modelo.getAlternativeVersionId(); }
+      if (r === 1) for (const a of sujos) {
+        if (a.novo) { this.abas = this.abas.filter((x) => x !== a); if (this.atual === a.arquivo) { this.atual = null; this.editor?.setModel(null); } a.modelo.dispose(); continue; }
+        a.modelo.setValue(await this.ler(a.arquivo) ?? ''); a.salvo = a.modelo.getAlternativeVersionId();
+      }
     }
     this.raiz.hidden = true;
     return true;
@@ -157,6 +166,21 @@ export class PainelCodigo {
   async atualizarElementos() {
     this.elementos = await this.coletarElementos();
     if (this.definirTipos) this.definirTipos(await this.tipos());
+    // Rascunhos não mexidos acompanham os dados (ex.: mudou a vida em Personagens → o bloco config do rascunho muda)
+    for (const a of [...this.abas]) {
+      if (!a.novo || a.modelo.getAlternativeVersionId() !== a.salvo) continue;
+      const e = this.elemento(a.novo.chave);
+      if (!e) continue;
+      if (e.arquivo) { // ganhou um script por fora: o rascunho sai
+        this.abas = this.abas.filter((x) => x !== a);
+        if (this.atual === a.arquivo) { this.atual = null; this.editor?.setModel(null); }
+        a.modelo.dispose();
+        continue;
+      }
+      const texto = e.modelo ?? modeloScript(e.dono, e.nome, e.detalhe);
+      if (texto !== a.modelo.getValue()) { a.modelo.setValue(texto); a.salvo = a.modelo.getAlternativeVersionId(); }
+      a.novo = e;
+    }
     // O elemento selecionado pode ter ganhado um script por fora
     const sel = this.selecionado ? this.elemento(this.selecionado) : undefined;
     if (sel?.arquivo && !this.atual) await this.abrirArquivo(sel.arquivo, sel.dono, sel.nome);
@@ -179,21 +203,40 @@ export class PainelCodigo {
     if (!e) return;
     this.selecionado = chave;
     if (e.arquivo) await this.abrirArquivo(e.arquivo, e.dono, e.nome);
-    else { this.atual = null; this.desenharEditor(); }
+    else this.abrirRascunho(e);
     this.desenharExplorador();
   }
 
+  /**
+   * Sem script ainda: abre o código já escrito (valores do bloco config + ganchos/comportamento pronto) para editar
+   * direto. Nada vai para o disco até salvar (Ctrl+S): aí o arquivo é criado e ligado ao dono.
+   */
+  private abrirRascunho(e: ElementoCodigo) {
+    if (!this.monaco || !this.editor) return;
+    const chave = `novo:${e.chave}`;
+    let aba = this.abas.find((a) => a.arquivo === chave);
+    if (!aba) {
+      const uri = this.monaco.Uri.parse(`file:///scripts/novo/${encodeURIComponent(e.chave)}/${e.arquivoNovo}`);
+      const texto = e.modelo ?? modeloScript(e.dono, e.nome, e.detalhe);
+      const modelo = this.monaco.editor.getModel(uri) ?? this.monaco.editor.createModel(texto, 'javascript', uri);
+      aba = { arquivo: chave, modelo, salvo: modelo.getAlternativeVersionId(), titulo: e.nome, dono: e.dono, novo: e };
+      this.abas.push(aba);
+    }
+    this.atual = chave;
+    this.editor.setModel(aba.modelo);
+    this.desenharEditor();
+  }
+
   /** Cria o script de um elemento a partir do modelo e liga ao dono. */
-  private async criarScript(e: ElementoCodigo) {
+  private async criarScript(e: ElementoCodigo, texto?: string): Promise<string | null> {
     const existentes = new Set(await this.plat.listarDados('scripts'));
     let arquivo = e.arquivoNovo;
     if (existentes.has(arquivo) && !e.ligar) { /* jogo.js já existe: só abre */ }
     else for (let i = 2; existentes.has(arquivo); i++) arquivo = e.arquivoNovo.replace(/\.js$/, `_${i}.js`);
-    if (!existentes.has(arquivo)) await this.plat.salvarDados('scripts', arquivo, e.modelo ?? modeloScript(e.dono, e.nome, e.detalhe));
-    if (e.ligar && !(await e.ligar(arquivo))) return;
+    if (!existentes.has(arquivo)) await this.plat.salvarDados('scripts', arquivo, texto ?? e.modelo ?? modeloScript(e.dono, e.nome, e.detalhe));
+    if (e.ligar && !(await e.ligar(arquivo))) return null;
     this.aoAvisar(`Script criado: jogo/scripts/${arquivo}`);
-    await this.atualizarElementos();
-    await this.selecionar(e.chave);
+    return arquivo;
   }
 
   // ---------- Arquivos e abas ----------
@@ -240,9 +283,29 @@ export class PainelCodigo {
   }
 
   private async salvar(aba: Aba) {
+    if (aba.novo) {
+      // Rascunho: cria o arquivo com o texto atual e liga ao dono; a aba passa a ser do arquivo de verdade
+      const e = aba.novo;
+      const arquivo = await this.criarScript(e, aba.modelo.getValue());
+      if (!arquivo) return;
+      const m = this.monaco!;
+      const texto = aba.modelo.getValue();
+      const uri = m.Uri.parse(`file:///scripts/${arquivo}`);
+      const modelo = m.editor.getModel(uri) ?? m.editor.createModel(texto, 'javascript', uri);
+      if (modelo.getValue() !== texto) modelo.setValue(texto);
+      const eraAtual = this.atual === aba.arquivo;
+      aba.modelo.dispose();
+      Object.assign(aba, { arquivo, modelo, salvo: modelo.getAlternativeVersionId(), novo: undefined });
+      if (eraAtual) { this.atual = arquivo; this.editor?.setModel(modelo); }
+      await this.atualizarElementos();
+      this.aoSalvarScript(arquivo);
+      this.desenharEditor();
+      return;
+    }
     await this.plat.salvarDados('scripts', aba.arquivo, aba.modelo.getValue());
     aba.salvo = aba.modelo.getAlternativeVersionId();
     this.desenharAbas();
+    this.aoSalvarScript(aba.arquivo);
   }
 
   private async salvarAtual() {
@@ -382,7 +445,7 @@ export class PainelCodigo {
           e.detalhe ? el('span', { class: 'cod-det' }, e.detalhe) : null);
         dica(b, e.nome, e.arquivo
           ? `Script: jogo/scripts/${e.arquivo}${e.compartilhado ? ` (compartilhado com mais ${e.compartilhado})` : ''}.`
-          : e.pronto ? `Comportamento pronto (${e.pronto}). Clique para vê-lo em código.` : 'Ainda sem código. Clique para ver os ganchos e criar o script.');
+          : e.pronto ? `Comportamento pronto (${e.pronto}). Clique para ver e editar em código (Ctrl+S cria o arquivo).` : 'Clique para ver e editar o código (valores e ganchos já escritos). Ctrl+S cria o arquivo.');
         b.addEventListener('click', () => void this.selecionar(e.chave));
         filhos.push(b);
       }
@@ -396,13 +459,19 @@ export class PainelCodigo {
       const sujo = a.modelo.getAlternativeVersionId() !== a.salvo;
       const x = el('button', { type: 'button', class: 'cod-aba-fechar', 'aria-label': `Fechar ${a.arquivo}` }, sujo ? '●' : '×');
       x.addEventListener('click', (ev) => { ev.stopPropagation(); void this.fecharAba(a.arquivo); });
-      const t = el('div', { class: 'cod-aba' + (a.arquivo === this.atual ? ' ativa' : ''), role: 'tab' }, el('span', {}, a.arquivo), x);
-      dica(t, a.titulo, `jogo/scripts/${a.arquivo}${sujo ? ' · não salvo' : ''}`);
-      t.addEventListener('click', () => { const e = this.elementos.find((x) => x.arquivo === a.arquivo); if (e) this.selecionado = e.chave; void this.abrirArquivo(a.arquivo, a.dono, a.titulo); this.desenharExplorador(); });
+      const nome = a.novo ? `${a.novo.arquivoNovo} (novo)` : a.arquivo;
+      const t = el('div', { class: 'cod-aba' + (a.arquivo === this.atual ? ' ativa' : '') + (a.novo ? ' nova' : ''), role: 'tab' }, el('span', {}, nome), x);
+      dica(t, a.titulo, a.novo ? `Ainda não existe no disco: Ctrl+S cria jogo/scripts/${a.novo.arquivoNovo}.` : `jogo/scripts/${a.arquivo}${sujo ? ' · não salvo' : ''}`);
+      t.addEventListener('click', () => {
+        if (a.novo) { this.selecionado = a.novo.chave; this.abrirRascunho(a.novo); this.desenharExplorador(); return; }
+        const e = this.elementos.find((x) => x.arquivo === a.arquivo); if (e) this.selecionado = e.chave; void this.abrirArquivo(a.arquivo, a.dono, a.titulo); this.desenharExplorador();
+      });
       return t;
     }));
     const aba = this.abas.find((a) => a.arquivo === this.atual);
-    this.elTitulo.textContent = aba ? `${aba.titulo} — jogo/scripts/${aba.arquivo}${aba.modelo.getAlternativeVersionId() !== aba.salvo ? ' ●' : ''}` : '';
+    this.elTitulo.textContent = !aba ? '' : aba.novo
+      ? `${aba.titulo} — ainda sem arquivo: ${aba.novo.pronto ? 'o comportamento pronto continua valendo até' : 'nada muda no jogo até'} salvar (Ctrl+S cria jogo/scripts/${aba.novo.arquivoNovo})`
+      : `${aba.titulo} — jogo/scripts/${aba.arquivo}${aba.modelo.getAlternativeVersionId() !== aba.salvo ? ' ●' : ''}`;
   }
 
   private desenharEditor() {
@@ -447,6 +516,7 @@ export class PainelCodigo {
       blocos.push(b);
     }
     const ref: [string, string][] = [
+      ['config.vida', 'Os valores do topo do script (bloco config): vida, velocidade, dano, tamanho… Salvar aplica no editor'],
       ['jogo.objeto("porta")', 'Pega um objeto da fase pelo nome. Ex.: .abrir(), .esconder(), .x += 10'],
       ['jogo.jogador', 'x, y, vx, vy, noChao, tocar("tiro"), teleportar(x, y), empurrar(vx, vy), dados'],
       ['jogo.inventario', 'tem("chave"), dar("moeda", 1), tirar("chave"), quantidade("moeda")'],

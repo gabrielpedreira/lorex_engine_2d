@@ -83,6 +83,9 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
   **tecla**, **combinação** (Shift + J) ou **sequência** (↓ › → › J). Base pronta: setas/A D andam, Espaço/W/↑ pulam,
   E interage, J/X atiram, R recarrega. Mostra conflitos, tem área para experimentar e salva em `jogo/projeto.json`.
 - **Código** (`O`): painel estilo VS Code, em **janela própria** (dá para levar ao segundo monitor; a posição fica salva).
+  Tudo o que existe no jogo aparece lá já escrito, sem precisar "criar" (o arquivo nasce no primeiro Ctrl+S), e cada
+  script começa com o **bloco `config`**: os valores das ferramentas (vida, velocidade, dano, tamanho, posição…)
+  sincronizados nos dois sentidos com o editor.
   A lista acompanha o editor em tempo real (colocou um inimigo, ele já aparece) e o ▶ Testar começa no editor. À esquerda, tudo o que pode ter código: o jogo (`jogo.js`), a fase, cada
   objeto (chave, porta…) e cada personagem (jogador e NPCs); à direita, o editor (Monaco, o mesmo do VS Code) com abas,
   autocompletar que conhece os nomes do projeto (objetos, ações, animações, fases, itens) e referência da API; embaixo,

@@ -33,15 +33,21 @@ import { normalizarHud } from './core/hud';
 import { LOG, capturarErrosGlobais } from './core/log';
 import { ACOES_SISTEMA, normalizarControles } from './core/controles';
 import { PainelCodigo, type ElementoCodigo } from './ui/codigo/painel';
-import { arquivoScript, tiposApi } from './core/scripts';
+import { arquivoScript, modeloScript, tiposApi } from './core/scripts';
+import { aplicarBlocoFase, aplicarBlocoJogo, aplicarBlocoObjeto, aplicarBlocoPersonagem, blocoFase, blocoJogo, blocoObjeto, blocoPersonagem, escreverBloco, lerBloco, mesmosValores } from './core/configScript';
 import { modeloArma, modeloComportamento, modeloInimigoZumbi } from './core/modelosScript';
 import type { Personagem as DadosPersonagem } from './core/personagem';
 
 /** Modelo de script de um personagem: arma (jogador) ou cérebro do inimigo (NPC). */
 function modeloPersonagem(p: DadosPersonagem): { modelo?: string; pronto?: string } {
-  if (p.tipo === 'npc' && p.inimigo?.comportamento === 'zumbi') return { modelo: modeloInimigoZumbi(p.nome, p.inimigo), pronto: 'IA de Zumbi (perambular, perseguir, atacar, alerta por tiro)' };
-  if (p.tipo !== 'npc' && p.arma) return { modelo: modeloArma(p.nome, p.arma), pronto: `arma (pente ${p.arma.pente}, sem bala, recarga)` };
-  return {};
+  const r: { modelo?: string; pronto?: string } = p.tipo === 'npc' && p.inimigo?.comportamento === 'zumbi' ? { modelo: modeloInimigoZumbi(p.nome, p.inimigo), pronto: 'IA de Zumbi (perambular, perseguir, atacar, alerta por tiro)' }
+    : p.tipo !== 'npc' && p.arma ? { modelo: modeloArma(p.nome, p.arma), pronto: `arma (pente ${p.arma.pente}, sem bala, recarga)` } : {};
+  return { ...r, modelo: comBloco(r.modelo ?? modeloScript(p.tipo === 'npc' ? 'inimigo' : 'personagem', p.nome), blocoPersonagem(p), p.nome) };
+}
+
+/** Texto do script com o bloco config (os valores do editor) no topo. */
+function comBloco(texto: string, b: { valores: import('./core/configScript').Bloco; comentarios: Record<string, string> }, titulo: string) {
+  return escreverBloco(texto, b.valores, b.comentarios, titulo);
 }
 import { NOMES_COMPORTAMENTO, comportamentoDe } from './core/comportamentos';
 import type { FontesScripts } from './editor/motorScripts';
@@ -561,7 +567,7 @@ teste.aoTerminarLog = async (texto) => {
     if (caminho) painelLog.mostrarArquivo(caminho);
   } catch (err) { LOG.add({ cat: 'erro', texto: `Não consegui salvar o log do teste: ${String(err)}` }); }
 };
-teste.aoMudarConfig = (c) => { config.jogador = c; salvarConfigDepois(); };
+teste.aoMudarConfig = (c) => { config.jogador = c; salvarConfigDepois(); sincronizarBlocosDepois(); };
 teste.aoMudarEstado = () => {
   app.classList.toggle('testando', estado.testando);
   botaoTestar.classList.toggle('ligado', estado.testando);
@@ -667,7 +673,9 @@ async function garantirFaseSalva(): Promise<string | null> {
 // Fonte 1: o jogo inteiro (jogo.js)
 painelCodigo.registrarFonte(async () => {
   const existe = (await plat.listarDados('scripts')).includes('jogo.js');
-  return [{ chave: 'jogo', grupo: 'Jogo', nome: 'Jogo (global)', detalhe: 'vale em todas as fases', dono: 'jogo', arquivo: existe ? 'jogo.js' : null, arquivoNovo: arquivoScript.jogo() }];
+  const b = blocoJogo({ ...JOGADOR_PADRAO, ...(config.jogador ?? {}) });
+  return [{ chave: 'jogo', grupo: 'Jogo', nome: 'Jogo (global)', detalhe: 'vale em todas as fases', dono: 'jogo', arquivo: existe ? 'jogo.js' : null, arquivoNovo: arquivoScript.jogo(),
+    modelo: escreverBloco(modeloScript('jogo', 'Jogo (global)'), b.valores, b.comentarios, 'o jogo (física do jogador)') }];
 });
 // Fonte 2: a fase aberta e seus objetos
 painelCodigo.registrarFonte(async () => {
@@ -675,6 +683,7 @@ painelCodigo.registrarFonte(async () => {
   const arqFase = estado.arquivoFase ?? nomeArquivoFase(f.nome);
   const grupo = `${f.tipo === 'area' ? 'Área' : 'Fase'}: ${f.nome}`;
   const lista: ElementoCodigo[] = [{
+    modelo: comBloco(modeloScript('fase', f.nome, f.tipo === 'area' ? 'área' : 'fase'), blocoFase(f), f.nome),
     chave: 'fase', grupo, nome: f.nome, detalhe: f.tipo === 'area' ? 'script da área' : 'script da fase', dono: 'fase',
     arquivo: f.script ?? null, arquivoNovo: arquivoScript.fase(arqFase),
     ligar: async (a) => { estado.alterar((x) => { x.script = a; }); return !!(await garantirFaseSalva()); },
@@ -683,7 +692,8 @@ painelCodigo.registrarFonte(async () => {
     const c = comportamentoDe(o);
     const alvoAlavanca = c?.tipo === 'alavanca' && c.alvo ? f.objetos.find((x) => x.id === c.alvo) : undefined;
     lista.push({
-      ...(c ? { modelo: modeloComportamento(o.nome, c, alvoAlavanca ? { nome: alvoAlavanca.nome, porta: comportamentoDe(alvoAlavanca)?.tipo === 'porta' } : undefined), pronto: NOMES_COMPORTAMENTO[c.tipo].nome } : {}),
+      ...(c ? { pronto: NOMES_COMPORTAMENTO[c.tipo].nome } : {}),
+      modelo: comBloco(c ? modeloComportamento(o.nome, c, alvoAlavanca ? { nome: alvoAlavanca.nome, porta: comportamentoDe(alvoAlavanca)?.tipo === 'porta' } : undefined) : modeloScript('objeto', o.nome), blocoObjeto(o), o.nome),
       chave: 'obj:' + o.id, grupo, nome: o.nome,
       detalhe: `${o.tipo === 'interativo' ? (c ? NOMES_COMPORTAMENTO[c.tipo].nome : 'interativo') : 'estático'} · ${estado.camada(o.camada)?.nome ?? o.camada}`,
       dono: 'objeto', arquivo: o.script, arquivoNovo: arquivoScript.objeto(arqFase, o.id),
@@ -816,12 +826,108 @@ if (codigoEmJanela) {
         break;
       }
       case 'aviso': estado.avisar(msg.texto); break;
+      case 'scriptSalvo': await aplicarBlocoDoScript(msg.arquivo); break;
       case 'codigoFechado': janelaCodigoPronta = false; break;
     }
   });
   // A Saída da janela do Código mostra o que o teste registra (código e erros)
   LOG.ouvintes.add((l) => { if (janelaCodigoPronta && l && (l.cat === 'codigo' || l.cat === 'erro')) enviar('codigo', { tipo: 'log', linha: l }); });
 }
+
+// ---------- Bloco config dos scripts: dados ⇄ código ----------
+// Tudo o que existe no jogo aparece no painel de Código: o topo de cada script tem `export const config = {…}` com os
+// valores das ferramentas (vida, velocidade, dano, tamanho, posição…). Mudou no editor → o bloco é reescrito;
+// salvou o script → os valores voltam para o personagem/objeto/fase/jogo.
+
+/** Grava o script só se o texto mudou e avisa o painel (aqui ou na janela do Código). */
+async function gravarScriptSeMudou(arquivo: string, texto: string, novo: string) {
+  if (novo === texto) return;
+  await plat.salvarDados('scripts', arquivo, novo);
+  await painelCodigo.mudouPorFora(arquivo);
+  if (codigoEmJanela && janelaCodigoPronta) enviar('codigo', { tipo: 'scriptMudou', arquivo });
+}
+
+async function lerScript(arquivo: string): Promise<string | null> {
+  try { return await plat.lerDados('scripts', arquivo); } catch { return null; }
+}
+
+/** Dados → código: reescreve os blocos config dos scripts que existem (jogo, fase aberta, objetos, personagens). */
+let sincronizando = false;
+async function sincronizarBlocos() {
+  if (sincronizando) return;
+  sincronizando = true;
+  try {
+    const existentes = new Set(await plat.listarDados('scripts'));
+    /**
+     * Valores diferentes entre o script e os dados: vence o mais novo. Script salvo depois (ex.: o Claude editou o
+     * arquivo, ou o vigia de arquivos não avisou) → os valores do código vão para os dados; senão o bloco é reescrito.
+     */
+    const aplicar: string[] = [];
+    const trocar = async (arquivo: string | null | undefined, b: { valores: import('./core/configScript').Bloco; comentarios: Record<string, string> }, titulo: string, dados: string | null) => {
+      if (!arquivo || !existentes.has(arquivo)) return;
+      const texto = await lerScript(arquivo);
+      if (texto === null) return;
+      const doCodigo = lerBloco(texto);
+      if (mesmosValores(doCodigo, b.valores)) return;
+      if (doCodigo && dados) {
+        const [mS, mD] = await Promise.all([plat.dataArquivo('jogo/scripts/' + arquivo), plat.dataArquivo(dados)]);
+        if (mS && mS > mD + 1000) { aplicar.push(arquivo); return; }
+      }
+      await gravarScriptSeMudou(arquivo, texto, escreverBloco(texto, b.valores, b.comentarios, titulo));
+      LOG.add({ cat: 'sistema', texto: `bloco config de ${arquivo} atualizado com os valores do editor` });
+    };
+    await trocar('jogo.js', blocoJogo({ ...JOGADOR_PADRAO, ...(config.jogador ?? {}) }), 'o jogo (física do jogador)', 'jogo/projeto.json');
+    const f = estado.fase;
+    const arqFase = !estado.sujo && estado.arquivoFase ? 'jogo/fases/' + estado.arquivoFase : null;
+    await trocar(f.script, blocoFase(f), f.nome, arqFase);
+    const usos = new Map<string, number>();
+    for (const o of f.objetos) if (o.script) usos.set(o.script, (usos.get(o.script) ?? 0) + 1);
+    for (const o of f.objetos) if (o.script && usos.get(o.script) === 1) await trocar(o.script, blocoObjeto(o), o.nome, arqFase);
+    for (const arq of await plat.listarDados('personagens')) {
+      try { const p = normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', arq))); await trocar(p.script, blocoPersonagem(p), p.nome, 'jogo/personagens/' + arq); } catch { /* ilegível */ }
+    }
+    sincronizando = false;
+    for (const a of new Set(aplicar)) await aplicarBlocoDoScript(a);
+  } finally { sincronizando = false; }
+}
+let timerBlocos = 0;
+function sincronizarBlocosDepois(ms = 900) { clearTimeout(timerBlocos); timerBlocos = window.setTimeout(() => void sincronizarBlocos(), ms); }
+
+/** Código → dados: o script foi salvo; os valores do bloco config voltam para quem usa o script. */
+async function aplicarBlocoDoScript(arquivo: string) {
+  const texto = await lerScript(arquivo);
+  const b = texto ? lerBloco(texto) : null;
+  if (!b) return;
+  const mudou: string[] = [];
+  if (arquivo === 'jogo.js') {
+    const atual = { ...JOGADOR_PADRAO, ...(config.jogador ?? {}) };
+    if (!mesmosValores(blocoJogo(atual).valores, b)) {
+      config.jogador = aplicarBlocoJogo(atual, b); teste.config = { ...config.jogador }; salvarConfigDepois(); mudou.push('jogo');
+    }
+  }
+  const f = estado.fase;
+  if (f.script === arquivo && !mesmosValores(blocoFase(f).valores, b)) { estado.alterar((x) => aplicarBlocoFase(x, b)); mudou.push(f.nome); }
+  const donos = f.objetos.filter((o) => o.script === arquivo);
+  if (donos.length === 1 && !mesmosValores(blocoObjeto(donos[0]).valores, b)) { estado.alterar(() => aplicarBlocoObjeto(donos[0], b)); mudou.push(donos[0].nome); }
+  for (const arq of await plat.listarDados('personagens')) {
+    try {
+      const p = normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', arq)));
+      if (p.script !== arquivo || mesmosValores(blocoPersonagem(p).valores, b)) continue;
+      await plat.salvarDados('personagens', arq, JSON.stringify(aplicarBlocoPersonagem(p, b), null, 2));
+      await editorPersonagens.mudouPorFora(arq);
+      mudou.push(p.nome);
+    } catch { /* ilegível */ }
+  }
+  if (!mudou.length) return;
+  if (mudou.some((n) => n !== 'jogo')) await carregarTiposInimigo();
+  // A fase mudou pelo código: salva junto (se já tinha arquivo), para o valor valer no ▶ Testar e no disco
+  if (estado.sujo && estado.arquivoFase && (f.script === arquivo || donos.length)) await salvar();
+  LOG.add({ cat: 'codigo', arquivo, texto: `valores do bloco config aplicados em: ${mudou.join(', ')}` });
+  estado.avisar(`Valores do código aplicados: ${mudou.join(', ')}`);
+}
+painelCodigo.aoSalvarScript = (arquivo) => void aplicarBlocoDoScript(arquivo);
+estado.on('fase', () => sincronizarBlocosDepois());
+estado.on('arquivo', () => sincronizarBlocosDepois(300));
 
 // ---------- Tipos de inimigo (personagens NPC) ----------
 let tiposInimigo = new Map<string, TipoInimigo>();
@@ -870,7 +976,7 @@ async function abrirPersonagens(arquivo?: string) {
   await editorPersonagens.abrir(biblioteca.caminhos, config.personagemTeste ?? '', arquivo);
 }
 editorPersonagens.aoAbrirControles = () => void abrirControles();
-editorPersonagens.aoSalvo = () => void carregarTiposInimigo();
+editorPersonagens.aoSalvo = () => { void carregarTiposInimigo(); sincronizarBlocosDepois(300); };
 editorPersonagens.aoAbrirCodigo = (arquivo) => void abrirCodigo('pers:' + arquivo);
 // Renomear uma animação extra leva junto as teclas dela
 editorPersonagens.aoRenomearAcao = (antiga, nova) => {
@@ -1444,8 +1550,8 @@ plat.aoMudarProjeto(async (m) => {
     recarregandoBib = window.setTimeout(async () => { novaVersaoImagens(); viewport.recarregarTexturas(); await biblioteca.recarregar(); ferramentas.definir(ferramentasAtuais, biblioteca.caminhos); }, 300);
     return;
   }
-  if (m.tipo === 'personagem') { await editorPersonagens.mudouPorFora(m.nome); await carregarTiposInimigo(); if (painelCodigo.aberta) await painelCodigo.atualizarElementos(); return; }
-  if (m.tipo === 'script') { await painelCodigo.mudouPorFora(m.nome); return; }
+  if (m.tipo === 'personagem') { await editorPersonagens.mudouPorFora(m.nome); await carregarTiposInimigo(); if (painelCodigo.aberta) await painelCodigo.atualizarElementos(); sincronizarBlocosDepois(); return; }
+  if (m.tipo === 'script') { await painelCodigo.mudouPorFora(m.nome); await aplicarBlocoDoScript(m.nome); return; }
   if (m.tipo === 'config') {
     config = { ...CONFIG_PADRAO, ...((await plat.lerConfigProjeto()) ?? {}) };
     if (editorMapa.aberta) void abrirMapa();
@@ -1453,6 +1559,7 @@ plat.aoMudarProjeto(async (m) => {
     ferramentasAtuais = config.ferramentas ?? [];
     ferramentas.definir(ferramentasAtuais, biblioteca.caminhos);
     estado.avisar('Configuração do projeto atualizada por fora.');
+    sincronizarBlocosDepois();
     return;
   }
   // Fase

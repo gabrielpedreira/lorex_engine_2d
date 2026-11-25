@@ -18,11 +18,15 @@ export type MsgPonte =
   | { tipo: 'irPara'; arquivo: string; linha?: number }
   | { tipo: 'log'; linha: LinhaLog }
   | { tipo: 'resposta'; id: number; ok: boolean }
+  /** O editor reescreveu o bloco config de um script (mudou um valor numa ferramenta). */
+  | { tipo: 'scriptMudou'; arquivo: string }
   // código → editor
   | { tipo: 'pronto' }
   | { tipo: 'testar' }
   | { tipo: 'ligar'; id: number; chave: string; arquivo: string }
   | { tipo: 'aviso'; texto: string }
+  /** Um script foi salvo na janela do Código: o editor aplica o bloco config nos dados. */
+  | { tipo: 'scriptSalvo'; arquivo: string }
   // processo principal → editor
   | { tipo: 'codigoFechado' };
 

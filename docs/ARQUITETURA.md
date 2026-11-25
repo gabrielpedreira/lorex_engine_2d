@@ -451,6 +451,19 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   `aplicarMudanca` envolve toda mudança: remove conexões sem pontas e apaga as passagens-zona (`PassagemSala.zona`)
   que perderam a última conexão (`passagensUsadas` antes × depois).
 
+### 4.36 Tudo no Código: rascunhos e bloco config
+
+- Painel de Código: elemento sem script abre um **rascunho** (aba "(novo)", modelo Monaco em `file:///scripts/novo/…`)
+  com o texto do modelo; o primeiro salvar cria o arquivo (`criarScript(e, texto)`), liga ao dono e troca a aba para o
+  arquivo de verdade. Rascunho não mexido acompanha os dados em `atualizarElementos`.
+- `core/configScript.ts`: `export const config = {…}` no topo do script. `blocoPersonagem/Objeto/Fase/Jogo` (dados →
+  valores + comentários) e `aplicarBloco…` (valores → dados, com normalização). `lerBloco` usa um leitor de literal
+  próprio (`lerLiteral`, sem eval: o CSP não permite), `escreverBloco` troca ou insere o bloco.
+- main.ts: `sincronizarBlocos` (dados → código, debounce em `fase`/`arquivo`/Personagens/projeto; se o script for mais
+  novo que os dados, aplica o código em vez de sobrescrever) e `aplicarBlocoDoScript` (código → dados: ao salvar no
+  painel `aoSalvarScript`, na janela do Código via ponte `scriptSalvo`, ou quando o vigia avisa `script`). O editor
+  avisa a janela do Código com `scriptMudou`. Script compartilhado por vários objetos não recebe bloco de objeto.
+
 ### 4.35 HUD com imagens e tela de morte
 
 - `ElementoHud` ganhou `estilo 'texto' | 'barra' | 'caixas' | 'icones' | 'imagem'`, `imagem`, `imagemVazia`, `maximo`,

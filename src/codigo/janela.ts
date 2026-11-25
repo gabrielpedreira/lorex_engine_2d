@@ -28,6 +28,7 @@ painel.registrarFonte(async () => lista.map((e): ElementoCodigo => ({
   } : {}),
 })));
 painel.tipos = async () => tipos;
+painel.aoSalvarScript = (arquivo) => enviar('editor', { tipo: 'scriptSalvo', arquivo });
 painel.aoTestar = () => enviar('editor', { tipo: 'testar' });
 painel.aoAvisar = (m) => { painel.avisar(m); enviar('editor', { tipo: 'aviso', texto: m }); };
 
@@ -38,6 +39,7 @@ aoReceber((msg) => {
     case 'irPara': void painel.irPara(msg.arquivo, msg.linha); break;
     case 'log': LOG.importar(msg.linha); break;
     case 'resposta': pendentes.get(msg.id)?.(msg.ok); pendentes.delete(msg.id); break;
+    case 'scriptMudou': void painel.mudouPorFora(msg.arquivo); break;
   }
 });
 // O Claude (ou outro programa) mudou um script no disco
