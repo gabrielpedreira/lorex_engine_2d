@@ -83,7 +83,12 @@ export class InimigoVivo {
   atingido() { this.piscar(0.12, '#ff7070'); }
   private corFlash = 0xff7070;
   /** Fica com a cor (vermelho) por um tempo: tiro levado ou eu.piscar(segundos, cor) no código. */
-  piscar(segundos: number, cor: string) { this.flash = Math.max(0, segundos); this.corFlash = Number.parseInt(cor.replace('#', ''), 16) || 0xff7070; }
+  piscar(segundos: number, cor: string, vezes = 1) {
+    this.flash = Math.max(0, segundos); this.flashTotal = this.flash; this.flashVezes = Math.min(30, Math.max(1, Math.round(vezes) || 1));
+    this.corFlash = Number.parseInt(cor.replace('#', ''), 16) || 0xff7070;
+  }
+  private flashTotal = 0;
+  private flashVezes = 1;
 
   /** Animação conforme o estado da IA. */
   desenhar(dt: number) {
@@ -108,7 +113,9 @@ export class InimigoVivo {
     sp.scale.set(espelhar ? -esc : esc, esc);
     sp.position.set(Math.round(this.corpo.x), Math.round(this.corpo.y));
     this.flash = Math.max(0, this.flash - dt);
-    sp.tint = this.flash > 0 ? this.corFlash : 0xffffff;
+    // Piscadas iguais dentro do tempo: metade de cada uma na cor, metade normal (1 piscada = cor o tempo todo)
+    const tp = this.flashTotal - this.flash;
+    sp.tint = this.flash > 0 && (this.flashVezes === 1 || Math.floor((tp / this.flashTotal) * this.flashVezes * 2) % 2 === 0) ? this.corFlash : 0xffffff;
     sp.visible = true;
   }
 

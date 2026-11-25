@@ -470,6 +470,9 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   `definicoes.ts` — onde estão definidos escala, ataques, vida, caixa, ganchos… Aba com `readOnly`, sem salvar, sem
   diagnósticos de TS (`core/definicoesEngine.ts`). O painel acrescenta esse grupo sozinho (vale nas duas janelas).
 
+- Piscar ao dano: `ConfigVida.piscadas` (1–30). O tempo `piscar` é dividido em piscadas iguais (metade na cor,
+  metade normal); `eu.piscar(seg, cor, vezes)` no jogador e nos inimigos.
+
 ### 4.38 Código do jogo: Sistema do jogo e módulos
 
 - Três camadas: **engine** (TypeScript: desenho, física, editor), **sistema do jogo** (regras do jogo em JS, editáveis)

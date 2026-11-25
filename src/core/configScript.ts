@@ -212,8 +212,8 @@ export function blocoPersonagem(p: Personagem): { valores: Bloco; comentarios: R
   }
   if (p.tipo === 'jogador') {
     const v = p.vida ?? normalizarVida(null);
-    base.vida = { maxima: v.maxima, invulneravel: v.invulneravel, piscar: v.piscar, renascer: v.renascer };
-    Object.assign(com, { 'vida.maxima': 'vida cheia (cada golpe tira o dano do inimigo)', 'vida.invulneravel': 's sem levar golpe depois de um', 'vida.piscar': 's piscando em vermelho', 'vida.renascer': 's até voltar no checkpoint' });
+    base.vida = { maxima: v.maxima, invulneravel: v.invulneravel, piscar: v.piscar, piscadas: v.piscadas, renascer: v.renascer };
+    Object.assign(com, { 'vida.maxima': 'vida cheia (cada golpe tira o dano do inimigo)', 'vida.invulneravel': 's sem levar golpe depois de um', 'vida.piscar': 's piscando em vermelho (pode ser menos de 1, ex.: 0.3)', 'vida.piscadas': 'quantas vezes acende e apaga nesse tempo', 'vida.renascer': 's até voltar no checkpoint' });
     base.armaEquipada = p.armaEquipada ?? '';
     com.armaEquipada = 'arquivo da arma em jogo/armas (ferramenta Armas); os números dela ficam no script da arma';
   }

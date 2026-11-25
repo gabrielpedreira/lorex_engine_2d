@@ -454,7 +454,9 @@ export class EditorPersonagens {
         this.num('Vida cheia', v.maxima, (n) => { v.maxima = Math.max(1, Math.round(n)); }, 'Quanto de dano aguenta (golpe do zumbi = 1, mordida = 2).', 1, 1),
         this.num('Invulnerável (s)', v.invulneravel, (n) => { v.invulneravel = Math.max(0, n); }, 'Tempo depois de um golpe em que outros golpes não pegam.', 0.1, 0)),
       el('div', { class: 'linha2' },
-        this.num('Piscar (s)', v.piscar, (n) => { v.piscar = Math.max(0, n); }, 'Quanto tempo pisca em vermelho depois do golpe (0 = não pisca). No código: eu.piscar(segundos, cor) dentro de aoReagirAoDano.', 0.1, 0),
+        this.num('Piscar (s)', v.piscar, (n) => { v.piscar = Math.max(0, n); }, 'Quanto tempo pisca em vermelho depois do golpe; aceita menos de 1 (ex.: 0.3). 0 = não pisca. No código: eu.piscar(segundos, cor, piscadas) dentro de aoReagirAoDano.', 0.05, 0),
+        this.num('Piscadas', v.piscadas, (n) => { v.piscadas = Math.min(30, Math.max(1, Math.round(n))); }, 'Quantas vezes acende e apaga nesse tempo (1 = um clarão só). Ex.: 0.3 s com 3 piscadas = 3 piscadas rápidas.', 1, 1)),
+      el('div', { class: 'linha2' },
         this.num('Volta após (s)', v.renascer, (n) => { v.renascer = Math.max(0.5, n); }, 'Segundos entre morrer e voltar no checkpoint (Enter volta antes).', 0.5, 0.5)),
       el('p', { class: 'dica-campo' }, 'Para mudar a reação ao dano (piscar, empurrão, animação) pelo código: botão Código { } → gancho aoReagirAoDano.'),
       ...(this.p.animacoes.morte ? [] : [el('p', { class: 'dica-campo' }, 'Sem animação "Morte": ao morrer o personagem fica parado até voltar.')])];

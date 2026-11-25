@@ -93,19 +93,21 @@ export interface ConfigVida {
   maxima: number;
   /** Segundos invulnerável depois de levar um golpe (outros golpes não pegam). */
   invulneravel: number;
-  /** Segundos piscando em vermelho depois de um golpe. */
+  /** Segundos piscando em vermelho depois de um golpe (pode ser menos de 1, ex.: 0.3). */
   piscar: number;
+  /** Quantas vezes acende e apaga nesse tempo (1 = um clarão só). */
+  piscadas: number;
   /** Segundos entre morrer e voltar no último checkpoint. */
   renascer: number;
 }
 
-export function vidaPadrao(): ConfigVida { return { maxima: 10, invulneravel: 1.2, piscar: 1, renascer: 2.5 }; }
+export function vidaPadrao(): ConfigVida { return { maxima: 10, invulneravel: 1.2, piscar: 1, piscadas: 4, renascer: 2.5 }; }
 
 export function normalizarVida(d: unknown): ConfigVida {
   const b = vidaPadrao();
   const v = (d && typeof d === 'object' ? d : {}) as Partial<ConfigVida>;
   const n = (x: unknown, p: number, min: number) => (Number.isFinite(Number(x)) ? Math.max(min, Number(x)) : p);
-  return { maxima: Math.max(1, Math.round(n(v.maxima, b.maxima, 1))), invulneravel: n(v.invulneravel, b.invulneravel, 0), piscar: n(v.piscar, b.piscar, 0), renascer: n(v.renascer, b.renascer, 0.5) };
+  return { maxima: Math.max(1, Math.round(n(v.maxima, b.maxima, 1))), invulneravel: n(v.invulneravel, b.invulneravel, 0), piscar: n(v.piscar, b.piscar, 0), piscadas: Math.min(30, Math.max(1, Math.round(n(v.piscadas, b.piscadas, 1)))), renascer: n(v.renascer, b.renascer, 0.5) };
 }
 
 const IDS_BASICOS = new Set<string>(ESTADOS.map((e) => e.id));

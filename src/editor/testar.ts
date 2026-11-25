@@ -102,6 +102,7 @@ export class ModoTeste {
   private piscarDe = 0;
   private piscarAte = 0;
   private piscarCor = 0xff6060;
+  private piscarVezes = 4;
   private elHudTela: HTMLElement;
   private valoresHud = new Map<string, string>();
 
@@ -178,7 +179,7 @@ export class ModoTeste {
       vidaMax: () => t.cfgVida.maxima,
       definirVida: (n: number) => t.definirVida(n, 'código'),
       ferir: (n: number) => t.ferir(n, 'código'),
-      piscar: (seg?: number, cor?: string) => t.piscar(seg ?? t.cfgVida.piscar, cor ? Number.parseInt(cor.replace('#', ''), 16) || 0xff6060 : 0xff6060),
+      piscar: (seg?: number, cor?: string, vezes?: number) => t.piscar(seg ?? t.cfgVida.piscar, cor ? Number.parseInt(cor.replace('#', ''), 16) || 0xff6060 : 0xff6060, vezes ?? t.cfgVida.piscadas),
       invulneravelPor: (seg?: number) => t.invulneravelPor(seg ?? t.cfgVida.invulneravel),
       tocarDano: () => { t.pers?.animador.tocar('dano'); },
       morto: () => t.morto,
@@ -779,9 +780,9 @@ export class ModoTeste {
         sp.scale.set(espelhar ? -esc : esc, esc);
         sp.position.set(Math.round(j.x), Math.round(j.y));
         sp.visible = true;
-        // Golpe: vermelho logo após o dano e depois pisca rápido até acabar (como os inimigos)
-        const tp = this.tempoJogo - this.piscarDe;
-        const piscando = !this.morto && this.tempoJogo < this.piscarAte && (tp < 0.12 || Math.floor((tp - 0.12) / 0.07) % 2 === 1);
+        // Golpe: o tempo do piscar é dividido em "piscadas" iguais; cada uma = metade na cor, metade normal
+        const tp = this.tempoJogo - this.piscarDe, dur = this.piscarAte - this.piscarDe;
+        const piscando = !this.morto && dur > 0 && tp >= 0 && tp < dur && Math.floor((tp / dur) * this.piscarVezes * 2) % 2 === 0;
         sp.tint = piscando ? this.piscarCor : 0xffffff;
         sp.alpha = 1;
       }
@@ -937,15 +938,16 @@ export class ModoTeste {
     if (this.motor?.reageAoDanoPorCodigo()) { this.motor.reagirAoDano(dano, ini); return; }
     const j = this.jogador;
     this.invulneravelPor(this.cfgVida.invulneravel);
-    this.piscar(this.cfgVida.piscar, 0xff6060);
+    this.piscar(this.cfgVida.piscar, 0xff6060, this.cfgVida.piscadas);
     if (j && ini && this.tempoJogo >= this.agarradoAte) { const lado = j.x >= ini.corpo.x ? 1 : -1; j.vx = 140 * lado; j.vy = -140; }
     this.pers?.animador.tocar('dano');
   }
 
-  private piscar(segundos: number, cor: number) {
+  private piscar(segundos: number, cor: number, vezes: number) {
     this.piscarDe = this.tempoJogo;
-    this.piscarAte = this.tempoJogo + Math.max(0, segundos);
+    this.piscarAte = this.tempoJogo + Math.max(0, Number(segundos) || 0);
     this.piscarCor = cor;
+    this.piscarVezes = Math.min(30, Math.max(1, Math.round(Number(vezes) || 1)));
   }
   private invulneravelPor(segundos: number) { this.invulAte = Math.max(this.invulAte, this.tempoJogo + Math.max(0, segundos)); }
 

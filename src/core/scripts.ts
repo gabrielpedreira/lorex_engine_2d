@@ -107,7 +107,7 @@ function exemploPara(dono: DonoScript, nome: string) {
   if (dono === 'arma' && nome === 'aoAtirar') return '  // if (alvo) jogo.log(`${eu.nome} acertou ${alvo.nome}`);';
   if (dono === 'personagem' && nome === 'aoReagirAoDano') return [
     '  // A reação pronta da engine, escrita aqui para você mudar:',
-    '  eu.piscar(1, "#ff6060");          // pisca em vermelho por 1 s (eu.piscar() = tempo de Personagens › Vida)',
+    '  eu.piscar(config.vida.piscar, "#ff6060", config.vida.piscadas); // tempo (s, pode ser 0.3) e quantas piscadas',
     '  eu.invulneravelPor(1.2);          // outros golpes não pegam por 1,2 s',
     '  if (inimigo && !eu.agarrado) {    // empurrão para longe de quem bateu',
     '    const lado = eu.x >= inimigo.x ? 1 : -1;',
@@ -319,8 +319,8 @@ interface Jogador {
   curar(quantidade?: number): void;
   /** Morre agora (volta no último checkpoint). */
   morrer(): void;
-  /** Pisca numa cor por alguns segundos (sem números: o tempo de Personagens › Vida, em vermelho). Ex.: eu.piscar(0.5, "#ff6060"). */
-  piscar(segundos?: number, cor?: string): void;
+  /** Pisca numa cor: tempo em segundos (pode ser menos de 1), cor e quantas piscadas. Sem números: os de Personagens › Vida. Ex.: eu.piscar(0.3, "#ff6060", 3). */
+  piscar(segundos?: number, cor?: string, vezes?: number): void;
   /** Golpes não pegam por alguns segundos (sem número: o tempo de Personagens › Vida). */
   invulneravelPor(segundos?: number): void;
   readonly morto: boolean;
@@ -409,8 +409,8 @@ interface Inimigo {
   liberar(): void;
   dano(quantidade?: number): void;
   matar(): void;
-  /** Fica com a cor por alguns segundos (padrão: vermelho rápido, como ao levar tiro). */
-  piscar(segundos?: number, cor?: string): void;
+  /** Fica com a cor por alguns segundos (padrão: vermelho rápido, como ao levar tiro); vezes = quantas piscadas. Ex.: eu.piscar(0.4, "#ff7070", 2). */
+  piscar(segundos?: number, cor?: string, vezes?: number): void;
 }
 
 interface Inventario {
