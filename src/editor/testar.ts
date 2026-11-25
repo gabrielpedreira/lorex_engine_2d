@@ -91,7 +91,7 @@ export class ModoTeste {
   private get cfgVida(): ConfigVida { return this.pers?.dados.vida ?? vidaPadrao(); }
   private get morto() { return this.mortoEm !== null; }
   private renascendo = false;
-  private rastro: { x0: number; y0: number; x1: number; y1: number; t: number; total: number; acertou: boolean; linha: import('../core/inimigos').LinhaTiro } | null = null;
+  private rastro: { x0: number; y0: number; x1: number; y1: number; t: number; total: number; acertou: boolean; linha: import('../core/inimigos').LinhaTiro; arma: ConfigArma } | null = null;
   /** Munição levada para a próxima área. */
   private municaoLevada: number | null = null;
   /** Elementos do HUD (ferramenta HUD, projeto.json). */
@@ -117,7 +117,7 @@ export class ModoTeste {
 
   /** Compila os scripts desta partida (chame antes de iniciar). */
   async prepararScripts(fontes: FontesScripts | null) {
-    if (!fontes || (!fontes.jogo && !fontes.fase && !fontes.personagem && !fontes.objetos.length)) { this.motor = null; return; }
+    if (!fontes || (!fontes.jogo && !fontes.fase && !fontes.personagem && !fontes.arma && !fontes.objetos.length && !fontes.inimigos?.length && !fontes.sistemas?.length)) { this.motor = null; return; }
     const motor = new MotorScripts(this.ponte());
     await motor.carregar(fontes);
     if (this.levarCodigo) { motor.variaveis = this.levarCodigo.variaveis; motor.dadosJogador = this.levarCodigo.jogador; }
@@ -809,6 +809,12 @@ export class ModoTeste {
     const animador = pers.animador;
     // Com aoUsarArma no código do personagem, as regras da arma são do código (pente, sem bala, recarga)
     if (this.motor?.usaArmaPorCodigo()) { this.motor.usarArma(chave); return true; }
+    // Regras do jogo em JS (Código › Sistema do jogo › sistema.armas.js → usarArma)
+    if (this.motor?.temSistema('armas', 'usarArma')) {
+      if (this.motor.acao(chave)) this.motor.usarArmaSistema(chave, arma);
+      else LOG.add({ cat: 'personagem', texto: `ação "${chave}" cancelada pelo código (aoAcao)` });
+      return true;
+    }
     if (animador.acaoAtual || this.tempoJogo < this.agarradoAte) {
       LOG.add({ cat: 'personagem', texto: `"${chave}" ignorada: ${animador.acaoAtual ? `ainda em "${animador.acaoAtual}"` : 'agarrada'}` });
       return true;
@@ -850,10 +856,12 @@ export class ModoTeste {
     const oy = j.y - j.cfg.altura * arma.alturaTiro;
     const segs = this.mundo!.segmentosPortas().length ? this.segs.concat(this.mundo!.segmentosPortas()) : this.segs;
     const { alvo, fimX } = raioTiro(segs, this.inimigos, ox, oy, dir, arma.alcance);
-    this.rastro = { x0: ox, y0: oy, x1: fimX, y1: oy, t: arma.linha.duracao, total: arma.linha.duracao, acertou: !!alvo, linha: arma.linha };
+    this.rastro = { x0: ox, y0: oy, x1: fimX, y1: oy, t: arma.linha.duracao, total: arma.linha.duracao, acertou: !!alvo, linha: arma.linha, arma };
     // Dano pela distância (tabela da arma); o código da arma (aoCalcularDano) pode decidir outro
     const distancia = Math.abs(fimX - ox);
-    const pelaTabela = danoNaDistancia(arma, distancia);
+    // Regra do jogo (Código › Sistema do jogo › sistema.armas.js); a interna só se o módulo falhar
+    const doSistema = this.motor?.sistema('armas', 'danoNaDistancia', structuredClone(arma), distancia);
+    const pelaTabela = typeof doSistema === 'number' && Number.isFinite(doSistema) ? doSistema : danoNaDistancia(arma, distancia);
     const dano = alvo && this.motor ? this.motor.calcularDano(distancia, alvo, pelaTabela) : pelaTabela;
     LOG.add({ cat: 'personagem', texto: `tiro ${arma.nome} ${dir > 0 ? '→' : '←'} (${this.municao}/${arma.pente}): ${alvo ? `acertou ${alvo.nome} (${alvo.id}) a ${Math.round(distancia)} px (${Math.round((distancia / Math.max(1, arma.alcance)) * 100)}% do alcance) · dano ${dano}${dano !== pelaTabela ? ` (código; tabela ${pelaTabela})` : ''}` : 'errou'}` });
     // O barulho do tiro chama a atenção de quem estiver perto
@@ -1053,10 +1061,14 @@ export class ModoTeste {
     r.t -= dt;
     if (r.t <= 0) { this.rastro = null; return; }
     // Linha do tiro conforme a arma: visível, pouco visível (fraca, some rápido) ou invisível (só o clarão)
-    const l = r.linha;
-    const cor = Number.parseInt(l.cor.replace('#', ''), 16) || 0xfff2a8;
     const k = Math.max(0, r.t / Math.max(0.001, r.total));
-    if (l.visibilidade !== 'invisivel') this.grafico.moveTo(r.x0, r.y0).lineTo(r.x1, r.y1).stroke({ width: l.espessura, color: cor, alpha: (l.visibilidade === 'pouco' ? 0.3 : 0.85) * (0.4 + 0.6 * k) });
+    // Como a linha aparece vem do jogo: sistema.armas.js → linhaDoTiro(arma, restante)
+    const s = this.motor?.sistema('armas', 'linhaDoTiro', r.arma, k) as { opacidade?: number; espessura?: number; cor?: string } | undefined;
+    const l = r.linha;
+    const op = typeof s?.opacidade === 'number' ? s.opacidade : (l.opacidade / 100) * (0.4 + 0.6 * k);
+    const esp = typeof s?.espessura === 'number' ? s.espessura : l.espessura;
+    const cor = Number.parseInt(String(s?.cor ?? l.cor).replace('#', ''), 16) || 0xfff2a8;
+    if (op > 0) this.grafico.moveTo(r.x0, r.y0).lineTo(r.x1, r.y1).stroke({ width: esp, color: cor, alpha: Math.min(1, op) });
     this.grafico.circle(r.x0, r.y0, 2.5).fill({ color: 0xffe066, alpha: 0.9 });
     if (r.acertou) this.grafico.circle(r.x1, r.y1, 3).fill({ color: 0xff5050, alpha: 0.9 });
   }

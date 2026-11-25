@@ -36,6 +36,7 @@ import { LOG, capturarErrosGlobais } from './core/log';
 import { ACOES_SISTEMA, normalizarControles } from './core/controles';
 import { PainelCodigo, type ElementoCodigo } from './ui/codigo/painel';
 import { arquivoScript, modeloScript, tiposApi } from './core/scripts';
+import { SISTEMAS } from './core/sistemaPadrao';
 import { aplicarBlocoArma, aplicarBlocoFase, aplicarBlocoJogo, aplicarBlocoObjeto, aplicarBlocoPersonagem, blocoArma, blocoFase, blocoJogo, blocoObjeto, blocoPersonagem, escreverBloco, lerBloco, mesmosValores } from './core/configScript';
 import { modeloArma, modeloComportamento, modeloInimigoZumbi } from './core/modelosScript';
 import type { Personagem as DadosPersonagem } from './core/personagem';
@@ -647,7 +648,12 @@ async function fontesScripts(): Promise<FontesScripts> {
     const f = await ler(tiposInimigo.get(i.personagem)?.p.script);
     if (f) inimigos.push({ id: i.id, ...f });
   }
-  return { jogo: await ler('jogo.js'), fase: await ler(estado.fase.script), personagem: await ler(personagemDoTeste?.script), arma: await ler(personagemDoTeste?.arma?.script), objetos, inimigos };
+  // Sistema do jogo: o arquivo do projeto, se existir; senão as regras padrão (o mesmo texto que o Código mostra)
+  const sistemas = await Promise.all(SISTEMAS.map(async (s) => ({ id: s.id, arquivo: s.arquivo, codigo: (await ler(s.arquivo))?.codigo ?? s.texto })));
+  return {
+    jogo: await ler('jogo.js'), fase: await ler(estado.fase.script), personagem: await ler(personagemDoTeste?.script), arma: await ler(personagemDoTeste?.arma?.script), objetos, inimigos,
+    sistemas, ler: async (a) => { try { return await plat.lerDados('scripts', a); } catch { return SISTEMAS.find((s) => s.arquivo === a)?.texto ?? null; } },
+  };
 }
 
 // ---------- Código (painel estilo VS Code) ----------
@@ -765,9 +771,19 @@ painelCodigo.registrarFonte(async () => {
   }
   return lista;
 });
-// Fonte 4: scripts que não pertencem a nada aberto agora (de outras fases ou sem dono)
+// Fonte: Sistema do jogo — as regras do JOGO (não da engine) em JavaScript; a engine roda o arquivo ou o padrão
 painelCodigo.registrarFonte(async () => {
-  const usados = new Set<string>(['jogo.js']);
+  const existentes = new Set(await plat.listarDados('scripts'));
+  return SISTEMAS.map((s): ElementoCodigo => ({
+    chave: 'sis:' + s.id, grupo: 'Sistema do jogo', nome: s.nome,
+    detalhe: existentes.has(s.arquivo) ? `${s.arquivo} · seu arquivo` : `${s.arquivo} · regras padrão (salve para editar)`,
+    dono: 'sistema', arquivo: existentes.has(s.arquivo) ? s.arquivo : null, arquivoNovo: s.arquivo, modelo: s.texto,
+    pronto: `regras padrão do jogo: ${s.descricao}`,
+  }));
+});
+// Fonte 4: seus módulos (classes e funções para importar) e scripts que não pertencem a nada aberto agora
+painelCodigo.registrarFonte(async () => {
+  const usados = new Set<string>(['jogo.js', ...SISTEMAS.map((s) => s.arquivo)]);
   if (estado.fase.script) usados.add(estado.fase.script);
   for (const o of estado.fase.objetos) if (o.script) usados.add(o.script);
   for (const arq of await plat.listarDados('personagens')) {
@@ -777,8 +793,8 @@ painelCodigo.registrarFonte(async () => {
     try { const a = JSON.parse(await plat.lerDados('armas', arq)) as { script?: string }; if (a.script) usados.add(a.script); } catch { /* ignora */ }
   }
   return (await plat.listarDados('scripts')).filter((a) => !usados.has(a)).map((a) => ({
-    chave: 'arq:' + a, grupo: 'Outros scripts', nome: a, detalhe: /\./.test(a.replace(/\.js$/, '')) ? `de ${a.split('.')[0]}` : 'sem dono',
-    dono: 'objeto' as const, arquivo: a, arquivoNovo: a,
+    chave: 'arq:' + a, grupo: 'Meus módulos e outros scripts', nome: a, detalhe: /\./.test(a.replace(/\.js$/, '')) ? `de ${a.split('.')[0]}` : 'módulo (import)',
+    dono: 'modulo' as const, arquivo: a, arquivoNovo: a,
   }));
 });
 // Autocompletar com o que existe no projeto
@@ -855,7 +871,7 @@ if (codigoEmJanela) {
         break;
       }
       case 'aviso': estado.avisar(msg.texto); break;
-      case 'scriptSalvo': await aplicarBlocoDoScript(msg.arquivo); break;
+      case 'scriptSalvo': await aplicarBlocoDoScript(msg.arquivo); avisarCodigoMudou(); break;
       case 'codigoFechado': janelaCodigoPronta = false; break;
     }
   });

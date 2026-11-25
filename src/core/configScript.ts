@@ -228,14 +228,14 @@ export function blocoArma(a: ConfigArma): { valores: Bloco; comentarios: Record<
     valores: {
       nome: a.nome, pente: a.pente, slots: a.slots, alcance: a.alcance, alturaTiro: a.alturaTiro, dano: a.dano,
       danoPorDistancia: a.danoPorDistancia.map((f) => ({ ate: f.ate, dano: f.dano })),
-      linha: { visibilidade: a.linha.visibilidade, cor: a.linha.cor, espessura: a.linha.espessura, duracao: a.linha.duracao },
+      linha: { opacidade: a.linha.opacidade, cor: a.linha.cor, espessura: a.linha.espessura, duracao: a.linha.duracao },
       imagens: { hud: a.imagens.hud, hudVazia: a.imagens.hudVazia, bala: a.imagens.bala, menu: a.imagens.menu },
       acaoTiro: a.acaoTiro, acaoRecarga: a.acaoRecarga, animacaoSemBala: a.animacaoSemBala,
     },
     comentarios: {
       pente: 'balas por pente', slots: 'espaços no inventário', alcance: 'px até onde o tiro chega', alturaTiro: 'altura do tiro (0 = pés, 1 = cabeça)',
       dano: 'dano além da última faixa', danoPorDistancia: 'até "ate"% do alcance → "dano" (ex.: 50% → 2, 100% → 1)',
-      'linha.visibilidade': '"visivel", "pouco" ou "invisivel"', 'linha.espessura': 'px', 'linha.duracao': 's na tela',
+      'linha.opacidade': '% (0 = invisível, 100 = bem marcada)', 'linha.espessura': 'px', 'linha.duracao': 's na tela',
       'imagens.hud': 'arma carregada no HUD', 'imagens.hudVazia': 'arma descarregada no HUD', 'imagens.bala': 'cada bala no HUD', 'imagens.menu': 'no menu/inventário',
       acaoTiro: 'animação do personagem ao atirar', acaoRecarga: 'animação ao recarregar', animacaoSemBala: 'animação com o pente vazio',
     },

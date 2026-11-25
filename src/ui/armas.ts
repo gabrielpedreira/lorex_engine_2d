@@ -2,7 +2,7 @@
 // alcance, dano por distância (faixas do alcance), a linha do tiro (visível, pouco visível, invisível) e as imagens
 // (HUD carregada/descarregada, cada bala, menu). O personagem escolhe qual usa (Personagens › Arma) e o HUD pode
 // pegar as imagens da arma equipada. Cada arma também aparece no painel de Código com estes valores no bloco config.
-import { VISIBILIDADES_LINHA, armaPadrao, danoNaDistancia, normalizarArma, type ConfigArma } from '../core/inimigos';
+import { armaPadrao, danoNaDistancia, normalizarArma, type ConfigArma } from '../core/inimigos';
 import { nomeArquivoFase } from '../core/fase';
 import type { Plataforma } from '../plataforma/plataforma';
 import { el, pedirTexto } from './dom';
@@ -153,10 +153,9 @@ export class EditorArmas {
     // Linha do tiro como fica no jogo
     const tiro = el('div', { class: 'arma-tiro' });
     const linha = el('div', { class: 'arma-linha' });
-    const vis = a.linha.visibilidade;
     linha.style.height = `${Math.max(1, a.linha.espessura * 2)}px`;
     linha.style.background = a.linha.cor;
-    linha.style.opacity = vis === 'invisivel' ? '0' : vis === 'pouco' ? '0.3' : '0.9';
+    linha.style.opacity = String(a.linha.opacidade / 100);
     tiro.append(el('div', { class: 'arma-boca' }), linha, el('div', { class: 'arma-acerto' }));
     const img = (rotulo: string, c: string, texto: string) => {
       const caixa = el('div', { class: 'arma-img' }, c ? el('img', { src: this.acoes.url(c), alt: rotulo }) : el('span', { class: 'dica-campo' }, '—'), el('small', {}, rotulo));
@@ -168,7 +167,7 @@ export class EditorArmas {
     return el('section', { class: 'pers-col pers-centro' },
       el('h3', {}, `Alcance: ${a.alcance} px`), barra,
       el('p', { class: 'dica-campo' }, `Exemplo: alvo a ${Math.round(a.alcance * 0.3)} px → dano ${danoNaDistancia(a, a.alcance * 0.3)}; a ${Math.round(a.alcance * 0.8)} px → dano ${danoNaDistancia(a, a.alcance * 0.8)}.`),
-      el('h3', {}, `Linha do tiro: ${VISIBILIDADES_LINHA.find((v) => v.id === vis)?.nome}`), tiro,
+      el('h3', {}, `Linha do tiro: ${a.linha.opacidade}% visível`), tiro,
       el('h3', {}, 'Imagens'),
       el('div', { class: 'arma-imgs' },
         img('HUD carregada', a.imagens.hud, 'Aparece no HUD (elemento "Arma em uso" com "Usar as imagens da arma").'),
@@ -198,9 +197,10 @@ export class EditorArmas {
     };
     const nome = el('input', { type: 'text', value: a.nome });
     nome.addEventListener('change', () => { a.nome = nome.value.trim() || a.nome; this.mudou(); });
-    const vis = el('select', {}, ...VISIBILIDADES_LINHA.map((v) => el('option', { value: v.id }, v.nome)));
-    vis.value = a.linha.visibilidade;
-    vis.addEventListener('change', () => { a.linha.visibilidade = vis.value as ConfigArma['linha']['visibilidade']; this.mudou(); });
+    const vis = el('input', { type: 'range', min: 0, max: 100, step: 5, value: a.linha.opacidade });
+    const visTxt = el('output', {}, `${a.linha.opacidade}%`);
+    vis.addEventListener('input', () => { visTxt.textContent = `${vis.value}%`; });
+    vis.addEventListener('change', () => { a.linha.opacidade = Number(vis.value); this.mudou(); });
     const cor = el('input', { type: 'color', value: a.linha.cor });
     cor.addEventListener('change', () => { a.linha.cor = cor.value; this.mudou(); });
 
@@ -235,7 +235,7 @@ export class EditorArmas {
 
     // Linha do tiro
     col.append(el('h3', {}, 'Linha do tiro'),
-      campo('Visibilidade', vis, VISIBILIDADES_LINHA.map((v) => `${v.nome}: ${v.texto}`).join(' ')),
+      el('div', { class: 'deslizante' }, (() => { const l = el('label', { for: 'arma-vis' }, 'Visibilidade'); dica(l, 'Visibilidade da linha', 'Opacidade da linha do tiro em %: 0 = invisível (só o clarão na boca e o acerto), 30 ≈ pouco visível, 100 = bem marcada. A regra que desenha fica no código do jogo: Código › Sistema do jogo › sistema.armas.js.'); vis.id = 'arma-vis'; return l; })(), vis, visTxt),
       el('div', { class: 'linha2' },
         campo('Cor', cor, 'Cor da linha.'),
         campo('Espessura', numero(a.linha.espessura, (v) => { a.linha.espessura = Math.max(0.5, v); }, 0.5, 0.5), 'Em px do jogo.')),

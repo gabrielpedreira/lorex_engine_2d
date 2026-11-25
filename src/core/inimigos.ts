@@ -326,20 +326,17 @@ export interface ConfigArma {
 }
 
 export interface FaixaDano { ate: number; dano: number }
-export type VisibilidadeLinha = 'visivel' | 'pouco' | 'invisivel';
-export const VISIBILIDADES_LINHA: { id: VisibilidadeLinha; nome: string; texto: string }[] = [
-  { id: 'visivel', nome: 'Visível', texto: 'Linha bem marcada (rastro de bala comum).' },
-  { id: 'pouco', nome: 'Pouco visível', texto: 'Linha fraca e rápida (dá a direção sem chamar atenção).' },
-  { id: 'invisivel', nome: 'Invisível', texto: 'Sem linha: só o clarão na boca da arma e o acerto.' },
-];
-export interface LinhaTiro { visibilidade: VisibilidadeLinha; cor: string; espessura: number; duracao: number }
+/** Linha do tiro: opacidade em % (0 = invisível, só o clarão e o acerto; 100 = bem marcada). */
+export interface LinhaTiro { opacidade: number; cor: string; espessura: number; duracao: number }
+/** Arquivos antigos guardavam "visivel" / "pouco" / "invisivel". */
+const OPACIDADE_ANTIGA: Record<string, number> = { visivel: 85, pouco: 30, invisivel: 0 };
 export interface ImagensArma { hud: string; hudVazia: string; bala: string; menu: string }
 
 export function armaPadrao(): ConfigArma {
   return {
     nome: 'Pistola', acaoTiro: 'tiro', acaoRecarga: 'recarga', animacaoSemBala: 'tiro_sem_bala', pente: 7, dano: 1, alcance: 420, alturaTiro: 0.62,
     slots: 1, danoPorDistancia: [{ ate: 50, dano: 2 }, { ate: 100, dano: 1 }],
-    linha: { visibilidade: 'visivel', cor: '#fff2a8', espessura: 1, duracao: 0.07 },
+    linha: { opacidade: 85, cor: '#fff2a8', espessura: 1, duracao: 0.07 },
     imagens: { hud: '', hudVazia: '', bala: '', menu: '' },
   };
 }
@@ -368,7 +365,7 @@ export function normalizarArma(d: unknown): ConfigArma | undefined {
       ? a.danoPorDistancia.filter((f) => f && Number.isFinite(Number(f.ate))).map((f) => ({ ate: Math.max(0, Number(f.ate)), dano: Math.max(0, Number(f.dano) || 0) }))
       : [{ ate: 100, dano: num(a.dano, b.dano) }],
     linha: {
-      visibilidade: VISIBILIDADES_LINHA.some((v) => v.id === a.linha?.visibilidade) ? a.linha!.visibilidade : b.linha.visibilidade,
+      opacidade: Math.max(0, Math.min(100, num(a.linha?.opacidade, OPACIDADE_ANTIGA[(a.linha as { visibilidade?: string } | undefined)?.visibilidade ?? ''] ?? b.linha.opacidade))),
       cor: typeof a.linha?.cor === 'string' ? a.linha.cor : b.linha.cor,
       espessura: Math.max(0.5, num(a.linha?.espessura, b.linha.espessura)),
       duracao: Math.max(0.01, num(a.linha?.duracao, b.linha.duracao)),

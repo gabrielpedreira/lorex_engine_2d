@@ -149,6 +149,9 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
   mordida 40%, "agarra" segura o jogador, tiros e barulho de tiro chamam a atenção), vida, visão, velocidades, alcance.
 - **Arma do jogador** (Personagens → Arma): pente, dano, alcance, ações de tiro e recarga e animação "sem bala";
   tiro instantâneo (paredes param), recarga enche o pente ao fim da animação.
+- **Código do jogo × engine**: o painel de Código mostra o **Sistema do jogo** (as regras que o jogo usa, em
+  JavaScript, ex.: dano por distância, linha do tiro, tiro e recarga) separado da engine; salvar cria o arquivo do
+  projeto, que passa a valer. **Módulos próprios** (classes e funções) podem ser importados por qualquer script.
 - **Armas** (`A`): cada arma em `jogo/armas/` com pente, espaços no inventário, alcance, dano por distância, linha do
   tiro (visível, pouco visível, invisível) e imagens (HUD, bala, menu); o personagem escolhe qual usa e cada arma tem
   script próprio no painel de Código (`aoCalcularDano`).

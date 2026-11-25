@@ -6,7 +6,7 @@ import { toca, type MundoInterativo } from '../core/comportamentos';
 import { LOG } from '../core/log';
 import { danoNaDistancia } from '../core/inimigos';
 import type { Transicao, Viagem } from '../core/mapa';
-import { compilarScript, linhaDoErro, type DonoScript, type ScriptCompilado } from '../core/scripts';
+import { compilarComImports, linhaDoErro, type DonoScript, type ScriptCompilado } from '../core/scripts';
 
 /** O que o motor de scripts precisa do modo Teste. */
 export interface PonteTeste {
@@ -68,6 +68,10 @@ export interface FontesScripts {
   personagem?: { arquivo: string; codigo: string };
   /** Script da arma equipada (ferramenta Armas). */
   arma?: { arquivo: string; codigo: string };
+  /** Sistema do jogo: as regras do jogo em JS (arquivo do projeto ou o texto padrão). */
+  sistemas?: { id: string; arquivo: string; codigo: string }[];
+  /** Lê outro script do projeto (para os imports entre scripts). */
+  ler?: (arquivo: string) => Promise<string | null>;
   objetos: { id: string; arquivo: string; codigo: string }[];
   /** Scripts dos tipos de inimigo: um por inimigo colocado (id da colocação). */
   inimigos?: { id: string; arquivo: string; codigo: string }[];
@@ -89,11 +93,51 @@ export class MotorScripts {
 
   constructor(private ponte: PonteTeste) {}
 
-  get vazio() { return !this.scripts.length; }
+  get vazio() { return !this.scripts.length && !this.sistemas.size; }
+
+  // ---------- Sistema do jogo ----------
+  private sistemas = new Map<string, ScriptAtivo>();
+
+  /** Tem a função no sistema do jogo? (ex.: temSistema("armas", "linhaDoTiro")) */
+  temSistema(id: string, fn: string) {
+    const s = this.sistemas.get(id);
+    return !!s && !!s.c.ganchos[fn] && !s.desligados.has(fn);
+  }
+
+  /** Chama uma função do sistema do jogo. undefined = não existe ou deu erro (a engine usa a regra interna). */
+  sistema(id: string, fn: string, ...args: unknown[]): unknown {
+    const s = this.sistemas.get(id);
+    const f = s?.c.ganchos[fn];
+    if (!s || !f || s.desligados.has(fn)) return undefined;
+    const antes = this.arquivoAtual;
+    this.arquivoAtual = s.c.arquivo;
+    const r = this.protegido(s.c.arquivo, `${id}.${fn}`, () => f(...args), s);
+    this.arquivoAtual = antes;
+    return r;
+  }
+
+  /** Regras do tiro/recarga do sistema do jogo: usarArma(eu, jogo, acao, arma). */
+  usarArmaSistema(acao: string, arma: unknown): boolean {
+    if (!this.temSistema('armas', 'usarArma')) return false;
+    const api = this.apiJogo() as { jogador: unknown };
+    this.sistema('armas', 'usarArma', api.jogador, api, acao, structuredClone(arma));
+    return true;
+  }
 
   /** Compila tudo. Erros de sintaxe vão para a Saída (o resto continua). */
   async carregar(f: FontesScripts) {
     this.scripts = [];
+    this.sistemas.clear();
+    const ler = f.ler ?? (async () => null);
+    const urls = new Map<string, Promise<string>>();
+    // Sistema do jogo (regras em JS que a engine chama)
+    for (const s of f.sistemas ?? []) {
+      try { this.sistemas.set(s.id, { dono: 'sistema', idDono: s.id, c: await compilarComImports(s.arquivo, s.codigo, ler, urls), desligados: new Set() }); }
+      catch (err) {
+        LOG.add({ cat: 'erro', arquivo: s.arquivo, texto: `Erro no sistema do jogo (a engine usa a regra interna): ${err instanceof Error ? err.message : String(err)}` });
+        this.ponte.aviso(`Erro em ${s.arquivo} (veja Código › Saída)`);
+      }
+    }
     const lista: { dono: DonoScript; id: string | null; arquivo: string; codigo: string }[] = [
       ...(f.jogo ? [{ dono: 'jogo' as const, id: null, ...f.jogo }] : []),
       ...(f.fase ? [{ dono: 'fase' as const, id: null, ...f.fase }] : []),
@@ -106,7 +150,7 @@ export class MotorScripts {
     for (const s of lista) {
       try {
         // Objetos que dividem o mesmo arquivo dividem o módulo (variáveis no topo do arquivo são compartilhadas)
-        if (!cache.has(s.arquivo)) cache.set(s.arquivo, compilarScript(s.arquivo, s.codigo));
+        if (!cache.has(s.arquivo)) cache.set(s.arquivo, compilarComImports(s.arquivo, s.codigo, ler, urls));
         const c = await cache.get(s.arquivo)!;
         this.scripts.push({ dono: s.dono, idDono: s.id, c, desligados: new Set() });
       } catch (err) {

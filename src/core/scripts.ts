@@ -10,7 +10,7 @@
 // (1) aparecer no explorador do painel de Código (fonte de elementos), (2) ganhar ganchos aqui em GANCHOS e
 // (3) expor a API dele em tiposApi(). Assim o código sempre acompanha o que existe no projeto.
 
-export type DonoScript = 'jogo' | 'fase' | 'objeto' | 'personagem' | 'inimigo' | 'arma';
+export type DonoScript = 'jogo' | 'fase' | 'objeto' | 'personagem' | 'inimigo' | 'arma' | 'sistema' | 'modulo';
 
 export interface Gancho {
   nome: string;
@@ -68,13 +68,13 @@ export const arquivoScript = {
   arma: (arquivoArma: string) => `arma.${slugScript(arquivoArma.replace(/\.json$/i, ''))}.js`,
 };
 
-const TIPO_EU: Record<DonoScript, string> = { jogo: 'Jogo', fase: 'Jogo', objeto: 'Objeto', personagem: 'Jogador', inimigo: 'Inimigo', arma: 'Arma' };
+const TIPO_EU: Record<DonoScript, string> = { jogo: 'Jogo', fase: 'Jogo', objeto: 'Objeto', personagem: 'Jogador', inimigo: 'Inimigo', arma: 'Arma', sistema: 'Jogo', modulo: 'Jogo' };
 
 /** Script novo, já com os ganchos daquele tipo de dono (comentados os que não são essenciais). */
 export function modeloScript(dono: DonoScript, nome: string, extra = ''): string {
   const ganchos = GANCHOS.filter((g) => g.donos.includes(dono));
   const principais: Record<DonoScript, string[]> = {
-    jogo: ['aoIniciar', 'aoTrocarFase'], fase: ['aoIniciar'], objeto: ['aoInteragir'], personagem: ['aoAcao', 'aoReagirAoDano', 'aoMorrer'], arma: ['aoCalcularDano', 'aoAtirar'], inimigo: ['aoVer', 'aoMorrer'],
+    jogo: ['aoIniciar', 'aoTrocarFase'], fase: ['aoIniciar'], objeto: ['aoInteragir'], personagem: ['aoAcao', 'aoReagirAoDano', 'aoMorrer'], arma: ['aoCalcularDano', 'aoAtirar'], sistema: [], modulo: [], inimigo: ['aoVer', 'aoMorrer'],
   };
   const linhas = [
     `// Script de ${nome}${extra ? ` (${extra})` : ''}.`,
@@ -133,6 +133,50 @@ export interface ScriptCompilado {
 }
 
 /** Compila um script como módulo (via blob:). Lança SyntaxError se o código tiver erro. */
+/**
+ * Compila um script com os imports entre scripts do projeto (import { X } from './meu_modulo.js'). Cada arquivo vira
+ * um módulo só (o cache é da partida): quem importa o mesmo arquivo divide as mesmas classes e variáveis.
+ */
+export async function compilarComImports(arquivo: string, codigo: string, ler: (arquivo: string) => Promise<string | null>, cache: Map<string, Promise<string>>): Promise<ScriptCompilado> {
+  const url = await urlModulo(arquivo, codigo, ler, cache, []);
+  const m = (await import(/* @vite-ignore */ url)) as Record<string, unknown>;
+  const ganchos: ScriptCompilado['ganchos'] = {};
+  for (const [k, v] of Object.entries(m)) if (typeof v === 'function') ganchos[k] = v as (...a: unknown[]) => unknown;
+  return { arquivo, url, ganchos };
+}
+
+/** Caminho de um import relativo ("./x.js", "../lib/y") a partir do arquivo que importa (pasta jogo/scripts). */
+export function resolverImport(de: string, especificador: string): string {
+  const partes = de.split('/').slice(0, -1);
+  for (const p of especificador.split('/')) {
+    if (p === '.' || p === '') continue;
+    if (p === '..') partes.pop(); else partes.push(p);
+  }
+  const r = partes.join('/');
+  return /\.m?js$/i.test(r) ? r : r + '.js';
+}
+
+async function urlModulo(arquivo: string, codigo: string | null, ler: (a: string) => Promise<string | null>, cache: Map<string, Promise<string>>, pilha: string[]): Promise<string> {
+  if (pilha.includes(arquivo)) throw new Error(`import circular: ${[...pilha, arquivo].join(' → ')}`);
+  const pronto = cache.get(arquivo);
+  if (pronto) return pronto;
+  const p = (async () => {
+    const texto = codigo ?? await ler(arquivo);
+    if (texto === null) throw new Error(`${pilha[pilha.length - 1] ?? arquivo}: não achei jogo/scripts/${arquivo} (import)`);
+    const re = /(\bfrom\s*|\bimport\s*)(['"])(\.{1,2}\/[^'"\n]+)\2/g;
+    const trocas: { de: string; para: string }[] = [];
+    for (const m of texto.matchAll(re)) {
+      const alvo = resolverImport(arquivo, m[3]);
+      trocas.push({ de: m[0], para: `${m[1]}${m[2]}${await urlModulo(alvo, null, ler, cache, [...pilha, arquivo])}${m[2]}` });
+    }
+    let final = texto;
+    for (const t of trocas) final = final.replace(t.de, t.para);
+    return URL.createObjectURL(new Blob([final + `\n//# sourceURL=lorex-script/${arquivo}`], { type: 'text/javascript' }));
+  })();
+  cache.set(arquivo, p);
+  return p;
+}
+
 export async function compilarScript(arquivo: string, codigo: string): Promise<ScriptCompilado> {
   const url = URL.createObjectURL(new Blob([codigo + `\n//# sourceURL=lorex-script/${arquivo}`], { type: 'text/javascript' }));
   const m = (await import(/* @vite-ignore */ url)) as Record<string, unknown>;

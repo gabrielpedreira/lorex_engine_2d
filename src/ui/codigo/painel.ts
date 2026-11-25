@@ -3,10 +3,11 @@
 //
 // O que aparece no explorador vem de "fontes" registradas pelo editor (main.ts). Módulos novos (menus, HUD,
 // inimigos…) registram a fonte deles e o painel passa a mostrá-los, sem mexer aqui.
-import { GANCHOS, modeloScript, paramsDe, type DonoScript } from '../../core/scripts';
+import { GANCHOS, modeloScript, paramsDe, slugScript, type DonoScript } from '../../core/scripts';
+import { SISTEMAS, modeloModulo } from '../../core/sistemaPadrao';
 import { LOG, type LinhaLog } from '../../core/log';
 import type { Plataforma } from '../../plataforma/plataforma';
-import { el, perguntar } from '../dom';
+import { el, pedirTexto, perguntar } from '../dom';
 import { dica } from '../legenda';
 import { icone } from '../icones';
 import { divisor } from '../divisor';
@@ -227,6 +228,21 @@ export class PainelCodigo {
     this.desenharEditor();
   }
 
+  /** Cria um módulo seu (classes/funções para importar) e abre. */
+  private async novoModulo() {
+    const nome = await pedirTexto('Novo módulo', 'Nome do arquivo (sem .js)', 'meu_modulo');
+    if (!nome) return;
+    const base = slugScript(nome) || 'modulo';
+    const existentes = new Set(await this.plat.listarDados('scripts'));
+    let arquivo = `${base}.js`;
+    for (let i = 2; existentes.has(arquivo); i++) arquivo = `${base}_${i}.js`;
+    await this.plat.salvarDados('scripts', arquivo, modeloModulo(arquivo.replace(/\.js$/, '')));
+    this.aoAvisar(`Módulo criado: jogo/scripts/${arquivo}`);
+    this.aoSalvarScript(arquivo);
+    await this.atualizarElementos();
+    await this.irPara(arquivo);
+  }
+
   /** Cria o script de um elemento a partir do modelo e liga ao dono. */
   private async criarScript(e: ElementoCodigo, texto?: string): Promise<string | null> {
     const existentes = new Set(await this.plat.listarDados('scripts'));
@@ -435,7 +451,10 @@ export class PainelCodigo {
       if (!grupos.has(e.grupo)) grupos.set(e.grupo, []);
       grupos.get(e.grupo)!.push(e);
     }
-    const filhos: HTMLElement[] = [busca];
+    const novoMod = el('button', { type: 'button', class: 'secundario cod-novo-modulo' }, '+ Novo módulo');
+    dica(novoMod, 'Novo módulo', 'Um arquivo seu em jogo/scripts/ para classes e funções do jogo. Use em qualquer script com: import { MinhaClasse } from "./meu_modulo.js".');
+    novoMod.addEventListener('click', () => void this.novoModulo());
+    const filhos: HTMLElement[] = [busca, novoMod];
     for (const [g, lista] of grupos) {
       filhos.push(el('h3', {}, g));
       for (const e of lista) {
@@ -509,6 +528,17 @@ export class PainelCodigo {
     const dono = aba?.dono ?? (this.selecionado ? this.elemento(this.selecionado)?.dono : undefined);
     const ganchos = dono ? GANCHOS.filter((g) => g.donos.includes(dono)) : GANCHOS;
     const blocos: (HTMLElement | string)[] = [el('h3', {}, 'Ganchos'), el('p', { class: 'dica-campo' }, aba ? 'Clique para inserir no script.' : 'Funções que a engine chama sozinha.')];
+    if (dono === 'sistema') {
+      const arq = aba?.novo?.arquivoNovo ?? aba?.arquivo;
+      const s = SISTEMAS.find((x) => x.arquivo === arq) ?? SISTEMAS[0];
+      blocos.splice(0, 2, el('h3', {}, 'Sistema do jogo'),
+        el('p', { class: 'dica-campo' }, `${s.descricao} Estas são as regras do JOGO, não da engine: a engine só chama as funções abaixo. Salvar cria jogo/scripts/${s.arquivo}, que passa a valer no lugar do padrão.`),
+        ...s.funcoes.map((f) => el('div', { class: 'cod-ref' }, el('code', {}, f))));
+    }
+    if (dono === 'modulo') {
+      blocos.splice(0, 2, el('h3', {}, 'Módulo'),
+        el('p', { class: 'dica-campo' }, 'Arquivo seu: classes, funções e valores. Use em qualquer script com import { Nome } from "./arquivo.js". Quem importa o mesmo módulo divide as mesmas variáveis.'));
+    }
     for (const g of ganchos) {
       const b = el('button', { type: 'button', class: 'cod-gancho' }, el('code', {}, `${g.nome}(${dono ? paramsDe(g, dono) : g.params})`), el('span', {}, g.texto));
       b.disabled = !aba;

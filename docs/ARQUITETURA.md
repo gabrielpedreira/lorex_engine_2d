@@ -451,6 +451,18 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   `aplicarMudanca` envolve toda mudança: remove conexões sem pontas e apaga as passagens-zona (`PassagemSala.zona`)
   que perderam a última conexão (`passagensUsadas` antes × depois).
 
+### 4.38 Código do jogo: Sistema do jogo e módulos
+
+- Três camadas: **engine** (TypeScript: desenho, física, editor), **sistema do jogo** (regras do jogo em JS, editáveis)
+  e **scripts** (ganchos de cada coisa). `core/sistemaPadrao.ts → SISTEMAS` guarda o texto padrão de cada módulo
+  (`sistema.armas.js`: `danoNaDistancia`, `linhaDoTiro`, `usarArma`). `fontesScripts` manda o arquivo do projeto ou o
+  padrão; `MotorScripts.sistema(id, fn, …)` chama (erro → a engine usa a regra interna e avisa na Saída).
+- Imports entre scripts: `compilarComImports` reescreve `from './x.js'` para o blob compilado de cada arquivo (cache por
+  partida: um módulo = uma instância), detecta import circular. `FontesScripts.ler` lê os arquivos importados.
+- Painel: grupos "Sistema do jogo" (dono `sistema`, rascunho com o padrão) e "Meus módulos" (dono `modulo`, botão
+  "+ Novo módulo" com `modeloModulo`).
+- `LinhaTiro.opacidade` (0–100) substitui `visibilidade` (arquivos antigos convertidos: visível 85, pouco 30, invisível 0).
+
 ### 4.37 Armas
 
 - `ConfigArma` (core/inimigos.ts) ganhou `slots`, `danoPorDistancia: { ate (% do alcance), dano }[]`, `linha` (visibilidade,
