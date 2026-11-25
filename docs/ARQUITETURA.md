@@ -451,6 +451,19 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   `aplicarMudanca` envolve toda mudança: remove conexões sem pontas e apaga as passagens-zona (`PassagemSala.zona`)
   que perderam a última conexão (`passagensUsadas` antes × depois).
 
+### 4.35 HUD com imagens e tela de morte
+
+- `ElementoHud` ganhou `estilo 'texto' | 'barra' | 'caixas' | 'icones' | 'imagem'`, `imagem`, `imagemVazia`, `maximo`,
+  `direcao`, `espaco` e `faixas: { ate, cor, imagem }[]` (`faixaHud`: a de menor `ate` que cobre o valor). `partesHud`
+  separa "atual/máximo". `elementoBase` + `PREDEFINICOES_HUD` (o "+ Elemento" da ferramenta). `ConfigHud.morte: TelaMorte`
+  (spritesheet numa linha, quadros, fps, tamanho, texto, escurecer).
+- `ui/hud.ts`: `elementoHud(e, valor, escala, url)`, `posicionarHud` (reposiciona quando as imagens carregam) e
+  `telaMorte` (Web Animations com `steps()`, para no último quadro). Usados na prévia e no ▶ Testar (`urlImagem`).
+  `EditorHud` recebe `AcoesHud` (imagens do projeto, garantir em jogo/assets/hud, url).
+- ▶ Testar: golpe pinta o jogador de vermelho (`tint`, como os inimigos) e pisca vermelho enquanto invulnerável; a tela
+  do jogo fica abaixo do painel "Testando" (`margemTopo` no zoom e na câmera). `ConfigArma.nome` (chave `arma`).
+- `limparNaoUsados` considera as imagens do HUD em uso.
+
 ### 4.34 Vida do jogador, morte e checkpoint
 
 - `Personagem.vida: ConfigVida { maxima, invulneravel, renascer }` (só jogador; `normalizarVida` dá o padrão 10 / 1,2 s / 2,5 s).

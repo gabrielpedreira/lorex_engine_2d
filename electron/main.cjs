@@ -284,6 +284,8 @@ function registrarIpc() {
     try {
       const cfg = JSON.parse(await fsp.readFile(path.join(raizProjeto, 'jogo', 'projeto.json'), 'utf-8'));
       for (const c of cfg.mapa?.conexoes ?? []) { if (c.transicao?.animacao) usados.add(c.transicao.animacao); if (c.transicaoVolta?.animacao) usados.add(c.transicaoVolta.animacao); }
+      // Imagens do HUD (balas, rosto, arma…)
+      for (const e of cfg.hud?.elementos ?? []) for (const im of [e.imagem, e.imagemVazia, e.icone, ...(e.faixas ?? []).map((f) => f && f.imagem)]) if (im) usados.add(im);
     } catch { /* sem projeto.json */ }
     const arquivos = [];
     const percorrer = async (dir, rel) => {

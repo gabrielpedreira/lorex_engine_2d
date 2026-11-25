@@ -471,7 +471,12 @@ export class EditorPersonagens {
     };
     const remover = el('button', { type: 'button', class: 'perigo' }, 'Tirar a arma');
     remover.addEventListener('click', () => { delete this.p.arma; this.mudou(); });
+    const nomeArma = el('input', { type: 'text', id: 'pa-nome', value: a.nome });
+    nomeArma.addEventListener('change', () => { a.nome = nomeArma.value.trim() || 'Arma'; this.mudou(); });
+    const labNome = el('label', { for: 'pa-nome' }, 'Nome da arma');
+    dica(labNome, 'Nome da arma', 'Aparece no HUD com a chave "arma" (ex.: Pistola).');
     return [titulo,
+      el('div', { class: 'campo largo' }, labNome, nomeArma),
       el('div', { class: 'linha2' },
         sel('Tiro', a.acaoTiro, (v) => { a.acaoTiro = v; }, 'Ação (animação extra) que atira.'),
         sel('Recarga', a.acaoRecarga, (v) => { a.acaoRecarga = v; }, 'Ação que recarrega; o pente enche quando a animação termina.')),

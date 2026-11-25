@@ -297,6 +297,8 @@ export class IAInimigo {
 // ---------- Arma do jogador ----------
 
 export interface ConfigArma {
+  /** Nome da arma (HUD: chave "arma"). */
+  nome: string;
   /** Ação (animação extra) que atira. */
   acaoTiro: string;
   /** Ação que recarrega (o pente enche quando a animação termina). */
@@ -314,7 +316,7 @@ export interface ConfigArma {
 }
 
 export function armaPadrao(): ConfigArma {
-  return { acaoTiro: 'tiro', acaoRecarga: 'recarga', animacaoSemBala: 'tiro_sem_bala', pente: 7, dano: 1, alcance: 420, alturaTiro: 0.62 };
+  return { nome: 'Pistola', acaoTiro: 'tiro', acaoRecarga: 'recarga', animacaoSemBala: 'tiro_sem_bala', pente: 7, dano: 1, alcance: 420, alturaTiro: 0.62 };
 }
 
 export function normalizarArma(d: unknown): ConfigArma | undefined {
@@ -322,6 +324,7 @@ export function normalizarArma(d: unknown): ConfigArma | undefined {
   const b = armaPadrao();
   const a = d as Partial<ConfigArma>;
   return {
+    nome: typeof a.nome === 'string' && a.nome.trim() ? a.nome.trim() : b.nome,
     acaoTiro: typeof a.acaoTiro === 'string' ? a.acaoTiro : b.acaoTiro,
     acaoRecarga: typeof a.acaoRecarga === 'string' ? a.acaoRecarga : b.acaoRecarga,
     animacaoSemBala: typeof a.animacaoSemBala === 'string' ? a.animacaoSemBala : b.animacaoSemBala,

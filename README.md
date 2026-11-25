@@ -147,8 +147,11 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 - **Arma do jogador** (Personagens → Arma): pente, dano, alcance, ações de tiro e recarga e animação "sem bala";
   tiro instantâneo (paredes param), recarga enche o pente ao fim da animação.
 - **HUD** (`U`): elementos de texto presos a cantos/bordas da tela do jogo (munição, inimigos vivos, `item:<nome>` ou
-  chaves do código via `jogo.hud.definir`), com prévia arrastável. Cada elemento pode ser **texto** ou **barra**
-  (valores "atual/máximo", como vida e munição).
+  chaves do código via `jogo.hud.definir`), com prévia arrastável. Predefinições prontas (vida em caixas ou barra,
+  rosto que muda com a vida, munição bala a bala, arma em uso, vidas restantes, magia, contador de item) e cada
+  elemento mostrado como **texto**, **barra**, **caixas**, **ícones um a um** ou **imagem que muda** com o valor
+  (faixas: "valor ≤ 8 → amarelo"). Imagens do projeto ou desenho padrão. Também edita a **tela de morte**
+  (spritesheet animado ou texto). O HUD inteiro também pode ser feito só no código.
 - **Vida do jogador** (Personagens → Vida): golpes dos inimigos tiram vida, o personagem pisca invulnerável por um
   instante, vida 0 toca a animação Morte e volta no **último checkpoint** (chegada na sala ou gatilho Checkpoint) com a
   vida cheia. Kit médico = coletável com "Cura". Código: `jogador.vida`, `curar`, `ferir`, `jogo.checkpoint()`, `aoMorrer`.

@@ -48,7 +48,7 @@ import type { FontesScripts } from './editor/motorScripts';
 import { normalizarPersonagem, type Personagem } from './core/personagem';
 import { JOGADOR_PADRAO } from './core/fisica';
 import { TelaInicio } from './ui/inicio';
-import { CONFIG_PADRAO, novaVersaoImagens, urlAsset } from './plataforma/plataforma';
+import { CONFIG_PADRAO, anticache, novaVersaoImagens, urlAsset } from './plataforma/plataforma';
 import { EditorMapa, type InfoSala } from './ui/mapa';
 import { TelaTransicao } from './editor/transicao';
 import { conexaoDaPassagem, limparMapa, normalizarMapa, resumoTransicao, viagemDe } from './core/mapa';
@@ -549,6 +549,7 @@ dica(botaoTestar, 'Testar a fase', 'Jogue a fase agora com o personagem do teste
 
 // ---------- ▶ Testar ----------
 const teste = new ModoTeste(viewport, estado, centro);
+teste.urlImagem = (c) => urlAsset(plat, c);
 // Ao parar o teste, o log inteiro dele vai para logs/ (o Claude lê de lá quando você relata um problema)
 teste.aoTerminarLog = async (texto) => {
   const d = new Date();
@@ -882,7 +883,11 @@ editorPersonagens.aoRenomearAcao = (antiga, nova) => {
 };
 
 // ---------- HUD ----------
-const editorHud = new EditorHud();
+const editorHud = new EditorHud({
+  imagens: () => plat.listarAssets(),
+  garantir: (c, cat) => (c.startsWith('jogo/') ? Promise.resolve(c.slice(5)) : plat.garantirEmUso(c, cat)),
+  url: (c) => urlAsset(plat, c) + anticache(),
+});
 editorHud.aoMudar = (h: import('./core/hud').ConfigHud) => { config.hud = h; salvarConfigDepois(); };
 async function abrirHud() {
   if (estado.testando) teste.parar();

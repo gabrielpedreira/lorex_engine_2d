@@ -10,8 +10,8 @@ import { MotorScripts, type FontesScripts } from './motorScripts';
 import type { ObjetoFase } from '../core/tipos';
 import { InimigoVivo, raioTiro, type TipoInimigo } from './inimigosTeste';
 import type { AtaqueInimigo, EventoIA } from '../core/inimigos';
-import { normalizarHud, posicaoHud, type ConfigHud } from '../core/hud';
-import { elementoHud } from '../ui/hud';
+import { normalizarHud, type ConfigHud } from '../core/hud';
+import { elementoHud, posicionarHud, telaMorte } from '../ui/hud';
 import { el } from '../ui/dom';
 import { dica } from '../ui/legenda';
 import type { Estado } from './estado';
@@ -96,6 +96,10 @@ export class ModoTeste {
   private municaoLevada: number | null = null;
   /** Elementos do HUD (ferramenta HUD, projeto.json). */
   hudConfig: ConfigHud = normalizarHud(null);
+  /** URL de uma imagem (caminho relativo a jogo/), para o HUD. */
+  urlImagem: (c: string) => string = (c) => c;
+  /** Golpe recebido: pisca em vermelho (como os inimigos). */
+  private flashDano = 0;
   private elHudTela: HTMLElement;
   private valoresHud = new Map<string, string>();
 
@@ -262,13 +266,6 @@ export class ModoTeste {
     this.viajando = false;
     this.entradaJogo.limpar();
 
-    // Zoom para a tela do jogo caber inteira (inteiro, para a pixel art ficar nítida)
-    const { w, h } = this.viewport.tamanhoTela();
-    const [rw, rh] = e.fase.resolucaoBase;
-    const caber = Math.min(w / rw, h / rh);
-    // Zoom inteiro deixa a pixel art nítida; em telas pequenas usa o que couber
-    e.camera.zoom = caber >= 2 ? Math.floor(caber) : caber;
-    this.posicionarCamera(true);
 
     this.inserirGrafico();
     this.viewport.aposSincronizar = () => this.inserirGrafico();
@@ -278,6 +275,7 @@ export class ModoTeste {
     window.addEventListener('blur', this.perderFoco);
     this.montarHud();
     this.hud.hidden = false;
+    this.ajustarZoom();
     if (!e.fase.colisoes.length) e.avisar('Esta fase ainda não tem colisão: o jogador vai cair. Desenhe o chão com a ferramenta Colisão (C).');
     else e.avisar('Testando a fase. Esc volta ao editor.');
     e.emit('opcoes');
@@ -303,6 +301,7 @@ export class ModoTeste {
     for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem, this.elHudJogo, this.elMorte]) x.hidden = true;
     this.mortoEm = null;
     this.spritePers.alpha = 1;
+    this.spritePers.tint = 0xffffff;
     this.hudJogo.clear();
     this.viewport.deslocamentoTeste = null;
     for (const i of this.inimigos) i.remover();
@@ -700,6 +699,23 @@ export class ModoTeste {
     this.elPrompt.hidden = false;
   }
 
+  /** Espaço ocupado no topo pelo painel "Testando" (a tela do jogo fica abaixo dele, sem nada do HUD escondido). */
+  private margemTopo = 0;
+
+  /** Zoom para a tela do jogo caber inteira abaixo do painel (inteiro, para a pixel art ficar nítida). */
+  private ajustarZoom() {
+    const e = this.estado;
+    const { w, h } = this.viewport.tamanhoTela();
+    const topo = this.hud.querySelector<HTMLElement>('.hud-topo');
+    const ajustes = this.hud.querySelector<HTMLElement>('.hud-ajustes');
+    const fundo = Math.max(topo ? topo.offsetTop + topo.offsetHeight : 0, ajustes && !ajustes.hasAttribute('open') ? ajustes.offsetTop + ajustes.offsetHeight : 0);
+    this.margemTopo = Math.min(h * 0.4, fundo + this.hud.offsetTop + 6);
+    const [rw, rh] = e.fase.resolucaoBase;
+    const caber = Math.min(w / rw, (h - this.margemTopo) / rh);
+    e.camera.zoom = caber >= 2 ? Math.floor(caber) : caber;
+    this.posicionarCamera(true);
+  }
+
   /** Câmera do jogo seguindo o jogador (presa dentro da fase), com suavização. */
   private posicionarCamera(imediato: boolean, dt = 0) {
     const j = this.jogador;
@@ -720,7 +736,8 @@ export class ModoTeste {
     const { w, h } = this.viewport.tamanhoTela();
     const z = e.camera.zoom;
     e.camera.x = Math.round(this.camAlvo.x) + rw / 2 - w / 2 / z;
-    e.camera.y = Math.round(this.camAlvo.y) + rh / 2 - h / 2 / z;
+    // Topo da tela do jogo logo abaixo do painel "Testando", centrada no espaço que sobra
+    e.camera.y = Math.round(this.camAlvo.y) - (this.margemTopo + Math.max(0, h - this.margemTopo - rh * z) / 2) / z;
   }
 
   private desenharJogador(dt = 0) {
@@ -754,8 +771,11 @@ export class ModoTeste {
         sp.scale.set(espelhar ? -esc : esc, esc);
         sp.position.set(Math.round(j.x), Math.round(j.y));
         sp.visible = true;
-        // Invulnerável depois de um golpe: pisca
-        sp.alpha = !this.morto && this.tempoJogo < this.invulAte ? (Math.floor(this.tempoJogo * 14) % 2 ? 0.35 : 1) : 1;
+        // Golpe: fica vermelho como os inimigos; invulnerável, pisca em vermelho até acabar
+        this.flashDano = Math.max(0, this.flashDano - dt);
+        const piscando = !this.morto && this.tempoJogo < this.invulAte && Math.floor(this.tempoJogo * 10) % 2 === 0;
+        sp.tint = this.flashDano > 0 || piscando ? 0xff6060 : 0xffffff;
+        sp.alpha = 1;
       }
       if (this.estado.mostrarColisoes) {
         const w = j.cfg.largura, h = j.cfg.altura;
@@ -910,6 +930,7 @@ export class ModoTeste {
   private ferir(dano: number, motivo: string) {
     if (this.morto || dano <= 0) return;
     this.invulAte = this.tempoJogo + this.cfgVida.invulneravel;
+    this.flashDano = 0.15;
     this.definirVida(this.vida - dano, motivo);
   }
 
@@ -929,9 +950,19 @@ export class ModoTeste {
     this.mostrarAcao(null);
     const nome = this.pers?.dados.nome ?? 'Jogador';
     LOG.add({ cat: 'personagem', texto: `${nome} morreu (${motivo}); volta ${this.checkpoint ? `no checkpoint "${this.checkpoint.nome}"` : 'no início'} em ${this.cfgVida.renascer.toFixed(1)} s` });
-    this.elMorte.replaceChildren(el('strong', {}, 'VOCÊ MORREU'), el('span', {}, 'Voltando ao último checkpoint… (Enter para ir já)'));
-    this.elMorte.hidden = false;
+    this.mostrarTelaMorte();
     this.elPrompt.hidden = true;
+  }
+
+  /** Tela de morte (ferramenta HUD › Tela de morte) sobre a tela do jogo. */
+  private mostrarTelaMorte() {
+    const cj = this.viewport.cameraJogo();
+    const a = this.viewport.camadaParaTela(cj.x, cj.y, '');
+    const z = this.estado.camera.zoom;
+    const [rw, rh] = this.estado.fase.resolucaoBase;
+    Object.assign(this.elMorte.style, { left: `${a.x}px`, top: `${a.y}px`, width: `${rw * z}px`, height: `${rh * z}px` });
+    this.elMorte.replaceChildren(telaMorte(this.hudConfig.morte, z, this.urlImagem), el('span', { class: 'teste-morte-dica' }, 'Enter volta já ao checkpoint'));
+    this.elMorte.hidden = false;
   }
 
   /** Volta no checkpoint com a vida cheia. Os inimigos vivos da sala voltam aos lugares; portas e itens ficam como estão. */
@@ -1008,6 +1039,7 @@ export class ModoTeste {
     const arma = this.pers?.dados.arma;
     if (chave === 'municao') return arma ? `${this.municao}/${arma.pente}` : null;
     if (chave === 'vida') return `${this.vida}/${this.cfgVida.maxima}`;
+    if (chave === 'arma') return arma ? arma.nome : null;
     if (chave === 'inimigos') return String(this.inimigos.filter((i) => i.vivo).length);
     if (chave.startsWith('item:')) return String(this.mundo?.inventario.get(chave.slice(5)) ?? 0);
     return this.valoresHud.get(chave) ?? null;
@@ -1030,12 +1062,9 @@ export class ModoTeste {
     els.forEach((e, k) => {
       const v = valores[k];
       if (v === null) return;
-      const d = elementoHud(e, v, z);
+      const d = elementoHud(e, v, z, this.urlImagem);
       this.elHudTela.append(d);
-      const w = d.offsetWidth / z, h = d.offsetHeight / z;
-      const p = posicaoHud(e, w, h, rw, rh);
-      d.style.left = `${p.x * z}px`;
-      d.style.top = `${p.y * z}px`;
+      posicionarHud(d, e, z, rw, rh);
     });
     this.elHudTela.hidden = false;
   }
