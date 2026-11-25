@@ -75,6 +75,8 @@ export interface InimigoFase {
   olhandoDireita: boolean;
   /** Spawner: só aparece quando o jogador entra neste gatilho (id do objeto). Vazio = desde o início. */
   surge?: string;
+  /** Só este inimigo: valores que trocam os do tipo (vida, velocidades, visão…). Ausente = igual ao tipo. */
+  ajustes?: Partial<Record<import('./inimigos').ChaveAjusteInimigo, number>>;
 }
 
 export type FormaLuz = 'circulo' | 'cone' | 'retangulo';

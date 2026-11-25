@@ -39,6 +39,7 @@ import { arquivoScript, importarModulo, modeloScript, tiposApi } from './core/sc
 import { SISTEMAS } from './core/sistemaPadrao';
 import { definirDefinicoes, normalizarDefinicoes } from './core/definicoes';
 import { ligacoesCampos } from './ui/camposJogo';
+import { aplicarBlocoControles, aplicarBlocoHud, aplicarBlocoMapa, blocoControles, blocoHud, blocoMapa } from './core/configScript';
 import { aplicarBlocoArma, aplicarBlocoFase, aplicarBlocoJogo, aplicarBlocoObjeto, aplicarBlocoPersonagem, blocoArma, blocoFase, blocoJogo, blocoObjeto, blocoPersonagem, escreverBloco, lerBloco, mesmosValores } from './core/configScript';
 import { modeloArma, modeloComportamento, modeloInimigoZumbi } from './core/modelosScript';
 import type { Personagem as DadosPersonagem } from './core/personagem';
@@ -234,7 +235,7 @@ function moverSelecionado(dx: number, dy: number) {
 new PainelPropriedades(painelProps, estado, {
   duplicar: duplicarSelecionado,
   abrirCodigo: (id) => void abrirCodigo(id ? 'obj:' + id : 'fase'),
-  tiposInimigo: () => [...tiposInimigo].map(([arquivo, t]) => ({ arquivo, nome: t.p.nome, vida: t.p.inimigo?.vida, script: t.p.script })),
+  tiposInimigo: () => [...tiposInimigo].map(([arquivo, t]) => ({ arquivo, nome: t.p.nome, vida: t.p.inimigo?.vida, script: t.p.script, inimigo: t.p.inimigo })),
   abrirPersonagem: (arquivo) => void abrirPersonagens(arquivo),
   abrirCodigoInimigo: (id) => void abrirCodigo('ini:' + id),
   copiar: () => copiarSelecionado(),
@@ -281,7 +282,8 @@ let config: ConfigProjeto = { ...CONFIG_PADRAO };
 let timerConfig = 0;
 function salvarConfigDepois() {
   clearTimeout(timerConfig);
-  timerConfig = window.setTimeout(() => void plat.salvarConfigProjeto(config), 400);
+  // Depois de gravar, os scripts de valores (jogo.js, hud.js, controles.js, mapa.js) acompanham
+  timerConfig = window.setTimeout(() => { void plat.salvarConfigProjeto(config).then(() => sincronizarBlocosDepois()); }, 400);
 }
 
 /** Coloca um asset na camada ativa. (sx, sy) = posição na tela; sem posição = centro da visão.
@@ -684,8 +686,18 @@ async function garantirFaseSalva(): Promise<string | null> {
 painelCodigo.registrarFonte(async () => {
   const existe = (await plat.listarDados('scripts')).includes('jogo.js');
   const b = blocoJogo({ ...JOGADOR_PADRAO, ...(config.jogador ?? {}) });
-  return [{ chave: 'jogo', grupo: 'Jogo', nome: 'Jogo (global)', detalhe: 'vale em todas as fases', dono: 'jogo', arquivo: existe ? 'jogo.js' : null, arquivoNovo: arquivoScript.jogo(),
-    modelo: escreverBloco(modeloScript('jogo', 'Jogo (global)'), b.valores, b.comentarios, 'o jogo (física do jogador)') }];
+  const scripts = new Set(await plat.listarDados('scripts'));
+  const dados = (arq: string, nome: string, detalhe: string, bl: { valores: import('./core/configScript').Bloco; comentarios: Record<string, string> }, titulo: string, explica: string): ElementoCodigo => ({
+    chave: 'dados:' + arq, grupo: 'Jogo', nome, detalhe, dono: 'modulo', arquivo: scripts.has(arq) ? arq : null, arquivoNovo: arq,
+    modelo: escreverBloco(`// ${nome}: ${explica}.\n// Outros scripts podem ler com: import { config } from './${arq}';\n`, bl.valores, bl.comentarios, titulo),
+  });
+  return [
+    { chave: 'jogo', grupo: 'Jogo', nome: 'Jogo (global)', detalhe: 'vale em todas as fases', dono: 'jogo', arquivo: existe ? 'jogo.js' : null, arquivoNovo: arquivoScript.jogo(),
+      modelo: escreverBloco(modeloScript('jogo', 'Jogo (global)'), b.valores, b.comentarios, 'o jogo (física do jogador)') },
+    dados('hud.js', 'HUD', 'elementos da tela e tela de morte (ferramenta HUD, U)', blocoHud(normalizarHud(config.hud)), 'HUD', 'o que aparece na tela durante o jogo (vida, munição, rosto, arma…) e a tela de morte'),
+    dados('controles.js', 'Controles', 'teclas de cada ação (ferramenta Controles, B)', blocoControles(normalizarControles(config.controles)), 'Controles', 'qual tecla (ou combinação, ou sequência) faz cada ação'),
+    dados('mapa.js', 'Mapa', 'passagens e transições entre salas (ferramenta Mapa, M)', blocoMapa(normalizarMapa(config.mapa)), 'Mapa', 'como as salas se ligam e a transição de cada passagem'),
+  ];
 });
 // Fonte 2: a fase aberta e seus objetos
 painelCodigo.registrarFonte(async () => {
@@ -785,7 +797,7 @@ painelCodigo.registrarFonte(async () => {
 });
 // Fonte 4: seus módulos (classes e funções para importar) e scripts que não pertencem a nada aberto agora
 painelCodigo.registrarFonte(async () => {
-  const usados = new Set<string>(['jogo.js', ...SISTEMAS.map((s) => s.arquivo)]);
+  const usados = new Set<string>(['jogo.js', 'hud.js', 'controles.js', 'mapa.js', ...SISTEMAS.map((s) => s.arquivo)]);
   if (estado.fase.script) usados.add(estado.fase.script);
   for (const o of estado.fase.objetos) if (o.script) usados.add(o.script);
   for (const arq of await plat.listarDados('personagens')) {
@@ -924,6 +936,9 @@ async function sincronizarBlocos() {
       LOG.add({ cat: 'sistema', texto: `bloco config de ${arquivo} atualizado com os valores do editor` });
     };
     await trocar('jogo.js', blocoJogo({ ...JOGADOR_PADRAO, ...(config.jogador ?? {}) }), 'o jogo (física do jogador)', 'jogo/projeto.json');
+    await trocar('hud.js', blocoHud(normalizarHud(config.hud)), 'HUD', 'jogo/projeto.json');
+    await trocar('controles.js', blocoControles(normalizarControles(config.controles)), 'Controles', 'jogo/projeto.json');
+    await trocar('mapa.js', blocoMapa(normalizarMapa(config.mapa)), 'Mapa', 'jogo/projeto.json');
     const f = estado.fase;
     const arqFase = !estado.sujo && estado.arquivoFase ? 'jogo/fases/' + estado.arquivoFase : null;
     await trocar(f.script, blocoFase(f), f.nome, arqFase);
@@ -956,6 +971,28 @@ async function aplicarBlocoDoScript(arquivo: string) {
       config.jogador = aplicarBlocoJogo(atual, b); teste.config = { ...config.jogador }; salvarConfigDepois(); mudou.push('jogo');
     }
   }
+  if (arquivo === 'hud.js') {
+    const atual = normalizarHud(config.hud);
+    if (!mesmosValores(blocoHud(atual).valores, b)) {
+      config.hud = aplicarBlocoHud(atual, b); teste.hudConfig = normalizarHud(config.hud); salvarConfigDepois(); mudou.push('HUD');
+      if (editorHud.aberta) void abrirHud();
+    }
+  }
+  if (arquivo === 'controles.js') {
+    const atual = normalizarControles(config.controles);
+    if (!mesmosValores(blocoControles(atual).valores, b)) {
+      config.controles = aplicarBlocoControles(atual, b); salvarConfigDepois(); mudou.push('Controles');
+      editorPersonagens.atualizarControles(config.controles);
+      if (editorControles.aberta) void abrirControles();
+    }
+  }
+  if (arquivo === 'mapa.js') {
+    const atual = normalizarMapa(config.mapa);
+    if (!mesmosValores(blocoMapa(atual).valores, b)) {
+      config.mapa = aplicarBlocoMapa(atual, b); salvarConfigDepois(); mudou.push('Mapa'); atualizarSetas(true);
+      if (editorMapa.aberta) void abrirMapa();
+    }
+  }
   const f = estado.fase;
   if (f.script === arquivo && !mesmosValores(blocoFase(f).valores, b)) { estado.alterar((x) => aplicarBlocoFase(x, b)); mudou.push(f.nome); }
   const donos = f.objetos.filter((o) => o.script === arquivo);
@@ -979,7 +1016,7 @@ async function aplicarBlocoDoScript(arquivo: string) {
     } catch { /* ilegível */ }
   }
   if (!mudou.length) return;
-  if (mudou.some((n) => n !== 'jogo')) await carregarTiposInimigo();
+  if (mudou.some((n) => !['jogo', 'HUD', 'Controles', 'Mapa'].includes(n))) await carregarTiposInimigo();
   // A fase mudou pelo código: salva junto (se já tinha arquivo), para o valor valer no ▶ Testar e no disco
   if (estado.sujo && estado.arquivoFase && (f.script === arquivo || donos.length)) await salvar();
   LOG.add({ cat: 'codigo', arquivo, texto: `valores do bloco config aplicados em: ${mudou.join(', ')}` });

@@ -10,6 +10,7 @@ export const FORMAS_LUZ: { id: FormaLuz; nome: string; texto: string }[] = [
 import { NOMES_FORMA, caixa, reescalar } from '../editor/colisoes';
 import { dica } from './legenda';
 import { secaoCamposJogo } from './camposJogo';
+import { AJUSTES_INIMIGO, inimigoPadrao } from '../core/inimigos';
 import { aoMudarDefinicoes } from '../core/definicoes';
 import { EFEITOS_PADRAO, type Efeito, type TipoEfeito } from '../core/efeitos';
 import { ACOES_GATILHO, MODOS_PASSAGEM, NOMES_COMPORTAMENTO, comportamentoPadrao, type AcaoGatilho, type Comportamento, type ModoPassagem, type TipoComportamento } from '../core/comportamentos';
@@ -21,7 +22,7 @@ export interface AcoesObjeto {
   /** Abre o painel de Código no objeto (id) ou na fase (null). */
   abrirCodigo(id: string | null): void;
   /** Tipos de inimigo disponíveis (personagens NPC). */
-  tiposInimigo(): { arquivo: string; nome: string; vida?: number; script?: string }[];
+  tiposInimigo(): { arquivo: string; nome: string; vida?: number; script?: string; inimigo?: import('../core/inimigos').ConfigInimigo }[];
   /** Abre o editor de Personagens no tipo do inimigo. */
   abrirPersonagem(arquivo: string): void;
   /** Abre o painel de Código no tipo do inimigo colocado (id da colocação). */
@@ -588,11 +589,35 @@ export class PainelPropriedades {
         this.num('Y', i.y, (v) => { i.y = Math.round(v); })),
       el('label', { class: 'check' }, olhando, 'Começa olhando para a direita'),
       this.campoSurge(i),
-      el('span', { class: 'dica-campo' }, t ? `Vida ${t.vida ?? '?'} tiro(s). Posição = pés. Arraste no cenário (gruda no chão; Alt solta).` : 'Tipo não encontrado: crie o personagem NPC em Personagens (K).')),
+      el('span', { class: 'dica-campo' }, t ? `Vida ${i.ajustes?.vida ?? t.vida ?? '?'} tiro(s). Posição = pés. Arraste no cenário (gruda no chão; Alt solta).` : 'Tipo não encontrado: crie o personagem NPC em Personagens (K).')),
+      this.secaoAjustesInimigo(i, t?.inimigo),
       el('div', { class: 'secao acoes' },
         botao('Editar o tipo…', () => this.acoes.abrirPersonagem(i.personagem)),
         botao(t?.script ? 'Código do tipo { }' : 'Código do tipo…', () => this.acoes.abrirCodigoInimigo(i.id)),
         botao('Excluir', () => this.acoes.excluir(), 'perigo')));
+  }
+
+  /** Só este inimigo: valores que trocam os do tipo (o resto continua vindo do tipo). */
+  private secaoAjustesInimigo(i: InimigoFase, base: import('../core/inimigos').ConfigInimigo | undefined) {
+    const titulo = el('h3', {}, 'Só este inimigo');
+    dica(titulo, 'Só este inimigo', 'Valores diferentes do tipo apenas para este inimigo (ex.: um zumbi mais forte). Igual ao tipo = segue o tipo. No código: bloco config da fase › inimigos › ajustes; no ▶ Testar: eu.config.');
+    const b = base ?? inimigoPadrao();
+    const campos = AJUSTES_INIMIGO.map((a) => {
+      const proprio = i.ajustes?.[a.chave] !== undefined;
+      const caixa = this.num(a.nome + (proprio ? ' •' : ''), i.ajustes?.[a.chave] ?? b[a.chave], (v) => {
+        const aj = { ...(i.ajustes ?? {}) };
+        if (v === b[a.chave]) delete aj[a.chave]; else aj[a.chave] = v;
+        if (Object.keys(aj).length) i.ajustes = aj; else delete i.ajustes;
+      }, { passo: a.passo, min: a.min });
+      dica(caixa.querySelector('label')!, a.nome, `${a.texto} Tipo: ${b[a.chave]}.${proprio ? ' • = diferente do tipo (volte ao valor do tipo para seguir o tipo de novo).' : ''}`);
+      return caixa;
+    });
+    const linhas: HTMLElement[] = [];
+    for (let k = 0; k < campos.length; k += 2) linhas.push(el('div', { class: 'linha2' }, ...campos.slice(k, k + 2)));
+    const voltar = el('button', { type: 'button', class: 'secundario largo' }, 'Igual ao tipo (limpar ajustes)');
+    voltar.disabled = !i.ajustes;
+    voltar.addEventListener('click', () => { this.estado.alterar(() => { delete i.ajustes; }); this.render(true); });
+    return el('div', { class: 'secao' }, titulo, ...linhas, voltar);
   }
 
   /** Spawner: o inimigo só aparece quando o jogador entra num gatilho. */

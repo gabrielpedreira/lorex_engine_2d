@@ -580,7 +580,11 @@ export class PainelCodigo {
         el('p', { class: 'dica-campo' }, 'Dica: Ctrl+F procura dentro do arquivo.'));
       return;
     }
-    if (dono === 'modulo') {
+    const arqAba = aba?.novo?.arquivoNovo ?? aba?.arquivo ?? '';
+    if (dono === 'modulo' && ['hud.js', 'controles.js', 'mapa.js'].includes(arqAba)) {
+      blocos.splice(0, 2, el('h3', {}, 'Valores do projeto'),
+        el('p', { class: 'dica-campo' }, `Os mesmos valores da ferramenta (${arqAba === 'hud.js' ? 'HUD, U' : arqAba === 'controles.js' ? 'Controles, B' : 'Mapa, M'}). Mude aqui e salve (Ctrl+S): a ferramenta e o jogo passam a usar. Mudou na ferramenta? Este bloco se reescreve sozinho.`));
+    } else if (dono === 'modulo') {
       blocos.splice(0, 2, el('h3', {}, 'Módulo'),
         el('p', { class: 'dica-campo' }, 'Arquivo seu: classes, funções e valores. Use em qualquer script com import { Nome } from "./arquivo.js". Quem importa o mesmo módulo divide as mesmas variáveis.'));
     }

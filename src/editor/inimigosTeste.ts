@@ -34,7 +34,8 @@ export class InimigoVivo {
   removido = false;
 
   constructor(readonly def: InimigoFase, readonly tipo: TipoInimigo, gravidade: number) {
-    const cfg = tipo.p.inimigo ?? inimigoPadrao();
+    // Os ajustes deste inimigo (Propriedades / bloco config da fase) trocam os valores do tipo só para ele
+    const cfg = { ...(tipo.p.inimigo ?? inimigoPadrao()), ...(def.ajustes ?? {}) };
     this.ia = new IAInimigo(cfg);
     this.corpo = new Jogador({ largura: tipo.p.caixa.largura, altura: tipo.p.caixa.altura, velocidade: 0, alturaPulo: 0, gravidade }, def.x, def.y);
     this.corpo.olhandoDireita = def.olhandoDireita;

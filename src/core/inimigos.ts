@@ -43,6 +43,31 @@ export interface ConfigInimigo {
   momentoDano: number;
 }
 
+/** Valores do tipo que cada inimigo colocado pode trocar só para ele (Propriedades e bloco config da fase). */
+export const AJUSTES_INIMIGO = [
+  { chave: 'vida', nome: 'Vida', texto: 'Tiros para morrer (dano 1 por tiro).', passo: 1, min: 1 },
+  { chave: 'velocidadeAndar', nome: 'Velocidade andando', texto: 'px/s perambulando.', passo: 5, min: 0 },
+  { chave: 'velocidadePerseguir', nome: 'Velocidade perseguindo', texto: 'px/s indo atrás do jogador.', passo: 5, min: 0 },
+  { chave: 'visao', nome: 'Visão (px)', texto: 'Distância em que percebe o jogador.', passo: 10, min: 0 },
+  { chave: 'perderVisao', nome: 'Desiste em (px)', texto: 'Distância em que para de perseguir.', passo: 10, min: 0 },
+  { chave: 'alcanceAtaque', nome: 'Alcance do ataque (px)', texto: 'Espaço entre os corpos para atacar.', passo: 2, min: 0 },
+  { chave: 'intervaloAtaque', nome: 'Entre ataques (s)', texto: 'Segundos entre um ataque e outro.', passo: 0.1, min: 0.05 },
+  { chave: 'audicaoTiro', nome: 'Ouve tiros (px)', texto: 'Distância em que ouve um tiro (0 = surdo).', passo: 10, min: 0 },
+  { chave: 'alertaTiro', nome: 'Alerta (s)', texto: 'Segundos indo atrás do som de um tiro.', passo: 0.5, min: 0 },
+] as const;
+export type ChaveAjusteInimigo = typeof AJUSTES_INIMIGO[number]['chave'];
+
+/** Normaliza os ajustes de um inimigo colocado (só números conhecidos). */
+export function normalizarAjustes(d: unknown): Partial<Record<ChaveAjusteInimigo, number>> | undefined {
+  if (!d || typeof d !== 'object') return undefined;
+  const r: Partial<Record<ChaveAjusteInimigo, number>> = {};
+  for (const a of AJUSTES_INIMIGO) {
+    const v = Number((d as Record<string, unknown>)[a.chave]);
+    if ((d as Record<string, unknown>)[a.chave] !== undefined && Number.isFinite(v)) r[a.chave] = Math.max(a.min, a.chave === 'vida' ? Math.round(v) : v);
+  }
+  return Object.keys(r).length ? r : undefined;
+}
+
 export function inimigoPadrao(): ConfigInimigo {
   return {
     comportamento: 'zumbi', vida: 3, visao: 210, perderVisao: 330, velocidadeAndar: 30, velocidadePerseguir: 55,

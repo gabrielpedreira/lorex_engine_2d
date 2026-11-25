@@ -451,6 +451,18 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   `aplicarMudanca` envolve toda mudança: remove conexões sem pontas e apaga as passagens-zona (`PassagemSala.zona`)
   que perderam a última conexão (`passagensUsadas` antes × depois).
 
+### 4.40 Tudo no Código: luzes, camadas, inimigos, HUD, Controles e Mapa
+
+- Bloco da fase (`blocoFase`): além dos valores gerais, `corEscuro`, `lanternaForma`, `camadas` (id, nome,
+  paralaxe, visível; só edita as que existem), `luzes` (lista completa; linha apagada = luz removida, linha sem id =
+  luz nova) e `inimigos` (id, tipo, x, y, olhandoDireita, surge, `ajustes`).
+- `InimigoFase.ajustes`: valores do tipo trocados só para aquele inimigo (`AJUSTES_INIMIGO` em `core/inimigos.ts`).
+  `InimigoVivo` junta tipo + ajustes; `eu.config` no script mostra o resultado. Propriedades › "Só este inimigo".
+- Scripts de valores do projeto, no grupo Jogo: `hud.js` (`blocoHud`), `controles.js` (`blocoControles`: atalho
+  em texto — "KeyJ"/"J", "Shift + KeyJ", "ArrowDown > ArrowRight > KeyJ") e `mapa.js` (`blocoMapa`: conexões e
+  transições; a posição dos losangos fica só no diagrama). Sincronizados como os outros (mais novo vence);
+  `salvarConfigDepois` ressincroniza depois de gravar o projeto.json.
+
 ### 4.39 Definições: as bases do jogo e as da engine
 
 - **Definições do jogo** (`jogo/scripts/definicoes.js`, Código › Sistema do jogo › Definições do jogo): o jogo declara

@@ -8,7 +8,12 @@ import type { Comportamento } from './comportamentos';
 import type { ConfigJogador } from './fisica';
 import { normalizarArma, normalizarInimigo, type ConfigArma } from './inimigos';
 import { normalizarVida, type Personagem } from './personagem';
-import type { Fase, ObjetoFase } from './tipos';
+import type { Fase, InimigoFase, LuzFase, ObjetoFase } from './tipos';
+import { normalizarLuz, novoIdInimigo, novoIdLuz } from './fase';
+import { normalizarAjustes } from './inimigos';
+import { normalizarHud, type ConfigHud } from './hud';
+import { normalizarControles, type Atalho, type Controles } from './controles';
+import { normalizarMapa, type Mapa } from './mapa';
 import { definicoes, valoresCampos, type AlvoCampo } from './definicoes';
 
 type Valor = number | string | boolean | null | Valor[] | { [k: string]: Valor };
@@ -319,9 +324,26 @@ export function blocoFase(f: Fase): { valores: Bloco; comentarios: Record<string
   return comCampos('fase', f.campos, {
     valores: {
       nome: f.nome, largura: f.tamanho[0], altura: f.tamanho[1], tela: [...f.resolucaoBase], corFundo: f.corFundo, inicio: [...f.spawnJogador],
-      escura: f.iluminacao.escura, escuridao: f.iluminacao.escuridao, lanterna: f.iluminacao.lanterna,
+      escura: f.iluminacao.escura, escuridao: f.iluminacao.escuridao, corEscuro: f.iluminacao.cor, lanterna: f.iluminacao.lanterna, lanternaForma: f.iluminacao.lanternaForma,
+      camadas: f.camadas.map((c) => ({ id: c.id, nome: c.nome, paralaxe: [c.parallax[0], c.parallax[1]], visivel: c.visivel })),
+      luzes: f.luzes.map((l) => ({
+        id: l.id, nome: l.nome, forma: l.forma, x: Math.round(l.x), y: Math.round(l.y), raio: l.raio, intensidade: l.intensidade, cor: l.cor,
+        ...(l.forma === 'cone' ? { angulo: l.angulo, abertura: l.abertura } : {}),
+        ...(l.forma === 'retangulo' ? { largura: l.largura, altura: l.altura, angulo: l.angulo } : {}),
+        tremular: l.tremular, ligada: l.ligada,
+      })),
+      inimigos: f.inimigos.map((i) => ({
+        id: i.id, tipo: i.personagem, x: Math.round(i.x), y: Math.round(i.y), olhandoDireita: i.olhandoDireita, surge: i.surge ?? '',
+        ajustes: { ...(i.ajustes ?? {}) },
+      })),
     },
-    comentarios: { largura: 'tamanho da fase (px)', altura: 'tamanho da fase (px)', tela: 'tela do jogo [largura, altura] (ferramenta Q)', inicio: 'pés do jogador ao começar [x, y]', escura: 'sala no escuro', escuridao: '0 a 1', lanterna: 'raio da luz do jogador (0 = sem)' },
+    comentarios: {
+      largura: 'tamanho da fase (px)', altura: 'tamanho da fase (px)', tela: 'tela do jogo [largura, altura] (ferramenta Q)', inicio: 'pés do jogador ao começar [x, y]',
+      escura: 'sala no escuro', escuridao: '0 a 1', corEscuro: 'cor da escuridão', lanterna: 'raio da luz do jogador (0 = sem)', lanternaForma: '"circulo" ou "cone"',
+      camadas: 'paralaxe [x, y]: 0 = parada, 1 = junto com o jogador, >1 = primeiro plano',
+      luzes: 'forma: "circulo", "cone" ou "retangulo"; intensidade 0 a 1. Apague uma linha para tirar a luz; uma linha sem id cria uma luz nova',
+      inimigos: 'tipo = personagem NPC; surge = id do gatilho ("" = desde o início); ajustes = só este inimigo (vida, velocidadeAndar, velocidadePerseguir, visao, perderVisao, alcanceAtaque, intervaloAtaque, audicaoTiro, alertaTiro)',
+    },
   });
 }
 
@@ -334,6 +356,44 @@ export function aplicarBlocoFase(f: Fase, b: Bloco) {
   if (typeof b.corFundo === 'string') f.corFundo = b.corFundo;
   if (Array.isArray(b.inicio) && b.inicio.length === 2) f.spawnJogador = [num(b.inicio[0], f.spawnJogador[0]), num(b.inicio[1], f.spawnJogador[1])];
   if (typeof b.escura === 'boolean') f.iluminacao.escura = b.escura;
+  if (typeof b.corEscuro === 'string' && /^#[0-9a-f]{6}$/i.test(b.corEscuro)) f.iluminacao.cor = b.corEscuro;
+  if (b.lanternaForma === 'circulo' || b.lanternaForma === 'cone') f.iluminacao.lanternaForma = b.lanternaForma;
+  // Camadas: só mexe nas que existem (os objetos moram nelas)
+  if (Array.isArray(b.camadas)) for (const c of b.camadas as Bloco[]) {
+    const cam = f.camadas.find((x) => x.id === c?.id) ?? f.camadas.find((x) => x.nome === c?.nome);
+    if (!cam) continue;
+    if (typeof c.nome === 'string' && c.nome.trim()) cam.nome = c.nome.trim();
+    if (Array.isArray(c.paralaxe) && c.paralaxe.length === 2) cam.parallax = [num(c.paralaxe[0], cam.parallax[0]), num(c.paralaxe[1], cam.parallax[1])];
+    if (typeof c.visivel === 'boolean') cam.visivel = c.visivel;
+  }
+  // Luzes: linha apagada = luz removida; linha sem id (ou id novo) = luz nova
+  if (Array.isArray(b.luzes)) {
+    const novas: LuzFase[] = [];
+    for (const l of b.luzes as Bloco[]) {
+      if (!l || typeof l !== 'object') continue;
+      const antiga = f.luzes.find((x) => x.id === l.id);
+      const id = antiga?.id ?? (typeof l.id === 'string' && l.id && !novas.some((n) => n.id === l.id) ? l.id : novoIdLuz({ ...f, luzes: [...f.luzes, ...novas] }));
+      novas.push(normalizarLuz({ ...(antiga ?? {}), ...(l as Partial<LuzFase>), id }));
+    }
+    f.luzes = novas;
+  }
+  // Inimigos: linha apagada = inimigo removido; linha sem id = inimigo novo
+  if (Array.isArray(b.inimigos)) {
+    const novos: InimigoFase[] = [];
+    for (const i of b.inimigos as Bloco[]) {
+      if (!i || typeof i !== 'object' || typeof i.tipo !== 'string') continue;
+      const antigo = f.inimigos.find((x) => x.id === i.id);
+      const id = antigo?.id ?? (typeof i.id === 'string' && i.id && !novos.some((n) => n.id === i.id) ? i.id : novoIdInimigo({ ...f, inimigos: [...f.inimigos, ...novos] }));
+      const aj = normalizarAjustes(i.ajustes);
+      novos.push({
+        id, personagem: i.tipo, x: num(i.x, antigo?.x ?? 0), y: num(i.y, antigo?.y ?? 0),
+        olhandoDireita: typeof i.olhandoDireita === 'boolean' ? i.olhandoDireita : (antigo?.olhandoDireita ?? false),
+        ...(typeof i.surge === 'string' && i.surge ? { surge: i.surge } : {}),
+        ...(aj ? { ajustes: aj } : {}),
+      });
+    }
+    f.inimigos = novos;
+  }
   f.iluminacao.escuridao = Math.max(0, Math.min(1, num(b.escuridao, f.iluminacao.escuridao)));
   f.iluminacao.lanterna = Math.max(0, num(b.lanterna, f.iluminacao.lanterna));
 }
@@ -348,4 +408,60 @@ export function blocoJogo(j: ConfigJogador): { valores: Bloco; comentarios: Reco
 
 export function aplicarBlocoJogo(j: ConfigJogador, b: Bloco): ConfigJogador {
   return { ...j, velocidade: Math.max(10, num(b.velocidade, j.velocidade)), alturaPulo: Math.max(4, num(b.alturaPulo, j.alturaPulo)), gravidade: Math.max(50, num(b.gravidade, j.gravidade)) };
+}
+
+// ---------- HUD, Controles e Mapa (projeto.json): scripts só de valores no grupo Jogo ----------
+
+export function blocoHud(h: ConfigHud): { valores: Bloco; comentarios: Record<string, string> } {
+  return {
+    valores: { elementos: h.elementos.map((e) => ({ ...e, faixas: e.faixas.map((f) => ({ ...f })) })) as unknown as Valor[], morte: { ...h.morte } as unknown as Bloco },
+    comentarios: {
+      elementos: 'cada elemento do HUD: chave = o que mostra (vida, municao, item:moeda…); ancora = canto (no, n, ne, o, c, l, so, s, se); estilo = texto, barra, icones, caixas ou imagem; faixas = valor ≤ ate troca cor/imagem',
+      morte: 'tela de morte: imagem (spritesheet) ou só o texto; escurecer 0 a 1',
+    },
+  };
+}
+export function aplicarBlocoHud(h: ConfigHud, b: Bloco): ConfigHud {
+  return normalizarHud({ elementos: Array.isArray(b.elementos) ? b.elementos : h.elementos, morte: b.morte && typeof b.morte === 'object' ? b.morte : h.morte });
+}
+
+/** Atalho como texto: "KeyJ", "Shift + KeyJ" (juntas), "ArrowDown > ArrowRight > KeyJ" (sequência). Letras/números sozinhos também valem: "J", "1". */
+function textoDoAtalho(a: Atalho) { return a.teclas.join(a.tipo === 'sequencia' ? ' > ' : a.tipo === 'combinacao' ? ' + ' : ''); }
+function atalhoDoTexto(t: string): Atalho | null {
+  const cod = (k: string) => { const x = k.trim(); return /^[A-Za-z]$/.test(x) ? 'Key' + x.toUpperCase() : /^\d$/.test(x) ? 'Digit' + x : x; };
+  const seq = t.split('>').map(cod).filter(Boolean);
+  if (seq.length > 1) return { tipo: 'sequencia', teclas: seq };
+  const comb = t.split(' + ').map(cod).filter(Boolean);
+  if (comb.length > 1) return { tipo: 'combinacao', teclas: comb };
+  return t.trim() ? { tipo: 'tecla', teclas: [cod(t)] } : null;
+}
+export function blocoControles(c: Controles): { valores: Bloco; comentarios: Record<string, string> } {
+  const acoes: Bloco = {};
+  for (const [k, lista] of Object.entries(c.acoes)) acoes[k] = lista.map(textoDoAtalho);
+  return {
+    valores: { acoes, janelaSequencia: c.janelaSequencia },
+    comentarios: { acoes: 'ação → teclas. "KeyJ" (ou "J"), "Shift + KeyJ" = juntas, "ArrowDown > ArrowRight > KeyJ" = uma depois da outra', janelaSequencia: 's máximos entre as teclas de uma sequência' },
+  };
+}
+export function aplicarBlocoControles(c: Controles, b: Bloco): Controles {
+  const acoes: Record<string, Atalho[]> = {};
+  if (b.acoes && typeof b.acoes === 'object' && !Array.isArray(b.acoes)) {
+    for (const [k, lista] of Object.entries(b.acoes as Bloco)) {
+      if (!Array.isArray(lista)) continue;
+      acoes[k] = lista.flatMap((t) => (typeof t === 'string' ? [atalhoDoTexto(t)].filter((x): x is Atalho => !!x) : []));
+    }
+  }
+  return normalizarControles({ acoes: b.acoes ? acoes : c.acoes, janelaSequencia: num(b.janelaSequencia, c.janelaSequencia) });
+}
+
+export function blocoMapa(m: Mapa): { valores: Bloco; comentarios: Record<string, string> } {
+  return {
+    valores: { conexoes: m.conexoes.map(({ pos: _pos, ...c }) => JSON.parse(JSON.stringify(c))) as Valor[] },
+    comentarios: { conexoes: 'passagens entre salas: a/b = { fase, passagem }; maoDupla = volta pelo mesmo caminho; transicao = efeito (corte, escurecer, tela), duracao (s), cor, texto, som, volume' },
+  };
+}
+export function aplicarBlocoMapa(m: Mapa, b: Bloco): Mapa {
+  if (!Array.isArray(b.conexoes)) return m;
+  const conexoes = (b.conexoes as Bloco[]).map((c) => ({ ...c, ...(m.conexoes.find((x) => x.id === c?.id)?.pos ? { pos: m.conexoes.find((x) => x.id === c?.id)!.pos } : {}) }));
+  return normalizarMapa({ salas: m.salas, conexoes });
 }

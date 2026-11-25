@@ -2,6 +2,7 @@ import type { Camada, Colisao, Fase, Iluminacao, LuzFase, ObjetoFase, TipoCena }
 import { normalizarEfeitos } from './efeitos';
 import { normalizarComportamentos } from './comportamentos';
 import { normalizarAnim } from './folha';
+import { normalizarAjustes } from './inimigos';
 
 export const VERSAO_FASE = 1;
 
@@ -77,6 +78,7 @@ export function normalizarFase(dados: unknown): Fase {
     inimigos: (Array.isArray(d.inimigos) ? d.inimigos : []).filter((i) => i && typeof i.personagem === 'string').map((i) => ({
       id: String(i.id), personagem: i.personagem, x: Number(i.x) || 0, y: Number(i.y) || 0, olhandoDireita: !!i.olhandoDireita,
       ...(typeof i.surge === 'string' && i.surge ? { surge: i.surge } : {}),
+      ...(normalizarAjustes(i.ajustes) ? { ajustes: normalizarAjustes(i.ajustes) } : {}),
     })),
     luzes: (Array.isArray(d.luzes) ? d.luzes : []).filter((l) => l && typeof l === 'object').map(normalizarLuz),
     iluminacao: { ...iluminacaoPadrao(), ...(d.iluminacao ?? {}) },

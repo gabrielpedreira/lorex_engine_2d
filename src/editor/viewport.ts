@@ -1445,7 +1445,7 @@ export class Viewport {
           const t = this.tiposInimigo.get(iniHover.personagem);
           cv.style.cursor = 'move';
           this.aoPairar({ titulo: `${t?.p.nome ?? iniHover.personagem} · inimigo (${iniHover.id})`,
-            texto: `${t?.p.inimigo ? `Vida ${t.p.inimigo.vida} · visão ${t.p.inimigo.visao} px. ` : ''}Clique para selecionar, arraste para mover (gruda no chão; Alt solta). Del exclui.` }, e.clientX, e.clientY);
+            texto: `${t?.p.inimigo ? `Vida ${iniHover.ajustes?.vida ?? t.p.inimigo.vida} · visão ${iniHover.ajustes?.visao ?? t.p.inimigo.visao} px${iniHover.ajustes ? ' (ajustado só neste)' : ''}. ` : ''}Clique para selecionar, arraste para mover (gruda no chão; Alt solta). Del exclui.` }, e.clientX, e.clientY);
           return;
         }
         if (this.estado.modo === 'inimigo') { cv.style.cursor = 'crosshair'; this.aoPairar(null, 0, 0); return; }
