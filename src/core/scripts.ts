@@ -10,7 +10,7 @@
 // (1) aparecer no explorador do painel de Código (fonte de elementos), (2) ganhar ganchos aqui em GANCHOS e
 // (3) expor a API dele em tiposApi(). Assim o código sempre acompanha o que existe no projeto.
 
-export type DonoScript = 'jogo' | 'fase' | 'objeto' | 'personagem' | 'inimigo';
+export type DonoScript = 'jogo' | 'fase' | 'objeto' | 'personagem' | 'inimigo' | 'arma';
 
 export interface Gancho {
   nome: string;
@@ -32,7 +32,8 @@ export const GANCHOS: Gancho[] = [
   { nome: 'aoAcionado', donos: ['objeto'], params: 'eu, jogo, origem', texto: 'Quando uma alavanca ligada a este objeto é acionada (origem = a alavanca).' },
   { nome: 'aoAcao', donos: ['personagem'], params: 'eu, jogo, acao', texto: 'Quando o jogador dispara uma ação (ex.: "tiro", "recarga"). Retorne false para cancelar a animação.' },
   { nome: 'aoUsarArma', donos: ['personagem'], params: 'eu, jogo, acao', texto: 'Regras da arma: chamado quando o jogador aperta a ação de tiro ou de recarga (seção Arma em Personagens). Com este gancho, quem decide é o código (pente, sem bala, recarga); sem ele, a engine usa as regras prontas.' },
-  { nome: 'aoAtirar', donos: ['personagem'], params: 'eu, jogo, alvo', texto: 'Depois de cada tiro da arma (alvo = inimigo acertado, ou null se errou).' },
+  { nome: 'aoCalcularDano', donos: ['arma'], params: 'eu, jogo, distancia, alvo', texto: 'Quanto de dano o tiro faz no alvo, que está a "distancia" px. Retorne o número. Sem este gancho, vale a tabela de dano por distância da arma (ferramenta Armas).' },
+  { nome: 'aoAtirar', donos: ['personagem', 'arma'], params: 'eu, jogo, alvo', texto: 'Depois de cada tiro da arma (alvo = inimigo acertado, ou null se errou).' },
   { nome: 'aoReagirAoDano', donos: ['personagem'], params: 'eu, jogo, dano, inimigo', texto: 'Como o personagem reage a um golpe (a vida já foi tirada): piscar, ficar invulnerável, ser empurrado, animação de dano. inimigo = quem bateu (ou null). Com este gancho, quem decide é o código; sem ele, a engine usa a reação pronta (Personagens › Vida).' },
   { nome: 'aoSerAtingido', donos: ['personagem'], params: 'eu, jogo, ataque, inimigo, dano', texto: 'Quando um inimigo acerta o jogador (ataque = "golpe", "mordida"…). Retorne false para ignorar o golpe.' },
   { nome: 'aoPensar', donos: ['inimigo'], params: 'eu, jogo, dt', texto: 'O CÉREBRO do inimigo, a cada quadro: decide andar, parar, perseguir, atacar (eu.andar, eu.atacar, eu.estado = "perseguir"…). Ataque, dano e morte em andamento são da engine (eu.ocupado). Sem este gancho, a engine usa a IA pronta.' },
@@ -64,15 +65,16 @@ export const arquivoScript = {
   inimigo: (arquivoPersonagem: string) => `personagem.${slugScript(arquivoPersonagem.replace(/\.json$/i, ''))}.js`,
   objeto: (arquivoFase: string, idObjeto: string) => `${slugScript(arquivoFase.replace(/\.json$/i, ''))}.${slugScript(idObjeto)}.js`,
   personagem: (arquivoPersonagem: string) => `personagem.${slugScript(arquivoPersonagem.replace(/\.json$/i, ''))}.js`,
+  arma: (arquivoArma: string) => `arma.${slugScript(arquivoArma.replace(/\.json$/i, ''))}.js`,
 };
 
-const TIPO_EU: Record<DonoScript, string> = { jogo: 'Jogo', fase: 'Jogo', objeto: 'Objeto', personagem: 'Jogador', inimigo: 'Inimigo' };
+const TIPO_EU: Record<DonoScript, string> = { jogo: 'Jogo', fase: 'Jogo', objeto: 'Objeto', personagem: 'Jogador', inimigo: 'Inimigo', arma: 'Arma' };
 
 /** Script novo, já com os ganchos daquele tipo de dono (comentados os que não são essenciais). */
 export function modeloScript(dono: DonoScript, nome: string, extra = ''): string {
   const ganchos = GANCHOS.filter((g) => g.donos.includes(dono));
   const principais: Record<DonoScript, string[]> = {
-    jogo: ['aoIniciar', 'aoTrocarFase'], fase: ['aoIniciar'], objeto: ['aoInteragir'], personagem: ['aoAcao', 'aoReagirAoDano', 'aoMorrer'], inimigo: ['aoVer', 'aoMorrer'],
+    jogo: ['aoIniciar', 'aoTrocarFase'], fase: ['aoIniciar'], objeto: ['aoInteragir'], personagem: ['aoAcao', 'aoReagirAoDano', 'aoMorrer'], arma: ['aoCalcularDano', 'aoAtirar'], inimigo: ['aoVer', 'aoMorrer'],
   };
   const linhas = [
     `// Script de ${nome}${extra ? ` (${extra})` : ''}.`,
@@ -84,7 +86,7 @@ export function modeloScript(dono: DonoScript, nome: string, extra = ''): string
     const ativo = principais[dono].includes(g.nome);
     const params = paramsDe(g, dono);
     const p = params.split(', ');
-    const tipoParam = (x: string) => x === 'eu' ? TIPO_EU[dono] : x === 'jogo' ? 'Jogo' : x === 'dt' || x === 'dano' ? 'number'
+    const tipoParam = (x: string) => x === 'eu' ? TIPO_EU[dono] : x === 'jogo' ? 'Jogo' : x === 'dt' || x === 'dano' || x === 'distancia' ? 'number'
       : x === 'origem' || x === 'passagem' ? 'Objeto' : x === 'destino' ? 'Destino' : x === 'inimigo' ? 'Inimigo' : x === 'alvo' ? 'Inimigo | null' : 'string';
     const doc = [`/**`, ` * ${g.texto}`, ...p.map((x) => ` * @param {${tipoParam(x)}} ${x}`), ' */'];
     const corpo = ativo ? exemploPara(dono, g.nome) : '  ';
@@ -97,6 +99,12 @@ export function modeloScript(dono: DonoScript, nome: string, extra = ''): string
 function exemploPara(dono: DonoScript, nome: string) {
   if (dono === 'objeto' && nome === 'aoInteragir') return "  jogo.aviso(`Você mexeu em ${eu.nome}`);\n  // return false; // descomente para cancelar o comportamento pronto";
   if (dono === 'personagem' && nome === 'aoAcao') return '  // if (acao === "tiro") { ... }';
+  if (dono === 'arma' && nome === 'aoCalcularDano') return [
+    '  // O pronto: a tabela de dano por distância do bloco config (config.danoPorDistancia).',
+    '  // Ex.: tiro na cabeça, dano dobrado de perto, crítico aleatório…',
+    '  return eu.danoEm(distancia);',
+  ].join('\n');
+  if (dono === 'arma' && nome === 'aoAtirar') return '  // if (alvo) jogo.log(`${eu.nome} acertou ${alvo.nome}`);';
   if (dono === 'personagem' && nome === 'aoReagirAoDano') return [
     '  // A reação pronta da engine, escrita aqui para você mudar:',
     '  eu.piscar(1, "#ff6060");          // pisca em vermelho por 1 s (eu.piscar() = tempo de Personagens › Vida)',
@@ -242,15 +250,8 @@ interface Jogador {
   /** Guarde aqui o que quiser do jogador. */
   dados: Record<string, any>;
   /** Arma (seção Arma em Personagens). */
-  readonly arma: {
-    /** Balas no pente (pode mudar). */
-    municao: number;
-    readonly pente: number;
-    /** Recarga pelas regras prontas da engine. */
-    recarregar(): void;
-    /** Tiro instantâneo com o dano e o alcance da arma; devolve o inimigo acertado ou null. */
-    disparar(): Inimigo | null;
-  };
+  /** Arma equipada (ferramenta Armas). */
+  readonly arma: Arma;
   /** Duração (s) de uma animação do personagem. */
   duracao(animacao: NomeAnimacao): number;
   /** Está preso num agarrão? */
@@ -271,6 +272,24 @@ interface Jogador {
   readonly morto: boolean;
   /** Piscando depois de um golpe (golpes não pegam). */
   readonly invulneravel: boolean;
+}
+
+/** A arma equipada (ferramenta Armas; os valores ficam no bloco config do script da arma). */
+interface Arma {
+  readonly nome: string;
+  /** Balas no pente (pode mudar). */
+  municao: number;
+  readonly pente: number;
+  /** Até onde o tiro chega (px). */
+  readonly alcance: number;
+  /** Espaços que ocupa no inventário. */
+  readonly slots: number;
+  /** Dano pela tabela de dano por distância (ex.: eu.danoEm(100)). */
+  danoEm(distancia: number): number;
+  /** Recarga pelas regras prontas da engine. */
+  recarregar(): void;
+  /** Tiro instantâneo com o dano e o alcance da arma; devolve o inimigo acertado ou null. */
+  disparar(): Inimigo | null;
 }
 
 /** Um inimigo da fase durante o jogo. */

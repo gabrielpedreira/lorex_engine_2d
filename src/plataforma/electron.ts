@@ -5,7 +5,7 @@ interface ApiLorex {
   progresso(texto: string): void;
   pronto(): void;
   recentes(): Promise<InfoProjeto[]>;
-  aoMudarProjeto(fn: (m: { tipo: 'fase' | 'config' | 'assets' | 'personagem' | 'script'; nome: string }) => void): void;
+  aoMudarProjeto(fn: (m: { tipo: 'fase' | 'config' | 'assets' | 'personagem' | 'script' | 'arma'; nome: string }) => void): void;
   abrirCaminho(caminho: string): Promise<InfoProjeto | null>;
   lerConfigProjeto(): Promise<ConfigProjeto | null>;
   salvarConfigProjeto(c: ConfigProjeto): Promise<boolean>;
@@ -43,7 +43,7 @@ export class PlataformaElectron implements Plataforma {
   progresso(t: string) { this.api.progresso(t); }
   pronto() { this.api.pronto(); }
   recentes() { return this.api.recentes(); }
-  aoMudarProjeto(fn: (m: { tipo: 'fase' | 'config' | 'assets' | 'personagem' | 'script'; nome: string }) => void) { this.api.aoMudarProjeto(fn); }
+  aoMudarProjeto(fn: (m: { tipo: 'fase' | 'config' | 'assets' | 'personagem' | 'script' | 'arma'; nome: string }) => void) { this.api.aoMudarProjeto(fn); }
   abrirCaminho(c: string) { return this.api.abrirCaminho(c); }
   lerConfigProjeto() { return this.api.lerConfigProjeto(); }
   async salvarConfigProjeto(c: ConfigProjeto) { await this.api.salvarConfigProjeto(c); }

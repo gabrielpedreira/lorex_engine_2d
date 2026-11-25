@@ -27,6 +27,8 @@ import { PainelLog } from './ui/log';
 import { abrirJanelaCodigo, aoReceber, enviar, ponteDisponivel, type ElementoSerial } from './plataforma/ponte';
 import { carregarTipo, type TipoInimigo } from './editor/inimigosTeste';
 import { EditorHud } from './ui/hud';
+import { EditorArmas } from './ui/armas';
+import { normalizarArma } from './core/inimigos';
 import { GuiaAtalhos } from './ui/atalhos';
 import { textoAtalho } from './core/controles';
 import { normalizarHud } from './core/hud';
@@ -34,7 +36,7 @@ import { LOG, capturarErrosGlobais } from './core/log';
 import { ACOES_SISTEMA, normalizarControles } from './core/controles';
 import { PainelCodigo, type ElementoCodigo } from './ui/codigo/painel';
 import { arquivoScript, modeloScript, tiposApi } from './core/scripts';
-import { aplicarBlocoFase, aplicarBlocoJogo, aplicarBlocoObjeto, aplicarBlocoPersonagem, blocoFase, blocoJogo, blocoObjeto, blocoPersonagem, escreverBloco, lerBloco, mesmosValores } from './core/configScript';
+import { aplicarBlocoArma, aplicarBlocoFase, aplicarBlocoJogo, aplicarBlocoObjeto, aplicarBlocoPersonagem, blocoArma, blocoFase, blocoJogo, blocoObjeto, blocoPersonagem, escreverBloco, lerBloco, mesmosValores } from './core/configScript';
 import { modeloArma, modeloComportamento, modeloInimigoZumbi } from './core/modelosScript';
 import type { Personagem as DadosPersonagem } from './core/personagem';
 
@@ -645,7 +647,7 @@ async function fontesScripts(): Promise<FontesScripts> {
     const f = await ler(tiposInimigo.get(i.personagem)?.p.script);
     if (f) inimigos.push({ id: i.id, ...f });
   }
-  return { jogo: await ler('jogo.js'), fase: await ler(estado.fase.script), personagem: await ler(personagemDoTeste?.script), objetos, inimigos };
+  return { jogo: await ler('jogo.js'), fase: await ler(estado.fase.script), personagem: await ler(personagemDoTeste?.script), arma: await ler(personagemDoTeste?.arma?.script), objetos, inimigos };
 }
 
 // ---------- Código (painel estilo VS Code) ----------
@@ -739,6 +741,30 @@ painelCodigo.registrarFonte(async () => {
   }
   return lista;
 });
+// Fonte: armas (ferramenta Armas) — cada uma com o bloco config de todos os valores
+painelCodigo.registrarFonte(async () => {
+  const lista: ElementoCodigo[] = [];
+  for (const arq of await plat.listarDados('armas')) {
+    try {
+      const a = normalizarArma(JSON.parse(await plat.lerDados('armas', arq)));
+      if (!a) continue;
+      lista.push({
+        chave: 'arma:' + arq, grupo: 'Armas', nome: a.nome, detalhe: `pente ${a.pente} · ${a.slots} espaço(s) · alcance ${a.alcance} px`, dono: 'arma',
+        arquivo: a.script ?? null, arquivoNovo: arquivoScript.arma(arq),
+        modelo: comBloco(modeloScript('arma', a.nome), blocoArma(a), a.nome),
+        ligar: async (s) => {
+          const atual = normalizarArma(JSON.parse(await plat.lerDados('armas', arq)));
+          if (!atual) return false;
+          atual.script = s;
+          await plat.salvarDados('armas', arq, JSON.stringify(atual, null, 2));
+          void editorArmas.recarregar();
+          return true;
+        },
+      });
+    } catch { /* ilegível */ }
+  }
+  return lista;
+});
 // Fonte 4: scripts que não pertencem a nada aberto agora (de outras fases ou sem dono)
 painelCodigo.registrarFonte(async () => {
   const usados = new Set<string>(['jogo.js']);
@@ -746,6 +772,9 @@ painelCodigo.registrarFonte(async () => {
   for (const o of estado.fase.objetos) if (o.script) usados.add(o.script);
   for (const arq of await plat.listarDados('personagens')) {
     try { const p = JSON.parse(await plat.lerDados('personagens', arq)) as { script?: string }; if (p.script) usados.add(p.script); } catch { /* ignora */ }
+  }
+  for (const arq of await plat.listarDados('armas')) {
+    try { const a = JSON.parse(await plat.lerDados('armas', arq)) as { script?: string }; if (a.script) usados.add(a.script); } catch { /* ignora */ }
   }
   return (await plat.listarDados('scripts')).filter((a) => !usados.has(a)).map((a) => ({
     chave: 'arq:' + a, grupo: 'Outros scripts', nome: a, detalhe: /\./.test(a.replace(/\.js$/, '')) ? `de ${a.split('.')[0]}` : 'sem dono',
@@ -886,6 +915,9 @@ async function sincronizarBlocos() {
     for (const arq of await plat.listarDados('personagens')) {
       try { const p = normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', arq))); await trocar(p.script, blocoPersonagem(p), p.nome, 'jogo/personagens/' + arq); } catch { /* ilegível */ }
     }
+    for (const arq of await plat.listarDados('armas')) {
+      try { const a = normalizarArma(JSON.parse(await plat.lerDados('armas', arq))); if (a) await trocar(a.script, blocoArma(a), a.nome, 'jogo/armas/' + arq); } catch { /* ilegível */ }
+    }
     sincronizando = false;
     for (const a of new Set(aplicar)) await aplicarBlocoDoScript(a);
   } finally { sincronizando = false; }
@@ -916,6 +948,15 @@ async function aplicarBlocoDoScript(arquivo: string) {
       await plat.salvarDados('personagens', arq, JSON.stringify(aplicarBlocoPersonagem(p, b), null, 2));
       await editorPersonagens.mudouPorFora(arq);
       mudou.push(p.nome);
+    } catch { /* ilegível */ }
+  }
+  for (const arq of await plat.listarDados('armas')) {
+    try {
+      const a = normalizarArma(JSON.parse(await plat.lerDados('armas', arq)));
+      if (!a || a.script !== arquivo || mesmosValores(blocoArma(a).valores, b)) continue;
+      await plat.salvarDados('armas', arq, JSON.stringify(aplicarBlocoArma(a, b), null, 2));
+      await editorArmas.recarregar();
+      mudou.push(a.nome);
     } catch { /* ilegível */ }
   }
   if (!mudou.length) return;
@@ -952,8 +993,15 @@ async function carregarTiposInimigo() {
 /** Lê o personagem do ▶ Testar (null = retângulo provisório). */
 async function lerPersonagemTeste(avisar = true): Promise<Personagem | null> {
   if (!config.personagemTeste) return null;
-  try { return normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', config.personagemTeste))); }
+  let p: Personagem;
+  try { p = normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', config.personagemTeste))); }
   catch { if (avisar) estado.avisar(`Não achei o personagem ${config.personagemTeste}; testando com o retângulo provisório.`); return null; }
+  // Arma equipada: vem do arquivo da ferramenta Armas
+  if (p.armaEquipada) {
+    try { p.arma = normalizarArma(JSON.parse(await plat.lerDados('armas', p.armaEquipada))); }
+    catch { if (avisar) estado.avisar(`Não achei a arma ${p.armaEquipada} (ferramenta Armas); ${p.nome} fica sem arma.`); p.arma = undefined; }
+  }
+  return p;
 }
 
 /** Carrega o personagem animado escolhido para o teste (se houver). */
@@ -976,6 +1024,7 @@ async function abrirPersonagens(arquivo?: string) {
   await editorPersonagens.abrir(biblioteca.caminhos, config.personagemTeste ?? '', arquivo);
 }
 editorPersonagens.aoAbrirControles = () => void abrirControles();
+editorPersonagens.aoAbrirArmas = (arquivo) => { void editorPersonagens.fechar().then(() => { if (!editorPersonagens.aberta) void abrirArmas(arquivo); }); };
 editorPersonagens.aoSalvo = () => { void carregarTiposInimigo(); sincronizarBlocosDepois(300); };
 editorPersonagens.aoAbrirCodigo = (arquivo) => void abrirCodigo('pers:' + arquivo);
 // Renomear uma animação extra leva junto as teclas dela
@@ -988,11 +1037,33 @@ editorPersonagens.aoRenomearAcao = (antiga, nova) => {
   salvarConfigDepois();
 };
 
+// ---------- Armas ----------
+const editorArmas = new EditorArmas(plat, {
+  imagens: () => plat.listarAssets(),
+  garantir: (c, cat) => (c.startsWith('jogo/') ? Promise.resolve(c.slice(5)) : plat.garantirEmUso(c, cat)),
+  url: (c) => urlAsset(plat, c) + anticache(),
+  animacoes: async () => {
+    const r = new Set<string>();
+    for (const arq of await plat.listarDados('personagens')) {
+      try { const p = normalizarPersonagem(JSON.parse(await plat.lerDados('personagens', arq))); if (p.tipo !== 'npc') for (const k of Object.keys(p.animacoes)) r.add(k); } catch { /* ilegível */ }
+    }
+    return [...r];
+  },
+});
+editorArmas.aoAvisar = (m) => estado.avisar(m);
+editorArmas.aoSalvar = (arquivo) => { LOG.add({ cat: 'sistema', texto: `Armas: ${arquivo} salva` }); sincronizarBlocosDepois(400); avisarCodigoMudou(); };
+editorArmas.aoAbrirCodigo = (arquivo) => { editorArmas.fechar(); void abrirCodigo('arma:' + arquivo); };
+async function abrirArmas(arquivo?: string) {
+  if (estado.testando) teste.parar();
+  await editorArmas.abrir(arquivo);
+}
+
 // ---------- HUD ----------
 const editorHud = new EditorHud({
   imagens: () => plat.listarAssets(),
   garantir: (c, cat) => (c.startsWith('jogo/') ? Promise.resolve(c.slice(5)) : plat.garantirEmUso(c, cat)),
   url: (c) => urlAsset(plat, c) + anticache(),
+  imagensArma: async () => (await lerPersonagemTeste(false))?.arma?.imagens ?? null,
 });
 editorHud.aoMudar = (h: import('./core/hud').ConfigHud) => { config.hud = h; salvarConfigDepois(); };
 async function abrirHud() {
@@ -1124,6 +1195,7 @@ async function abrirMapa() {
   if (editorPersonagens.aberta) await editorPersonagens.fechar();
   if (editorControles.aberta) editorControles.fechar();
   if (editorHud.aberta) editorHud.fechar();
+  if (editorArmas.aberta) editorArmas.fechar();
   const salas = await salasDoProjeto();
   const mapa = normalizarMapa(config.mapa);
   // Fases apagadas/renomeadas: conexões para elas saem
@@ -1193,6 +1265,8 @@ const itensTrilho: (ItemTrilho | 'sep')[] = [
     texto: 'Coloca inimigos na fase: escolha o tipo na barra de cima (ex.: Zumbi) e clique no cenário (ele pisa no chão abaixo). Clique num inimigo para selecionar e arraste para mover; Del exclui.' },
   { id: 'personagens', ico: 'personagem', titulo: 'Personagens', atalho: 'K', acao: () => void abrirPersonagens(),
     texto: 'Monta personagens animados a partir dos spritesheets (parado, andando, pulando, caindo…), marca os pés e a caixa de colisão, e escolhe quem é o jogador no ▶ Testar.' },
+  { id: 'armas', ico: 'arma', titulo: 'Armas', atalho: 'A', acao: () => void abrirArmas(),
+    texto: 'Cria e edita as armas do jogo: pente, espaços no inventário, alcance, dano por distância, linha do tiro (visível, pouco visível, invisível) e as imagens do HUD, da bala e do menu. Cada arma também aparece no painel de Código.' },
   { id: 'hud', ico: 'hud', titulo: 'HUD', atalho: 'U', acao: () => void abrirHud(),
     texto: 'Edita o que aparece na tela durante o jogo: munição, inimigos vivos, itens, valores do código. Arraste os elementos na prévia da tela.' },
   { id: 'mapa', ico: 'mapa', titulo: 'Mapa', atalho: 'M', acao: () => void abrirMapa(),
@@ -1461,7 +1535,7 @@ function digitando(): boolean {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'F1') { e.preventDefault(); guiaAtalhos.alternar(); return; }
   if (e.key === 'F9' && !estado.testando) { e.preventDefault(); void atualizarBiblioteca(); return; }
-  if (document.querySelector('.modal-fundo') || inicio.aberta || editorPersonagens.aberta || editorControles.aberta || painelCodigo.aberta || editorHud.aberta || editorMapa.aberta || telaTransicao.ativa) return;
+  if (document.querySelector('.modal-fundo') || inicio.aberta || editorPersonagens.aberta || editorControles.aberta || painelCodigo.aberta || editorHud.aberta || editorArmas.aberta || editorMapa.aberta || telaTransicao.ativa) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (ctrl && k === 's') { e.preventDefault(); void salvar(); return; }
@@ -1513,6 +1587,7 @@ window.addEventListener('keydown', (e) => {
       else if (k === 'o') void abrirCodigo();
       else if (k === 'n') estado.definirModo(estado.modo === 'inimigo' ? 'selecionar' : 'inimigo');
       else if (k === 'u') void abrirHud();
+      else if (k === 'a') void abrirArmas();
       else if (k === 'm') void abrirMapa();
       else if (k === 'y' && e.shiftKey) { estado.previaLuz = !estado.previaLuz; estado.emit('opcoes'); estado.avisar(`Prévia do escuro ${estado.previaLuz ? 'ligada' : 'desligada'}.`); }
       else if (k === 'y') estado.definirModo(estado.modo === 'luz' ? 'selecionar' : 'luz');
@@ -1552,6 +1627,7 @@ plat.aoMudarProjeto(async (m) => {
   }
   if (m.tipo === 'personagem') { await editorPersonagens.mudouPorFora(m.nome); await carregarTiposInimigo(); if (painelCodigo.aberta) await painelCodigo.atualizarElementos(); sincronizarBlocosDepois(); return; }
   if (m.tipo === 'script') { await painelCodigo.mudouPorFora(m.nome); await aplicarBlocoDoScript(m.nome); return; }
+  if (m.tipo === 'arma') { await editorArmas.recarregar(); sincronizarBlocosDepois(); avisarCodigoMudou(); return; }
   if (m.tipo === 'config') {
     config = { ...CONFIG_PADRAO, ...((await plat.lerConfigProjeto()) ?? {}) };
     if (editorMapa.aberta) void abrirMapa();

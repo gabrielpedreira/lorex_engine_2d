@@ -6,6 +6,7 @@ import {
   ANCORAS, CHAVES_HUD, ESTILOS_HUD, PREDEFINICOES_HUD, deslocamentoHud, elementoBase, faixaHud, fracaoHud, hudPadrao, partesHud, posicaoHud,
   type ConfigHud, type ElementoHud, type TelaMorte,
 } from '../core/hud';
+import type { ImagensArma } from '../core/inimigos';
 import { el, perguntar } from './dom';
 import { dica } from './legenda';
 
@@ -17,6 +18,8 @@ export interface AcoesHud {
   garantir(caminhoRaiz: string, categoria: string): Promise<string>;
   /** URL de um caminho relativo a jogo/. */
   url(caminhoJogo: string): string;
+  /** Imagens da arma equipada pelo personagem do teste (para a prévia dos elementos "da arma"). */
+  imagensArma?(): Promise<ImagensArma | null>;
 }
 
 const MORTE = '__morte';
@@ -29,6 +32,7 @@ export class EditorHud {
   private itens: string[] = [];
   private escala = 1.5;
   private listaImagens: string[] | null = null;
+  private imagensArma: ImagensArma | null = null;
 
   aoMudar: (h: ConfigHud) => void = () => {};
 
@@ -52,6 +56,8 @@ export class EditorHud {
     this.itens = [...new Set(itens)];
     this.sel = this.h.elementos[0]?.id ?? null;
     this.listaImagens = null;
+    this.imagensArma = null;
+    void this.acoes.imagensArma?.().then((a) => { this.imagensArma = a; if (this.aberta) this.render(); });
     this.raiz.hidden = false;
     this.render();
     this.raiz.focus();
@@ -139,7 +145,7 @@ export class EditorHud {
       tela.append(telaMorte(this.h.morte, this.escala, this.acoes.url, true));
     } else {
       for (const e of this.h.elementos) {
-        const d = elementoHud(e, this.exemplo(e.chave), this.escala, this.acoes.url);
+        const d = elementoHud(e, this.exemplo(e.chave), this.escala, this.acoes.url, this.imagensArma);
         d.classList.add('hud-editavel');
         if (e.id === this.sel) d.classList.add('selecionado');
         if (!e.visivel) d.classList.add('oculto');
@@ -295,8 +301,15 @@ export class EditorHud {
           this.campo('Espaço entre', this.numero(e.espaco, (v) => { e.espaco = v; }, 0.5), 'Espaço entre um e outro (px do jogo).')),
         this.campo('Direção', direcao, 'Lado a lado (linha) ou um embaixo do outro (coluna).'));
     }
+    if (e.estilo === 'icones' || e.estilo === 'imagem') {
+      const da = el('input', { type: 'checkbox' }); da.checked = e.daArma;
+      da.addEventListener('change', () => { e.daArma = da.checked; this.mudou(); });
+      const lab = el('label', { class: 'check' }, da, 'Usar as imagens da arma equipada');
+      dica(lab, 'Imagens da arma', 'As imagens vêm da arma que o personagem está usando (ferramenta Armas): ícones = a bala; imagem = a arma carregada e descarregada. Trocou de arma, o HUD troca junto. As imagens abaixo ficam de reserva.');
+      col.append(lab);
+    }
     if (ehImagens) {
-      col.append(el('h3', {}, 'Imagens'));
+      col.append(el('h3', {}, e.daArma ? 'Imagens de reserva (sem arma)' : 'Imagens'));
       if (e.estilo === 'icones') {
         col.append(
           this.campoImagem('Imagem de cada unidade', e.imagem, (v) => { e.imagem = v; }, 'Uma bala, um coração… Repetida uma vez por unidade do valor. Sem imagem: ícone padrão na cor escolhida.'),
@@ -369,7 +382,14 @@ export class EditorHud {
 // ---------- Desenho (prévia e ▶ Testar) ----------
 
 /** Um elemento do HUD na tela, na escala dada. url = caminho relativo a jogo/ → URL. Usado na prévia e no ▶ Testar. */
-export function elementoHud(e: ElementoHud, valor: string, escala: number, url: (c: string) => string): HTMLElement {
+export function elementoHud(e0: ElementoHud, valor: string, escala: number, url: (c: string) => string, arma?: ImagensArma | null): HTMLElement {
+  // Imagens da arma equipada (ferramenta Armas) no lugar das do elemento
+  let e = e0;
+  if (e0.daArma && arma) {
+    const vazia = (partesHud(valor)?.atual ?? 1) <= 0;
+    e = e0.estilo === 'icones' ? { ...e0, imagem: arma.bala || e0.imagem }
+      : e0.estilo === 'imagem' ? { ...e0, imagem: (vazia && arma.hudVazia) || arma.hud || e0.imagem, faixas: arma.hud ? [] : e0.faixas } : e0;
+  }
   const rotulo = e.mostrarRotulo && e.rotulo ? el('span', { class: 'hud-rotulo' }, e.rotulo) : '';
   const faixa = faixaHud(e, valor);
   const cor = faixa?.cor || e.cor;

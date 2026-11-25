@@ -5,7 +5,7 @@ import {
   personagemNovo, quadroEm, retanguloQuadro, vidaPadrao, type Animacao, type Personagem,
 } from '../core/personagem';
 import { controlesPadrao, textoAtalho, type Controles } from '../core/controles';
-import { COMPORTAMENTOS_INIMIGO, armaPadrao, inimigoPadrao } from '../core/inimigos';
+import { COMPORTAMENTOS_INIMIGO, inimigoPadrao } from '../core/inimigos';
 import { nomeArquivoFase, nomeDoArquivo } from '../core/fase';
 import type { Plataforma } from '../plataforma/plataforma';
 import { urlAsset } from '../plataforma/plataforma';
@@ -85,6 +85,9 @@ export class EditorPersonagens {
   aoSalvo: () => void = () => {};
   /** Abrir a ferramenta Controles (para dar teclas às ações). */
   aoAbrirControles: () => void = () => {};
+  /** Abrir a ferramenta Armas (na arma dada). */
+  aoAbrirArmas: (arquivo?: string) => void = () => {};
+  private listaArmas: string[] = [];
   /** Abrir o painel de Código neste personagem (arquivo do personagem). */
   aoAbrirCodigo: (arquivo: string) => void = () => {};
   /** Uma animação extra mudou de chave (o editor leva as teclas junto). */
@@ -121,6 +124,7 @@ export class EditorPersonagens {
     this.assets = assets;
     this.personagemTeste = personagemTeste;
     this.raiz.hidden = false;
+    this.listaArmas = await this.plat.listarDados('armas');
     const lista = await this.plat.listarDados('personagens');
     if (arquivo && lista.includes(arquivo) && arquivo !== this.arquivo && !this.sujo) await this.carregar(arquivo);
     else if (!this.arquivo && lista.length) await this.carregar(personagemTeste && lista.includes(personagemTeste) ? personagemTeste : lista[0]);
@@ -412,7 +416,7 @@ export class EditorPersonagens {
     tipo.value = this.p.tipo;
     tipo.addEventListener('change', () => {
       this.p.tipo = tipo.value === 'npc' ? 'npc' : 'jogador';
-      if (this.p.tipo === 'npc') delete this.p.arma; else delete this.p.inimigo;
+      if (this.p.tipo === 'npc') { delete this.p.arma; delete this.p.armaEquipada; } else delete this.p.inimigo;
       this.mudou();
     });
     const labTipo = el('label', { for: 'pp-tipo' }, 'Tipo');
@@ -452,45 +456,37 @@ export class EditorPersonagens {
       ...(this.p.animacoes.morte ? [] : [el('p', { class: 'dica-campo' }, 'Sem animação "Morte": ao morrer o personagem fica parado até voltar.')])];
   }
 
-  /** Jogador: arma (munição, tiro, recarga). */
+  /** Jogador: qual arma usa (as armas ficam na ferramenta Armas, A). */
   private secaoArma(): HTMLElement[] {
     const titulo = el('h3', {}, 'Arma');
-    dica(titulo, 'Arma', 'Tiro com munição: cada tiro gasta uma bala do pente; sem bala, toca a animação "sem bala"; a recarga enche o pente quando a animação termina. A munição aparece no HUD (chave "municao").');
-    if (!this.p.arma) {
-      const ativar = el('button', { type: 'button', class: 'secundario largo' }, 'Dar uma arma a este personagem');
-      ativar.addEventListener('click', () => { this.p.arma = armaPadrao(); this.mudou(); });
-      return [titulo, ativar];
+    dica(titulo, 'Arma', 'A arma que este personagem usa. Pente, dano por distância, linha do tiro e imagens ficam na ferramenta Armas (A), uma arma por arquivo em jogo/armas/.');
+    const abrir = el('button', { type: 'button', class: 'secundario largo' }, 'Abrir a ferramenta Armas (A)');
+    dica(abrir, 'Armas', 'Criar e ajustar as armas do jogo.', 'A');
+    abrir.addEventListener('click', () => this.aoAbrirArmas(this.p.armaEquipada));
+    // Arma antiga guardada dentro do personagem: vira um arquivo da ferramenta Armas
+    if (this.p.arma && !this.p.armaEquipada) {
+      const converter = el('button', { type: 'button', class: 'primario largo' }, `Mover "${this.p.arma.nome}" para a ferramenta Armas`);
+      dica(converter, 'Mover para Armas', 'Cria jogo/armas/<nome>.json com os valores atuais e passa a usar a arma de lá.');
+      converter.addEventListener('click', async () => {
+        const a = this.p.arma!;
+        let arquivo = nomeArquivoFase(a.nome);
+        for (let i = 2; this.listaArmas.includes(arquivo); i++) arquivo = nomeArquivoFase(`${a.nome} ${i}`);
+        await this.plat.salvarDados('armas', arquivo, JSON.stringify(a, null, 2));
+        this.listaArmas = await this.plat.listarDados('armas');
+        this.p.armaEquipada = arquivo;
+        delete this.p.arma;
+        this.mudou();
+      });
+      return [titulo, el('p', { class: 'dica-campo' }, `${this.p.nome} tem uma arma antiga (pente ${this.p.arma.pente}) guardada aqui dentro.`), converter, abrir];
     }
-    const a = this.p.arma;
-    const opcoes = ['', ...extras(this.p).map(([k]) => k)];
-    const sel = (rotulo: string, valor: string, aplicar: (v: string) => void, texto: string) => {
-      const id = 'pa-' + rotulo.replace(/\W+/g, '');
-      const s = el('select', { id }, ...opcoes.map((k) => el('option', { value: k }, k ? (this.p.animacoes[k]?.nome ?? k) : '(nenhuma)')));
-      s.value = valor;
-      s.addEventListener('change', () => { aplicar(s.value); this.mudou(); });
-      const lab = el('label', { for: id }, rotulo);
-      dica(lab, rotulo, texto);
-      return el('div', { class: 'campo largo' }, lab, s);
-    };
-    const remover = el('button', { type: 'button', class: 'perigo' }, 'Tirar a arma');
-    remover.addEventListener('click', () => { delete this.p.arma; this.mudou(); });
-    const nomeArma = el('input', { type: 'text', id: 'pa-nome', value: a.nome });
-    nomeArma.addEventListener('change', () => { a.nome = nomeArma.value.trim() || 'Arma'; this.mudou(); });
-    const labNome = el('label', { for: 'pa-nome' }, 'Nome da arma');
-    dica(labNome, 'Nome da arma', 'Aparece no HUD com a chave "arma" (ex.: Pistola).');
-    return [titulo,
-      el('div', { class: 'campo largo' }, labNome, nomeArma),
-      el('div', { class: 'linha2' },
-        sel('Tiro', a.acaoTiro, (v) => { a.acaoTiro = v; }, 'Ação (animação extra) que atira.'),
-        sel('Recarga', a.acaoRecarga, (v) => { a.acaoRecarga = v; }, 'Ação que recarrega; o pente enche quando a animação termina.')),
-      sel('Sem bala', a.animacaoSemBala, (v) => { a.animacaoSemBala = v; }, 'Animação tocada ao tentar atirar com o pente vazio.'),
-      el('div', { class: 'linha2' },
-        this.num('Balas no pente', a.pente, (v) => { a.pente = Math.max(1, Math.round(v)); }, 'Quantos tiros antes de recarregar.', 1, 1),
-        this.num('Dano', a.dano, (v) => { a.dano = v; }, 'Dano por tiro (um zumbi de vida 3 morre com 3 tiros de dano 1).', 1, 0)),
-      el('div', { class: 'linha2' },
-        this.num('Alcance (px)', a.alcance, (v) => { a.alcance = v; }, 'Até onde o tiro chega (paredes param o tiro).', 10, 10),
-        this.num('Altura do tiro', a.alturaTiro, (v) => { a.alturaTiro = Math.min(1, v); }, 'Fração da altura do corpo, a partir dos pés (0,6 ≈ peito).', 0.05, 0)),
-      el('div', { class: 'secao acoes' }, remover)];
+    const sel = el('select', { id: 'pa-equipada' }, el('option', { value: '' }, '(sem arma)'),
+      ...this.listaArmas.map((a) => el('option', { value: a }, a.replace(/\.json$/, ''))),
+      ...(this.p.armaEquipada && !this.listaArmas.includes(this.p.armaEquipada) ? [el('option', { value: this.p.armaEquipada }, `${this.p.armaEquipada} (não existe)`)] : []));
+    sel.value = this.p.armaEquipada ?? '';
+    sel.addEventListener('change', () => { if (sel.value) this.p.armaEquipada = sel.value; else delete this.p.armaEquipada; this.mudou(); });
+    const lab = el('label', { for: 'pa-equipada' }, 'Arma equipada');
+    dica(lab, 'Arma equipada', 'A arma que o personagem começa usando. No código: eu.arma (nome, municao, pente, alcance, danoEm()).');
+    return [titulo, el('div', { class: 'campo largo' }, lab, sel), abrir];
   }
 
   /** NPC: inimigo (IA, vida, ataques). */

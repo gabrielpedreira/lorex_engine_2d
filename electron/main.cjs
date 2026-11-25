@@ -67,6 +67,7 @@ function observarProjeto() {
         const tipo = rel.startsWith('fases/') && rel.endsWith('.json') ? 'fase'
           : rel.startsWith('personagens/') && rel.endsWith('.json') ? 'personagem'
           : rel.startsWith('scripts/') && rel.endsWith('.js') ? 'script'
+          : rel.startsWith('armas/') && rel.endsWith('.json') ? 'arma'
           : rel === 'projeto.json' ? 'config' : rel.startsWith('assets/') ? 'assets' : 'outro';
         if (tipo !== 'outro' && janelaEditor && !janelaEditor.isDestroyed()) {
           janelaEditor.webContents.send('projeto:mudou', { tipo, nome: path.basename(rel) });
@@ -284,6 +285,14 @@ function registrarIpc() {
     try {
       const cfg = JSON.parse(await fsp.readFile(path.join(raizProjeto, 'jogo', 'projeto.json'), 'utf-8'));
       for (const c of cfg.mapa?.conexoes ?? []) { if (c.transicao?.animacao) usados.add(c.transicao.animacao); if (c.transicaoVolta?.animacao) usados.add(c.transicaoVolta.animacao); }
+      // Imagens das armas (HUD, bala, menu)
+      try {
+        const dirArmas = path.join(raizProjeto, 'jogo', 'armas');
+        for (const n of await fsp.readdir(dirArmas)) {
+          if (!n.endsWith('.json')) continue;
+          try { const a = JSON.parse(await fsp.readFile(path.join(dirArmas, n), 'utf-8')); for (const im of Object.values(a.imagens ?? {})) if (im) usados.add(im); } catch { /* ilegível */ }
+        }
+      } catch { /* sem armas */ }
       // Imagens do HUD (balas, rosto, arma…)
       for (const e of cfg.hud?.elementos ?? []) for (const im of [e.imagem, e.imagemVazia, e.icone, ...(e.faixas ?? []).map((f) => f && f.imagem)]) if (im) usados.add(im);
     } catch { /* sem projeto.json */ }
@@ -306,8 +315,8 @@ function registrarIpc() {
   });
 
   // Outros dados do jogo → jogo/<pasta>/<nome>: personagens (.json) e scripts (.js)
-  const PASTAS_DADOS = new Set(['personagens', 'scripts']);
-  const EXT_DADOS = { personagens: '.json', scripts: '.js' };
+  const PASTAS_DADOS = new Set(['personagens', 'scripts', 'armas']);
+  const EXT_DADOS = { personagens: '.json', scripts: '.js', armas: '.json' };
   const pastaDados = (pasta) => {
     if (!PASTAS_DADOS.has(pasta)) throw new Error('Pasta de dados não permitida: ' + pasta);
     return resolverDentroDoProjeto('jogo/' + pasta);

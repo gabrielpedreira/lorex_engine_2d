@@ -2,7 +2,7 @@
 // Fases salvas ficam no armazenamento do navegador. Serve para testar a engine sem o Electron.
 import { codificarCaminho, normalizarCaminho, type ConfigProjeto, type InfoProjeto, type Plataforma, type PastaDados } from './plataforma';
 
-interface Manifesto { nome: string; arquivos: string[]; fases: string[]; personagens?: string[]; scripts?: string[]; config?: ConfigProjeto }
+interface Manifesto { nome: string; arquivos: string[]; fases: string[]; personagens?: string[]; scripts?: string[]; armas?: string[]; config?: ConfigProjeto }
 
 const BASE = './demo-projeto/';
 const CHAVE = 'lorex.demo.fases';

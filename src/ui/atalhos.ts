@@ -17,7 +17,7 @@ export function gruposAtalhos(teclasTeste: [string, string][]): Grupo[] {
     ] },
     { titulo: 'Ferramentas (barra lateral)', itens: [
       ['V', 'Selecionar e mover'], ['H', 'Mover a visão'], ['C', 'Colisão'], ['I', 'Início do jogador'],
-      ['N', 'Inimigos'], ['Q', 'Tela do jogo (quadro laranja)'], ['Z', 'Zona (gatilho / passagem contínua)'], ['Y', 'Iluminação'], ['Shift+Y', 'Mostrar/ocultar o escuro'], ['K', 'Personagens'], ['U', 'HUD'], ['M', 'Mapa (salas e passagens)'], ['B', 'Controles'], ['O', 'Código'], ['F5', '▶ Testar / parar'],
+      ['N', 'Inimigos'], ['Q', 'Tela do jogo (quadro laranja)'], ['Z', 'Zona (gatilho / passagem contínua)'], ['Y', 'Iluminação'], ['Shift+Y', 'Mostrar/ocultar o escuro'], ['K', 'Personagens'], ['U', 'HUD'], ['A', 'Armas'], ['M', 'Mapa (salas e passagens)'], ['B', 'Controles'], ['O', 'Código'], ['F5', '▶ Testar / parar'],
     ] },
     { titulo: 'Objetos', itens: [
       ['Clique', 'Selecionar · arrastar move · alças nos cantos mudam o tamanho'],

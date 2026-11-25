@@ -6,7 +6,7 @@
 // Puro (sem DOM).
 import type { Comportamento } from './comportamentos';
 import type { ConfigJogador } from './fisica';
-import { normalizarArma, normalizarInimigo } from './inimigos';
+import { normalizarArma, normalizarInimigo, type ConfigArma } from './inimigos';
 import { normalizarVida, type Personagem } from './personagem';
 import type { Fase, ObjetoFase } from './tipos';
 
@@ -195,11 +195,8 @@ export function blocoPersonagem(p: Personagem): { valores: Bloco; comentarios: R
     const v = p.vida ?? normalizarVida(null);
     base.vida = { maxima: v.maxima, invulneravel: v.invulneravel, piscar: v.piscar, renascer: v.renascer };
     Object.assign(com, { 'vida.maxima': 'vida cheia (cada golpe tira o dano do inimigo)', 'vida.invulneravel': 's sem levar golpe depois de um', 'vida.piscar': 's piscando em vermelho', 'vida.renascer': 's até voltar no checkpoint' });
-    if (p.arma) {
-      const a = p.arma;
-      base.arma = { nome: a.nome, pente: a.pente, dano: a.dano, alcance: a.alcance, alturaTiro: a.alturaTiro };
-      Object.assign(com, { 'arma.pente': 'balas por pente', 'arma.dano': 'dano por tiro', 'arma.alcance': 'px até onde o tiro chega', 'arma.alturaTiro': 'altura do tiro (0 = pés, 1 = cabeça)' });
-    }
+    base.armaEquipada = p.armaEquipada ?? '';
+    com.armaEquipada = 'arquivo da arma em jogo/armas (ferramenta Armas); os números dela ficam no script da arma';
   }
   return { valores: base, comentarios: com };
 }
@@ -214,7 +211,7 @@ export function aplicarBlocoPersonagem(p: Personagem, b: Bloco): Personagem {
   }
   if (r.tipo === 'jogador') {
     if (b.vida && typeof b.vida === 'object') r.vida = normalizarVida({ ...(r.vida ?? {}), ...(b.vida as object) });
-    if (r.arma && b.arma && typeof b.arma === 'object') r.arma = normalizarArma({ ...r.arma, ...(b.arma as object) }) ?? r.arma;
+    if (typeof b.armaEquipada === 'string') { if (b.armaEquipada) r.armaEquipada = b.armaEquipada; else delete r.armaEquipada; }
   }
   return r;
 }
@@ -223,6 +220,36 @@ function pegar(b: Bloco, chaves: string[]) {
   const o: Record<string, Valor> = {};
   for (const k of chaves) if (b[k] !== undefined) o[k] = b[k];
   return o;
+}
+
+/** Arma (ferramenta Armas): tudo, inclusive o dano por distância, a linha do tiro e as imagens. */
+export function blocoArma(a: ConfigArma): { valores: Bloco; comentarios: Record<string, string> } {
+  return {
+    valores: {
+      nome: a.nome, pente: a.pente, slots: a.slots, alcance: a.alcance, alturaTiro: a.alturaTiro, dano: a.dano,
+      danoPorDistancia: a.danoPorDistancia.map((f) => ({ ate: f.ate, dano: f.dano })),
+      linha: { visibilidade: a.linha.visibilidade, cor: a.linha.cor, espessura: a.linha.espessura, duracao: a.linha.duracao },
+      imagens: { hud: a.imagens.hud, hudVazia: a.imagens.hudVazia, bala: a.imagens.bala, menu: a.imagens.menu },
+      acaoTiro: a.acaoTiro, acaoRecarga: a.acaoRecarga, animacaoSemBala: a.animacaoSemBala,
+    },
+    comentarios: {
+      pente: 'balas por pente', slots: 'espaços no inventário', alcance: 'px até onde o tiro chega', alturaTiro: 'altura do tiro (0 = pés, 1 = cabeça)',
+      dano: 'dano além da última faixa', danoPorDistancia: 'até "ate"% do alcance → "dano" (ex.: 50% → 2, 100% → 1)',
+      'linha.visibilidade': '"visivel", "pouco" ou "invisivel"', 'linha.espessura': 'px', 'linha.duracao': 's na tela',
+      'imagens.hud': 'arma carregada no HUD', 'imagens.hudVazia': 'arma descarregada no HUD', 'imagens.bala': 'cada bala no HUD', 'imagens.menu': 'no menu/inventário',
+      acaoTiro: 'animação do personagem ao atirar', acaoRecarga: 'animação ao recarregar', animacaoSemBala: 'animação com o pente vazio',
+    },
+  };
+}
+
+export function aplicarBlocoArma(a: ConfigArma, b: Bloco): ConfigArma {
+  const d = b.danoPorDistancia;
+  return normalizarArma({
+    ...a, ...pegar(b, ['nome', 'pente', 'slots', 'alcance', 'alturaTiro', 'dano', 'acaoTiro', 'acaoRecarga', 'animacaoSemBala']),
+    danoPorDistancia: Array.isArray(d) ? d : a.danoPorDistancia,
+    linha: b.linha && typeof b.linha === 'object' ? { ...a.linha, ...(b.linha as object) } : a.linha,
+    imagens: b.imagens && typeof b.imagens === 'object' ? { ...a.imagens, ...(b.imagens as object) } : a.imagens,
+  }) ?? a;
 }
 
 /** Objeto da fase: posição, tamanho na tela e o comportamento (porta, coletável…). */

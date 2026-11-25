@@ -32,6 +32,7 @@ export const ICONES = {
   poligono: svg('<path d="M8 2l5.5 4-2 7h-7l-2-7z"/>'),
   linha: svg('<path d="M2 12l4-5 3 3 5-6"/><circle cx="2" cy="12" r="1"/><circle cx="6" cy="7" r="1"/><circle cx="9" cy="10" r="1"/><circle cx="14" cy="4" r="1"/>'),
   maoLivre: svg('<path d="M2 11c1.5-3 3-4 4-2s1.5 3 3 1 2-5 5-4"/>'),
+  arma: svg('<path d="M1.5 5h11v2.5H8.5l-.5 1.5H6.5l-1 4H3l1-4.5H1.5z"/><path d="M12.5 5.5h2"/>'),
   personagem: svg('<circle cx="8" cy="3.8" r="2"/><path d="M8 6v4.5M8 10.5l-2.5 3.5M8 10.5l2.5 3.5M4.5 8l3.5-1.5 3.5 1.5"/>'),
   tela: svg('<rect x="1.5" y="3" width="13" height="9" rx="1"/><path d="M4 5.5h2.5M4 5.5V8M12 9.5H9.5M12 9.5V7"/>'),
   zona: svg('<rect x="2.5" y="3.5" width="11" height="9" rx="1" stroke-dasharray="2 1.6"/><path d="M8 6v4M6 8h4"/>'),

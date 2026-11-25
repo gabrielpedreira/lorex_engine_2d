@@ -17,7 +17,7 @@ export interface Ferramenta {
 
 /** Configuração do projeto inteiro (jogo/projeto.json). Vale para as fases novas. */
 /** Pastas de dados em jogo/: personagens (.json) e scripts de código (.js). */
-export type PastaDados = 'personagens' | 'scripts';
+export type PastaDados = 'personagens' | 'scripts' | 'armas';
 
 export interface ConfigProjeto {
   /** Pastas da caixa de ferramentas. */
@@ -55,7 +55,7 @@ export interface Plataforma {
   pronto(): void;
   recentes(): Promise<InfoProjeto[]>;
   /** Avisa quando algo em jogo/ muda fora do editor (ex.: o Claude editou uma fase). */
-  aoMudarProjeto(fn: (m: { tipo: 'fase' | 'config' | 'assets' | 'personagem' | 'script'; nome: string }) => void): void;
+  aoMudarProjeto(fn: (m: { tipo: 'fase' | 'config' | 'assets' | 'personagem' | 'script' | 'arma'; nome: string }) => void): void;
   abrirCaminho(caminho: string): Promise<InfoProjeto | null>;
   lerConfigProjeto(): Promise<ConfigProjeto | null>;
   salvarConfigProjeto(c: ConfigProjeto): Promise<void>;

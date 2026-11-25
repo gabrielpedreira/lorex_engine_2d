@@ -4,6 +4,7 @@ import type { ObjetoFase } from '../core/tipos';
 import type { InimigoVivo } from './inimigosTeste';
 import { toca, type MundoInterativo } from '../core/comportamentos';
 import { LOG } from '../core/log';
+import { danoNaDistancia } from '../core/inimigos';
 import type { Transicao, Viagem } from '../core/mapa';
 import { compilarScript, linhaDoErro, type DonoScript, type ScriptCompilado } from '../core/scripts';
 
@@ -52,6 +53,8 @@ export interface PonteTeste {
   recarregar(): void;
   danoInimigo(ini: InimigoVivo, n: number): void;
   disparar(): InimigoVivo | null;
+  /** Arma equipada (ou null). */
+  arma(): import('../core/inimigos').ConfigArma | null;
   duracaoAnim(nome: string): number;
   agarrado(): boolean;
 }
@@ -63,6 +66,8 @@ export interface FontesScripts {
   jogo?: { arquivo: string; codigo: string };
   fase?: { arquivo: string; codigo: string };
   personagem?: { arquivo: string; codigo: string };
+  /** Script da arma equipada (ferramenta Armas). */
+  arma?: { arquivo: string; codigo: string };
   objetos: { id: string; arquivo: string; codigo: string }[];
   /** Scripts dos tipos de inimigo: um por inimigo colocado (id da colocação). */
   inimigos?: { id: string; arquivo: string; codigo: string }[];
@@ -93,6 +98,7 @@ export class MotorScripts {
       ...(f.jogo ? [{ dono: 'jogo' as const, id: null, ...f.jogo }] : []),
       ...(f.fase ? [{ dono: 'fase' as const, id: null, ...f.fase }] : []),
       ...(f.personagem ? [{ dono: 'personagem' as const, id: null, ...f.personagem }] : []),
+      ...(f.arma ? [{ dono: 'arma' as const, id: null, ...f.arma }] : []),
       ...f.objetos.map((o) => ({ dono: 'objeto' as const, id: o.id, arquivo: o.arquivo, codigo: o.codigo })),
       ...(f.inimigos ?? []).map((o) => ({ dono: 'inimigo' as const, id: o.id, arquivo: o.arquivo, codigo: o.codigo })),
     ];
@@ -213,7 +219,18 @@ export class MotorScripts {
 
   /** aoAtirar do personagem (alvo = inimigo acertado ou null). */
   atirou(alvo: InimigoVivo | null) {
-    for (const s of this.scripts) if (s.dono === 'personagem') this.chamar(s, 'aoAtirar', alvo ? this.handleInimigo(alvo) : null);
+    for (const s of this.scripts) if (s.dono === 'personagem' || s.dono === 'arma') this.chamar(s, 'aoAtirar', alvo ? this.handleInimigo(alvo) : null);
+  }
+
+  /** aoCalcularDano da arma: o código decide o dano do tiro (senão, o da tabela por distância). */
+  calcularDano(distancia: number, alvo: InimigoVivo, padrao: number): number {
+    let dano = padrao;
+    for (const s of this.scripts) {
+      if (s.dono !== 'arma' || !s.c.ganchos.aoCalcularDano) continue;
+      const r = this.chamar(s, 'aoCalcularDano', distancia, this.handleInimigo(alvo));
+      if (typeof r === 'number' && Number.isFinite(r)) dano = r;
+    }
+    return dano;
   }
 
   /** aoSerAtingido do personagem: false = ignorar o golpe. */
@@ -278,6 +295,7 @@ export class MotorScripts {
     const api = this.apiJogo();
     const ini = s.dono === 'inimigo' ? this.ponte.inimigos().find((i) => i.id === s.idDono) : undefined;
     const eu = s.dono === 'objeto' && s.idDono ? this.handle(this.objeto(s.idDono)!) : s.dono === 'personagem' ? (api as { jogador: unknown }).jogador
+      : s.dono === 'arma' ? (api as { jogador: { arma: unknown } }).jogador.arma
       : ini ? this.handleInimigo(ini) : null;
     const todos = s.dono === 'jogo' || s.dono === 'fase' ? [api, ...args] : [eu, api, ...args];
     const antes = this.arquivoAtual;
@@ -467,9 +485,13 @@ export class MotorScripts {
       empurrar: (vx: number, vy: number) => ponte.empurrar(vx, vy),
       get dados() { return motor.dadosJogador; },
       arma: {
+        get nome() { return ponte.arma()?.nome ?? ''; },
         get municao() { return ponte.municao(); },
         set municao(n: number) { ponte.definirMunicao(n); },
         get pente() { return ponte.pente(); },
+        get alcance() { return ponte.arma()?.alcance ?? 0; },
+        get slots() { return ponte.arma()?.slots ?? 0; },
+        danoEm: (d: number) => { const a = ponte.arma(); return a ? danoNaDistancia(a, Number(d) || 0) : 0; },
         recarregar: () => ponte.recarregar(),
         /** Tiro instantâneo (dano e alcance da seção Arma). Devolve o inimigo acertado ou null. */
         disparar: () => { const a = ponte.disparar(); return a ? motor.handleInimigo(a) : null; },

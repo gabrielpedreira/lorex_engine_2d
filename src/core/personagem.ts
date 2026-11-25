@@ -75,7 +75,9 @@ export interface Personagem {
   animacoes: Record<string, Animacao>;
   /** Script do personagem (arquivo em jogo/scripts/), se houver. */
   script?: string;
-  /** Jogador: arma (munição, tiro, recarga). */
+  /** Jogador: arma equipada (arquivo em jogo/armas/, ferramenta Armas). */
+  armaEquipada?: string;
+  /** Jogador: arma em uso. Vem de "armaEquipada" (o editor carrega o arquivo da arma); antigo: guardada aqui dentro. */
   arma?: ConfigArma;
   /** Jogador: vida (barra no HUD, dano dos inimigos, morte e volta ao checkpoint). */
   vida?: ConfigVida;
@@ -151,6 +153,7 @@ export function normalizarPersonagem(d: unknown): Personagem {
     ...base, ...p, versao: 1, animacoes,
     tipo: p.tipo === 'npc' ? 'npc' : 'jogador',
     arma: p.tipo === 'npc' ? undefined : normalizarArma(p.arma),
+    armaEquipada: p.tipo !== 'npc' && typeof p.armaEquipada === 'string' && p.armaEquipada ? p.armaEquipada : undefined,
     vida: p.tipo === 'npc' ? undefined : normalizarVida(p.vida),
     inimigo: p.tipo === 'npc' && p.inimigo ? normalizarInimigo(p.inimigo) : undefined,
     pes: Array.isArray(p.pes) && p.pes.length === 2 ? [Number(p.pes[0]) || 0, Number(p.pes[1]) || 0] : base.pes,

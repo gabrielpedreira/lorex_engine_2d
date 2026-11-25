@@ -149,6 +149,9 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
   mordida 40%, "agarra" segura o jogador, tiros e barulho de tiro chamam a atenção), vida, visão, velocidades, alcance.
 - **Arma do jogador** (Personagens → Arma): pente, dano, alcance, ações de tiro e recarga e animação "sem bala";
   tiro instantâneo (paredes param), recarga enche o pente ao fim da animação.
+- **Armas** (`A`): cada arma em `jogo/armas/` com pente, espaços no inventário, alcance, dano por distância, linha do
+  tiro (visível, pouco visível, invisível) e imagens (HUD, bala, menu); o personagem escolhe qual usa e cada arma tem
+  script próprio no painel de Código (`aoCalcularDano`).
 - **HUD** (`U`): elementos de texto presos a cantos/bordas da tela do jogo (munição, inimigos vivos, `item:<nome>` ou
   chaves do código via `jogo.hud.definir`), com prévia arrastável. Predefinições prontas (vida em caixas ou barra,
   rosto que muda com a vida, munição bala a bala, arma em uso, vidas restantes, magia, contador de item) e cada

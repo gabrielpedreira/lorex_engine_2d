@@ -47,6 +47,8 @@ export interface ElementoHud {
   espaco: number;
   /** Valor atual ≤ "ate" troca a cor (texto, barra, caixas) ou a imagem (imagem). A primeira faixa que servir vale. */
   faixas: FaixaHud[];
+  /** Usa as imagens da arma equipada (ferramenta Armas): imagem = arma carregada/descarregada; ícones = a bala. */
+  daArma: boolean;
 }
 
 export interface FaixaHud { ate: number; cor: string; imagem: string }
@@ -125,7 +127,7 @@ export const CHAVES_HUD: { chave: string; nome: string; texto: string; exemplo: 
 export function elementoBase(id: string, parcial: Partial<ElementoHud> = {}): ElementoHud {
   return {
     id, rotulo: '', chave: id, ancora: 'se', x: 8, y: 8, tamanho: 10, cor: '#ffffff', mostrarRotulo: true, visivel: true,
-    estilo: 'texto', largura: 60, imagem: '', imagemVazia: '', maximo: 0, direcao: 'horizontal', espaco: 2, faixas: [],
+    estilo: 'texto', largura: 60, imagem: '', imagemVazia: '', maximo: 0, direcao: 'horizontal', espaco: 2, faixas: [], daArma: false,
     ...parcial,
   };
 }
@@ -135,8 +137,8 @@ export const PREDEFINICOES_HUD: { id: string; nome: string; texto: string; criar
   { id: 'vida_caixas', nome: 'Vida em caixas', texto: 'Uma caixa por ponto de vida; amarelas com pouca vida e vermelhas quase no fim.', criar: () => ({ rotulo: 'Vida', chave: 'vida', estilo: 'caixas', mostrarRotulo: false, tamanho: 9, largura: 7, espaco: 2, cor: '#4cc94c', faixas: [{ ate: 8, cor: '#e8c234', imagem: '' }, { ate: 4, cor: '#e04848', imagem: '' }] }) },
   { id: 'vida_barra', nome: 'Vida em barra', texto: 'Barra que esvazia com o dano.', criar: () => ({ rotulo: 'Vida', chave: 'vida', estilo: 'barra', mostrarRotulo: false, tamanho: 8, largura: 70, cor: '#ef6461' }) },
   { id: 'rosto', nome: 'Rosto que muda com a vida', texto: 'Retrato do personagem: uma imagem para cada faixa de vida (bem, machucado, quase morto).', criar: () => ({ rotulo: 'Rosto', chave: 'vida', estilo: 'imagem', mostrarRotulo: false, tamanho: 40, faixas: [{ ate: 8, cor: '', imagem: '' }, { ate: 4, cor: '', imagem: '' }] }) },
-  { id: 'balas', nome: 'Munição bala a bala', texto: 'Uma imagem por bala do pente.', criar: () => ({ rotulo: 'Munição', chave: 'municao', estilo: 'icones', mostrarRotulo: false, tamanho: 14, espaco: 1, ancora: 'ie' }) },
-  { id: 'arma', nome: 'Arma em uso', texto: 'Desenho da arma; troca para a imagem "descarregada" com o pente vazio.', criar: () => ({ rotulo: 'Arma', chave: 'municao', estilo: 'imagem', mostrarRotulo: false, tamanho: 22, ancora: 'ie', y: 24, faixas: [{ ate: 0, cor: '', imagem: '' }] }) },
+  { id: 'balas', nome: 'Munição bala a bala', texto: 'Uma imagem por bala do pente (a bala da arma equipada, da ferramenta Armas).', criar: () => ({ rotulo: 'Munição', chave: 'municao', estilo: 'icones', mostrarRotulo: false, tamanho: 14, espaco: 1, ancora: 'ie', daArma: true }) },
+  { id: 'arma', nome: 'Arma em uso', texto: 'Desenho da arma equipada (ferramenta Armas); troca para a imagem "descarregada" com o pente vazio.', criar: () => ({ rotulo: 'Arma', chave: 'municao', estilo: 'imagem', mostrarRotulo: false, tamanho: 22, ancora: 'ie', y: 24, daArma: true }) },
   { id: 'municao_texto', nome: 'Munição em texto', texto: 'Balas no pente / pente (ex.: 7/14).', criar: () => ({ rotulo: 'Munição', chave: 'municao', ancora: 'ie', cor: '#a7dd3e' }) },
   { id: 'vidas', nome: 'Vidas restantes', texto: 'Um ícone por vida (o código define: jogo.hud.definir("vidas", "3/3")).', criar: () => ({ rotulo: 'Vidas', chave: 'vidas', estilo: 'icones', mostrarRotulo: false, tamanho: 10, espaco: 2, ancora: 'sd' }) },
   { id: 'magia', nome: 'Magia / energia', texto: 'Barra azul (o código define: jogo.hud.definir("magia", "5/10")).', criar: () => ({ rotulo: 'Magia', chave: 'magia', estilo: 'barra', mostrarRotulo: false, tamanho: 6, largura: 60, cor: '#4a8cf0', y: 20 }) },
@@ -166,6 +168,7 @@ export function normalizarHud(d: unknown): ConfigHud {
       imagem: typeof e.imagem === 'string' ? e.imagem : '', imagemVazia: typeof e.imagemVazia === 'string' ? e.imagemVazia : '',
       maximo: Math.max(0, Math.round(Number(e.maximo) || 0)), direcao: e.direcao === 'vertical' ? 'vertical' : 'horizontal',
       espaco: Number.isFinite(Number(e.espaco)) ? Number(e.espaco) : 2,
+      daArma: e.daArma === true,
       faixas: Array.isArray(e.faixas) ? e.faixas.filter((f) => f && Number.isFinite(Number(f.ate))).map((f) => ({ ate: Number(f.ate), cor: typeof f.cor === 'string' ? f.cor : '', imagem: typeof f.imagem === 'string' ? f.imagem : '' })) : [],
     })),
     morte: normalizarMorte(h.morte),

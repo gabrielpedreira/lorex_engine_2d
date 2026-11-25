@@ -451,6 +451,19 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   `aplicarMudanca` envolve toda mudança: remove conexões sem pontas e apaga as passagens-zona (`PassagemSala.zona`)
   que perderam a última conexão (`passagensUsadas` antes × depois).
 
+### 4.37 Armas
+
+- `ConfigArma` (core/inimigos.ts) ganhou `slots`, `danoPorDistancia: { ate (% do alcance), dano }[]`, `linha` (visibilidade,
+  cor, espessura, duração), `imagens` (hud, hudVazia, bala, menu) e `script`; `danoNaDistancia(arma, px)`.
+- Arquivos em `jogo/armas/*.json` (pasta de dados `armas`, vigia `arma`). `Personagem.armaEquipada` aponta o arquivo; o
+  editor carrega a arma em `lerPersonagemTeste` (o runtime continua usando `dados.arma`).
+- `ui/armas.ts → EditorArmas` (tecla A): lista, prévia (faixas de dano sobre o alcance, linha do tiro, imagens, pente) e
+  propriedades; salva sozinho. Personagens › Arma escolhe a arma (e converte a arma antiga guardada no personagem).
+- Código: dono `arma` (`arma.<nome>.js`), ganchos `aoCalcularDano(eu, jogo, distancia, alvo)` e `aoAtirar`; `eu` = a
+  arma (`nome`, `municao`, `pente`, `alcance`, `slots`, `danoEm(px)`). Bloco config `blocoArma/aplicarBlocoArma`.
+- ▶ Testar: `disparar(arma)` mede a distância, usa a tabela (ou `MotorScripts.calcularDano`) e desenha a linha conforme
+  a arma. HUD: `ElementoHud.daArma` troca as imagens pelas da arma equipada.
+
 ### 4.36 Tudo no Código: rascunhos e bloco config
 
 - Painel de Código: elemento sem script abre um **rascunho** (aba "(novo)", modelo Monaco em `file:///scripts/novo/…`)

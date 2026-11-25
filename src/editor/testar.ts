@@ -9,7 +9,7 @@ import { mapaVazio, resumoTransicao, transicaoPadrao, viagemDe, type Mapa, type 
 import { MotorScripts, type FontesScripts } from './motorScripts';
 import type { ObjetoFase } from '../core/tipos';
 import { InimigoVivo, raioTiro, type TipoInimigo } from './inimigosTeste';
-import type { AtaqueInimigo, EventoIA } from '../core/inimigos';
+import { danoNaDistancia, type AtaqueInimigo, type ConfigArma, type EventoIA } from '../core/inimigos';
 import { normalizarHud, type ConfigHud } from '../core/hud';
 import { elementoHud, posicionarHud, telaMorte } from '../ui/hud';
 import { el } from '../ui/dom';
@@ -91,7 +91,7 @@ export class ModoTeste {
   private get cfgVida(): ConfigVida { return this.pers?.dados.vida ?? vidaPadrao(); }
   private get morto() { return this.mortoEm !== null; }
   private renascendo = false;
-  private rastro: { x0: number; y0: number; x1: number; y1: number; t: number; acertou: boolean } | null = null;
+  private rastro: { x0: number; y0: number; x1: number; y1: number; t: number; total: number; acertou: boolean; linha: import('../core/inimigos').LinhaTiro } | null = null;
   /** Munição levada para a próxima área. */
   private municaoLevada: number | null = null;
   /** Elementos do HUD (ferramenta HUD, projeto.json). */
@@ -164,7 +164,8 @@ export class ModoTeste {
       definirMunicao: (n: number) => { const a = t.pers?.dados.arma; if (a) t.municao = Math.max(0, Math.min(a.pente, Math.round(n))); },
       pente: () => t.pers?.dados.arma?.pente ?? 0,
       recarregar: () => { const a = t.pers?.dados.arma; if (a) t.tratarArma(a.acaoRecarga); },
-      disparar: () => { const a = t.pers?.dados.arma; return a && t.jogador ? t.disparar(a.dano, a.alcance, a.alturaTiro) : null; },
+      disparar: () => { const a = t.pers?.dados.arma; return a && t.jogador ? t.disparar(a) : null; },
+      arma: () => t.pers?.dados.arma ?? null,
       duracaoAnim: (nome: string) => t.duracaoAnim(nome),
       agarrado: () => t.tempoJogo < t.agarradoAte,
       danoInimigo: (ini: InimigoVivo, n: number) => { ini.atingido(); t.tratarEventosInimigo(ini, ini.ia.levarDano(n, t.jogador?.x ?? ini.corpo.x, { duracao: ini.duracao })); },
@@ -832,7 +833,7 @@ export class ModoTeste {
     if (!animador.tocar(chave)) return true;
     this.municao--;
     this.mostrarAcao(pers.dados.animacoes[chave]?.nome ?? chave);
-    this.disparar(arma.dano, arma.alcance, arma.alturaTiro);
+    this.disparar(arma);
     return true;
   }
 
@@ -842,15 +843,19 @@ export class ModoTeste {
   }
 
   /** Tiro instantâneo na direção em que o jogador olha. Devolve o inimigo acertado. */
-  private disparar(dano: number, alcance: number, alturaTiro: number): InimigoVivo | null {
+  private disparar(arma: ConfigArma): InimigoVivo | null {
     const j = this.jogador!;
     const dir = (j.olhandoDireita ? 1 : -1) as -1 | 1;
     const ox = j.x + dir * (j.cfg.largura / 2);
-    const oy = j.y - j.cfg.altura * alturaTiro;
+    const oy = j.y - j.cfg.altura * arma.alturaTiro;
     const segs = this.mundo!.segmentosPortas().length ? this.segs.concat(this.mundo!.segmentosPortas()) : this.segs;
-    const { alvo, fimX } = raioTiro(segs, this.inimigos, ox, oy, dir, alcance);
-    this.rastro = { x0: ox, y0: oy, x1: fimX, y1: oy, t: 0.07, acertou: !!alvo };
-    LOG.add({ cat: 'personagem', texto: `tiro ${dir > 0 ? '→' : '←'} (${this.municao}/${this.pers?.dados.arma?.pente}): ${alvo ? `acertou ${alvo.nome} (${alvo.id}) a ${Math.round(Math.abs(fimX - ox))} px` : 'errou'}` });
+    const { alvo, fimX } = raioTiro(segs, this.inimigos, ox, oy, dir, arma.alcance);
+    this.rastro = { x0: ox, y0: oy, x1: fimX, y1: oy, t: arma.linha.duracao, total: arma.linha.duracao, acertou: !!alvo, linha: arma.linha };
+    // Dano pela distância (tabela da arma); o código da arma (aoCalcularDano) pode decidir outro
+    const distancia = Math.abs(fimX - ox);
+    const pelaTabela = danoNaDistancia(arma, distancia);
+    const dano = alvo && this.motor ? this.motor.calcularDano(distancia, alvo, pelaTabela) : pelaTabela;
+    LOG.add({ cat: 'personagem', texto: `tiro ${arma.nome} ${dir > 0 ? '→' : '←'} (${this.municao}/${arma.pente}): ${alvo ? `acertou ${alvo.nome} (${alvo.id}) a ${Math.round(distancia)} px (${Math.round((distancia / Math.max(1, arma.alcance)) * 100)}% do alcance) · dano ${dano}${dano !== pelaTabela ? ` (código; tabela ${pelaTabela})` : ''}` : 'errou'}` });
     // O barulho do tiro chama a atenção de quem estiver perto
     for (const i of this.inimigos) if (i !== alvo && i.vivo) this.tratarEventosInimigo(i, ouvir(i, j.x));
     if (alvo) {
@@ -1047,7 +1052,11 @@ export class ModoTeste {
     if (!r) return;
     r.t -= dt;
     if (r.t <= 0) { this.rastro = null; return; }
-    this.grafico.moveTo(r.x0, r.y0).lineTo(r.x1, r.y1).stroke({ width: 1, color: 0xfff2a8, alpha: 0.85 });
+    // Linha do tiro conforme a arma: visível, pouco visível (fraca, some rápido) ou invisível (só o clarão)
+    const l = r.linha;
+    const cor = Number.parseInt(l.cor.replace('#', ''), 16) || 0xfff2a8;
+    const k = Math.max(0, r.t / Math.max(0.001, r.total));
+    if (l.visibilidade !== 'invisivel') this.grafico.moveTo(r.x0, r.y0).lineTo(r.x1, r.y1).stroke({ width: l.espessura, color: cor, alpha: (l.visibilidade === 'pouco' ? 0.3 : 0.85) * (0.4 + 0.6 * k) });
     this.grafico.circle(r.x0, r.y0, 2.5).fill({ color: 0xffe066, alpha: 0.9 });
     if (r.acertou) this.grafico.circle(r.x1, r.y1, 3).fill({ color: 0xff5050, alpha: 0.9 });
   }
@@ -1082,7 +1091,7 @@ export class ModoTeste {
     els.forEach((e, k) => {
       const v = valores[k];
       if (v === null) return;
-      const d = elementoHud(e, v, z, this.urlImagem);
+      const d = elementoHud(e, v, z, this.urlImagem, this.pers?.dados.arma?.imagens);
       this.elHudTela.append(d);
       posicionarHud(d, e, z, rw, rh);
     });
