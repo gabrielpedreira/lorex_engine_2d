@@ -25,6 +25,7 @@ export const ACOES_SISTEMA: { id: string; nome: string; texto: string; grupo: st
   { id: 'direita', nome: 'Andar para a direita', texto: 'Enquanto segurada, o personagem anda para a direita.', grupo: 'Movimento' },
   { id: 'pular', nome: 'Pular', texto: 'Segurar pula mais alto; soltar cedo faz um pulo curto.', grupo: 'Movimento' },
   { id: 'interagir', nome: 'Interagir', texto: 'Abrir porta, ler nota, puxar alavanca, entrar numa saída. Também fecha mensagens.', grupo: 'Interação' },
+  { id: 'menu', nome: 'Menu (inventário)', texto: 'Abre e fecha o menu: itens, Usar / Combinar / Checar, Arquivos. Esc também fecha.', grupo: 'Interação' },
 ];
 
 const t = (...teclas: string[]): Atalho => ({ tipo: 'tecla', teclas });
@@ -40,6 +41,7 @@ export function controlesPadrao(): Controles {
       interagir: [t('KeyE')],
       tiro: [t('KeyJ'), t('KeyX')],
       recarga: [t('KeyR')],
+      menu: [t('Tab')],
     },
   };
 }
@@ -91,6 +93,8 @@ export function normalizarControles(d: unknown): Controles {
         teclas: a.teclas.map((k) => normalizarCodigo(String(k))),
       }));
   }
+  // Ações da engine que surgiram depois (ex.: menu) entram com a tecla padrão
+  for (const a of ACOES_SISTEMA) if (!acoes[a.id] && base.acoes[a.id]) acoes[a.id] = base.acoes[a.id];
   return { acoes, janelaSequencia: Number(c.janelaSequencia) > 0 ? Number(c.janelaSequencia) : base.janelaSequencia };
 }
 

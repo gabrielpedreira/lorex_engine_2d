@@ -27,6 +27,8 @@ import { PainelLog } from './ui/log';
 import { abrirJanelaCodigo, aoReceber, enviar, ponteDisponivel, type ElementoSerial } from './plataforma/ponte';
 import { carregarTipo, type TipoInimigo } from './editor/inimigosTeste';
 import { EditorHud } from './ui/hud';
+import { EditorMenu } from './ui/menu';
+import { itemBase, normalizarItens, normalizarMenu, type ConfigItens } from './core/menu';
 import { EditorArmas } from './ui/armas';
 import { normalizarArma } from './core/inimigos';
 import { GuiaAtalhos } from './ui/atalhos';
@@ -39,7 +41,7 @@ import { arquivoScript, importarModulo, modeloScript, tiposApi } from './core/sc
 import { SISTEMAS } from './core/sistemaPadrao';
 import { definirDefinicoes, normalizarDefinicoes } from './core/definicoes';
 import { ligacoesCampos } from './ui/camposJogo';
-import { aplicarBlocoControles, aplicarBlocoHud, aplicarBlocoMapa, blocoControles, blocoHud, blocoMapa } from './core/configScript';
+import { aplicarBlocoControles, aplicarBlocoHud, aplicarBlocoItens, aplicarBlocoMapa, aplicarBlocoMenu, blocoControles, blocoHud, blocoItens, blocoMapa, blocoMenu } from './core/configScript';
 import { aplicarBlocoArma, aplicarBlocoFase, aplicarBlocoJogo, aplicarBlocoObjeto, aplicarBlocoPersonagem, blocoArma, blocoFase, blocoJogo, blocoObjeto, blocoPersonagem, escreverBloco, lerBloco, mesmosValores } from './core/configScript';
 import { modeloArma, modeloComportamento, modeloInimigoZumbi } from './core/modelosScript';
 import type { Personagem as DadosPersonagem } from './core/personagem';
@@ -612,6 +614,8 @@ teste.aoIrPara = async (v) => {
   await prepararPersonagemTeste();
   await carregarTiposInimigo();
   teste.hudConfig = normalizarHud(config.hud);
+  teste.menuConfig = normalizarMenu(config.menu);
+  teste.itensConfig = await catalogoItens();
   await teste.prepararScripts(await fontesScripts());
   teste.levarInventario(inv);
   teste.iniciar();
@@ -629,6 +633,8 @@ async function alternarTeste() {
   await prepararPersonagemTeste();
   await carregarTiposInimigo();
   teste.hudConfig = normalizarHud(config.hud);
+  teste.menuConfig = normalizarMenu(config.menu);
+  teste.itensConfig = await catalogoItens();
   await teste.prepararScripts(await fontesScripts());
   teste.iniciar();
 }
@@ -696,6 +702,8 @@ painelCodigo.registrarFonte(async () => {
       modelo: escreverBloco(modeloScript('jogo', 'Jogo (global)'), b.valores, b.comentarios, 'o jogo (física do jogador)') },
     dados('hud.js', 'HUD', 'elementos da tela e tela de morte (ferramenta HUD, U)', blocoHud(normalizarHud(config.hud)), 'HUD', 'o que aparece na tela durante o jogo (vida, munição, rosto, arma…) e a tela de morte'),
     dados('controles.js', 'Controles', 'teclas de cada ação (ferramenta Controles, B)', blocoControles(normalizarControles(config.controles)), 'Controles', 'qual tecla (ou combinação, ou sequência) faz cada ação'),
+    dados('menu.js', 'Menu', 'telas do menu e submenu (ferramenta Menu e itens, R)', blocoMenu(normalizarMenu(config.menu)), 'Menu', 'como o menu do jogo é montado (painéis, imagens, posições, botões)'),
+    dados('itens.js', 'Itens', 'itens, combinações e mensagens (ferramenta Menu e itens, R)', blocoItens(normalizarItens(config.itens)), 'Itens', 'o que cada item é (espaços, imagens, legenda, uso), as combinações e as mensagens'),
     dados('mapa.js', 'Mapa', 'passagens e transições entre salas (ferramenta Mapa, M)', blocoMapa(normalizarMapa(config.mapa)), 'Mapa', 'como as salas se ligam e a transição de cada passagem'),
   ];
 });
@@ -797,7 +805,7 @@ painelCodigo.registrarFonte(async () => {
 });
 // Fonte 4: seus módulos (classes e funções para importar) e scripts que não pertencem a nada aberto agora
 painelCodigo.registrarFonte(async () => {
-  const usados = new Set<string>(['jogo.js', 'hud.js', 'controles.js', 'mapa.js', ...SISTEMAS.map((s) => s.arquivo)]);
+  const usados = new Set<string>(['jogo.js', 'hud.js', 'controles.js', 'mapa.js', 'menu.js', 'itens.js', ...SISTEMAS.map((s) => s.arquivo)]);
   if (estado.fase.script) usados.add(estado.fase.script);
   for (const o of estado.fase.objetos) if (o.script) usados.add(o.script);
   for (const arq of await plat.listarDados('personagens')) {
@@ -939,6 +947,8 @@ async function sincronizarBlocos() {
     await trocar('hud.js', blocoHud(normalizarHud(config.hud)), 'HUD', 'jogo/projeto.json');
     await trocar('controles.js', blocoControles(normalizarControles(config.controles)), 'Controles', 'jogo/projeto.json');
     await trocar('mapa.js', blocoMapa(normalizarMapa(config.mapa)), 'Mapa', 'jogo/projeto.json');
+    await trocar('menu.js', blocoMenu(normalizarMenu(config.menu)), 'Menu', 'jogo/projeto.json');
+    await trocar('itens.js', blocoItens(normalizarItens(config.itens)), 'Itens', 'jogo/projeto.json');
     const f = estado.fase;
     const arqFase = !estado.sujo && estado.arquivoFase ? 'jogo/fases/' + estado.arquivoFase : null;
     await trocar(f.script, blocoFase(f), f.nome, arqFase);
@@ -986,6 +996,15 @@ async function aplicarBlocoDoScript(arquivo: string) {
       if (editorControles.aberta) void abrirControles();
     }
   }
+  if (arquivo === 'menu.js' || arquivo === 'itens.js') {
+    const m = normalizarMenu(config.menu), it = normalizarItens(config.itens);
+    const ehMenu = arquivo === 'menu.js';
+    if (!mesmosValores((ehMenu ? blocoMenu(m) : blocoItens(it)).valores, b)) {
+      if (ehMenu) config.menu = aplicarBlocoMenu(m, b); else config.itens = aplicarBlocoItens(it, b);
+      salvarConfigDepois(); mudou.push(ehMenu ? 'Menu' : 'Itens');
+      if (editorMenu.aberta) void abrirMenuItens();
+    }
+  }
   if (arquivo === 'mapa.js') {
     const atual = normalizarMapa(config.mapa);
     if (!mesmosValores(blocoMapa(atual).valores, b)) {
@@ -1016,7 +1035,7 @@ async function aplicarBlocoDoScript(arquivo: string) {
     } catch { /* ilegível */ }
   }
   if (!mudou.length) return;
-  if (mudou.some((n) => !['jogo', 'HUD', 'Controles', 'Mapa'].includes(n))) await carregarTiposInimigo();
+  if (mudou.some((n) => !['jogo', 'HUD', 'Controles', 'Mapa', 'Menu', 'Itens'].includes(n))) await carregarTiposInimigo();
   // A fase mudou pelo código: salva junto (se já tinha arquivo), para o valor valer no ▶ Testar e no disco
   if (estado.sujo && estado.arquivoFase && (f.script === arquivo || donos.length)) await salvar();
   LOG.add({ cat: 'codigo', arquivo, texto: `valores do bloco config aplicados em: ${mudou.join(', ')}` });
@@ -1122,6 +1141,48 @@ const editorHud = new EditorHud({
   imagensArma: async () => (await lerPersonagemTeste(false))?.arma?.imagens ?? null,
 });
 editorHud.aoMudar = (h: import('./core/hud').ConfigHud) => { config.hud = h; salvarConfigDepois(); };
+// ---------- Menu e itens ----------
+/** Catálogo de itens do jogo: o da ferramenta + as armas que ainda não foram cadastradas (espaços e imagem da arma). */
+async function catalogoItens(): Promise<ConfigItens> {
+  const c = normalizarItens(config.itens);
+  for (const arq of await plat.listarDados('armas').catch(() => [] as string[])) {
+    try {
+      const a = normalizarArma(JSON.parse(await plat.lerDados('armas', arq)));
+      if (!a || c.itens.some((i) => i.nome.toLowerCase() === a.nome.toLowerCase())) continue;
+      c.itens.push(itemBase(a.nome, { uso: 'arma', arma: arq, espacos: a.slots >= 2 ? 2 : 1, imagem: a.imagens.menu || a.imagens.hud, consome: false, descricao: '' }));
+    } catch { /* ilegível */ }
+  }
+  return c;
+}
+teste.carregarArma = async (arq) => { try { return normalizarArma(JSON.parse(await plat.lerDados('armas', arq))) ?? null; } catch { return null; } };
+const editorMenu = new EditorMenu({
+  imagens: () => plat.listarAssets(),
+  garantir: (c, cat) => (c.startsWith('jogo/') ? Promise.resolve(c.slice(5)) : plat.garantirEmUso(c, cat)),
+  url: (c) => urlAsset(plat, c) + anticache(),
+  nomesItens: async () => {
+    const r = new Set<string>();
+    for (const o of estado.fase.objetos) {
+      const c = comportamentoDe(o);
+      if (c?.tipo === 'coletavel' && !c.cura) r.add(c.item);
+      if ((c?.tipo === 'porta' || c?.tipo === 'saida') && c.requer) r.add(c.requer);
+      if (c?.tipo === 'usoItem' && c.item) r.add(c.item);
+    }
+    return [...r];
+  },
+  armas: async () => {
+    const r: { arquivo: string; nome: string; imagem: string; slots: number }[] = [];
+    for (const arq of await plat.listarDados('armas').catch(() => [] as string[])) {
+      try { const a = normalizarArma(JSON.parse(await plat.lerDados('armas', arq))); if (a) r.push({ arquivo: arq, nome: a.nome, imagem: a.imagens.menu || a.imagens.hud, slots: a.slots }); } catch { /* ilegível */ }
+    }
+    return r;
+  },
+});
+editorMenu.aoMudar = (m, itens) => { config.menu = m; config.itens = itens; salvarConfigDepois(); };
+async function abrirMenuItens() {
+  if (estado.testando) teste.parar();
+  editorMenu.abrir(normalizarMenu(config.menu), normalizarItens(config.itens), estado.fase.resolucaoBase);
+}
+
 async function abrirHud() {
   if (estado.testando) teste.parar();
   editorHud.abrir(normalizarHud(config.hud), estado.fase.resolucaoBase, estado.fase.objetos.flatMap((o) => { const c = comportamentoDe(o); return c?.tipo === 'coletavel' ? [c.item] : []; }));
@@ -1251,6 +1312,7 @@ async function abrirMapa() {
   if (editorPersonagens.aberta) await editorPersonagens.fechar();
   if (editorControles.aberta) editorControles.fechar();
   if (editorHud.aberta) editorHud.fechar();
+  if (editorMenu.aberta) editorMenu.fechar();
   if (editorArmas.aberta) editorArmas.fechar();
   const salas = await salasDoProjeto();
   const mapa = normalizarMapa(config.mapa);
@@ -1314,7 +1376,7 @@ const itensTrilho: (ItemTrilho | 'sep')[] = [
   { id: 'tela', modo: 'tela', ico: 'tela', titulo: 'Tela do jogo', atalho: 'Q', acao: () => estado.definirModo(estado.modo === 'tela' ? 'selecionar' : 'tela'),
     texto: 'Ajusta o quadro laranja: o pedaço do cenário que o jogador vê. Arraste os cantos (mantém a proporção) ou escolha 320×180, 480×270, 640×360, 960×540. Mostra se a escala fica nítida em Full HD. Pode virar o padrão do projeto ou ir para todas as fases.' },
   { id: 'zona', modo: 'zona', ico: 'zona', titulo: 'Zona (gatilho / passagem)', atalho: 'Z', acao: () => estado.definirModo(estado.modo === 'zona' ? 'selecionar' : 'zona'),
-    texto: 'Arraste no cenário para criar uma área invisível no jogo: um GATILHO (ao entrar: mensagem, inimigos surgindo, luzes, acionar objeto) ou, trocando o comportamento, uma PASSAGEM contínua (fim de rua). No editor aparece roxa (gatilho) ou vermelha (passagem).' },
+    texto: 'Arraste no cenário para criar uma área invisível no jogo: um GATILHO (ao entrar: mensagem, inimigos surgindo, luzes, acionar objeto) ou, trocando o comportamento, uma PASSAGEM contínua (fim de rua). Ou uma ÁREA DE USO DE ITEM (amarela): onde um item do menu funciona (chave na porta, pendrive no computador). No editor aparece roxa (gatilho), vermelha (passagem) ou amarela (área de uso).' },
   { id: 'luz', modo: 'luz', ico: 'luz', titulo: 'Iluminação', atalho: 'Y', acao: () => estado.definirModo(estado.modo === 'luz' ? 'selecionar' : 'luz'),
     texto: 'Pontos de luz para salas escuras: clique para criar, arraste o centro para mover e a borda para mudar o raio. Ligue "Fase escura" nas propriedades da fase (sem seleção) e ajuste a escuridão e a lanterna do jogador. Shift+Y mostra/oculta a prévia do escuro.' },
   { id: 'inimigos', modo: 'inimigo', ico: 'inimigo', titulo: 'Inimigos', atalho: 'N', acao: () => estado.definirModo(estado.modo === 'inimigo' ? 'selecionar' : 'inimigo'),
@@ -1325,6 +1387,8 @@ const itensTrilho: (ItemTrilho | 'sep')[] = [
     texto: 'Cria e edita as armas do jogo: pente, espaços no inventário, alcance, dano por distância, linha do tiro (visível, pouco visível, invisível) e as imagens do HUD, da bala e do menu. Cada arma também aparece no painel de Código.' },
   { id: 'hud', ico: 'hud', titulo: 'HUD', atalho: 'U', acao: () => void abrirHud(),
     texto: 'Edita o que aparece na tela durante o jogo: munição, inimigos vivos, itens, valores do código. Arraste os elementos na prévia da tela.' },
+  { id: 'menuItens', ico: 'mochila', titulo: 'Menu e itens', atalho: 'R', acao: () => void abrirMenuItens(),
+    texto: 'Monta o menu do jogo (Tab no ▶ Testar): retrato da condição, vida, arma, espaços dos itens, Usar / Combinar / Checar e Arquivos. Também cadastra os itens (espaços, imagens, legenda, uso) e as combinações. Para "usar a chave na porta", crie uma Área de uso de item com a ferramenta Zona (Z).' },
   { id: 'mapa', ico: 'mapa', titulo: 'Mapa', atalho: 'M', acao: () => void abrirMapa(),
     texto: 'Diagrama das salas do jogo: conecte as passagens (portas, escadas, saídas) de uma sala à outra e escolha o que acontece no caminho (◆): corte, escurecer, tela cheia animada estilo Resident Evil, som.' },
   { id: 'codigo', ico: 'codigo', titulo: 'Código', atalho: 'O', acao: () => void abrirCodigo(),
@@ -1591,7 +1655,7 @@ function digitando(): boolean {
 window.addEventListener('keydown', (e) => {
   if (e.key === 'F1') { e.preventDefault(); guiaAtalhos.alternar(); return; }
   if (e.key === 'F9' && !estado.testando) { e.preventDefault(); void atualizarBiblioteca(); return; }
-  if (document.querySelector('.modal-fundo') || inicio.aberta || editorPersonagens.aberta || editorControles.aberta || painelCodigo.aberta || editorHud.aberta || editorArmas.aberta || editorMapa.aberta || telaTransicao.ativa) return;
+  if (document.querySelector('.modal-fundo') || inicio.aberta || editorPersonagens.aberta || editorControles.aberta || painelCodigo.aberta || editorHud.aberta || editorMenu.aberta || editorArmas.aberta || editorMapa.aberta || telaTransicao.ativa) return;
   const ctrl = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (ctrl && k === 's') { e.preventDefault(); void salvar(); return; }
@@ -1643,6 +1707,7 @@ window.addEventListener('keydown', (e) => {
       else if (k === 'o') void abrirCodigo();
       else if (k === 'n') estado.definirModo(estado.modo === 'inimigo' ? 'selecionar' : 'inimigo');
       else if (k === 'u') void abrirHud();
+      else if (k === 'r') void abrirMenuItens();
       else if (k === 'a') void abrirArmas();
       else if (k === 'm') void abrirMapa();
       else if (k === 'y' && e.shiftKey) { estado.previaLuz = !estado.previaLuz; estado.emit('opcoes'); estado.avisar(`Prévia do escuro ${estado.previaLuz ? 'ligada' : 'desligada'}.`); }

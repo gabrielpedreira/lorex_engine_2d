@@ -47,6 +47,11 @@ export interface PonteTeste {
   /** O código mudou visibilidade/posição: redesenhar. */
   mudouCena(): void;
   interagir(o: ObjetoFase): void;
+  espacosLivres(): number;
+  cabe(item: string): boolean;
+  menuAbrir(tela?: string): void;
+  menuFechar(): void;
+  menuAberto(): boolean;
   inimigos(): InimigoVivo[];
   municao(): number;
   definirMunicao(n: number): void;
@@ -225,6 +230,22 @@ export class MotorScripts {
   /** aoInteragir do objeto. false = cancelar o comportamento pronto. */
   interagir(o: ObjetoFase): boolean {
     return this.chamarObjeto(o.id, 'aoInteragir') !== false;
+  }
+
+  /** Usar item (menu): o jogo.js e a Área de uso podem cancelar (false). */
+  usarItem(item: string, area: ObjetoFase | null): boolean {
+    let ok = true;
+    const h = area ? this.handle(area) : null;
+    for (const s of this.scripts) if (s.dono === 'jogo' && this.chamar(s, 'aoUsarItem', item, h) === false) ok = false;
+    if (area && this.chamarObjeto(area.id, 'aoUsarItem', item, h) === false) ok = false;
+    return ok;
+  }
+
+  /** Combinar dois itens (menu): o jogo.js pode cancelar (false). */
+  combinar(a: string, b: string, resultado: string | null): boolean {
+    let ok = true;
+    for (const s of this.scripts) if (s.dono === 'jogo' && this.chamar(s, 'aoCombinar', a, b, resultado) === false) ok = false;
+    return ok;
   }
 
   acionado(alvo: string, origem: ObjetoFase) {
@@ -583,6 +604,13 @@ export class MotorScripts {
           return true;
         },
         lista: () => Object.fromEntries(inv()),
+        espacosLivres: () => ponte.espacosLivres(),
+        cabe: (item: string) => ponte.cabe(String(item)),
+      },
+      menu: {
+        abrir: (tela?: string) => ponte.menuAbrir(tela),
+        fechar: () => ponte.menuFechar(),
+        get aberto() { return ponte.menuAberto(); },
       },
       hud: {
         definir: (r: string, v: string | number) => ponte.hudDefinir(String(r), String(v)),

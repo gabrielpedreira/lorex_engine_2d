@@ -13,6 +13,8 @@ import { danoNaDistancia, type AtaqueInimigo, type ConfigArma, type EventoIA } f
 import { normalizarHud, type ConfigHud } from '../core/hud';
 import { elementoHud, posicionarHud, telaMorte } from '../ui/hud';
 import { el } from '../ui/dom';
+import { MenuJogo } from './menuJogo';
+import { arrumarEspacos, cabeNoMenu, espacosDoMenu, itemDe, itensPadrao, menuPadrao, receitaDe, type ConfigItens, type ConfigMenu } from '../core/menu';
 import { dica } from '../ui/legenda';
 import type { Estado } from './estado';
 import type { Viewport } from './viewport';
@@ -96,6 +98,12 @@ export class ModoTeste {
   private municaoLevada: number | null = null;
   /** Elementos do HUD (ferramenta HUD, projeto.json). */
   hudConfig: ConfigHud = normalizarHud(null);
+  /** Menu e itens (ferramenta Menu e itens); o catálogo já inclui as armas. */
+  menuConfig: ConfigMenu = menuPadrao();
+  itensConfig: ConfigItens = itensPadrao();
+  /** Troca a arma (Usar uma arma no menu): o editor lê o arquivo. */
+  carregarArma: (arquivo: string) => Promise<ConfigArma | null> = async () => null;
+  private menu!: MenuJogo;
   /** URL de uma imagem (caminho relativo a jogo/), para o HUD. */
   urlImagem: (c: string) => string = (c) => c;
   /** Piscar depois de um golpe (reação pronta ou eu.piscar() no código). */
@@ -185,6 +193,11 @@ export class ModoTeste {
       morto: () => t.morto,
       invulneravel: () => t.tempoJogo < t.invulAte,
       morrer: () => t.morrer('código'),
+      espacosLivres: () => { const e = espacosDoMenu(t.menuConfig); return t.mundo ? arrumarEspacos(t.mundo.inventario, t.itensConfig, e.colunas, e.total).livres : e.total; },
+      cabe: (item: string) => { const e = espacosDoMenu(t.menuConfig); return !t.mundo || cabeNoMenu(t.mundo.inventario, t.itensConfig, item, e.colunas, e.total); },
+      menuAbrir: (tela?: string) => t.abrirMenu(tela === 'arquivos' ? 'arquivos' : 'inventario'),
+      menuFechar: () => t.menu.fechar(),
+      menuAberto: () => t.menu.aberto,
       checkpoint: (x?: number, y?: number) => { if (t.jogador) t.marcarCheckpoint(x ?? t.jogador.x, y ?? t.jogador.y, 'código'); },
     };
   }
@@ -242,8 +255,93 @@ export class ModoTeste {
     centro.append(this.elMorte);
     centro.append(this.elHudTela);
     this.elHudTela.hidden = true;
-    for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem, this.elHudJogo]) { x.hidden = true; centro.append(x); }
+    for (const x of [this.elPrompt, this.elInventario, this.elMensagem, this.elHudJogo]) { x.hidden = true; centro.append(x); }
+    this.menu = new MenuJogo({
+      menu: () => this.menuConfig, itens: () => this.itensConfig, url: (c) => this.urlImagem(c),
+      inventario: () => this.mundo?.inventario ?? new Map(),
+      vida: () => ({ atual: this.vida, maxima: this.cfgVida.maxima }),
+      arma: () => { const a = this.pers?.dados.arma; return a ? { nome: a.nome, imagem: a.imagens.menu || a.imagens.hud, municao: this.municao, pente: a.pente } : null; },
+      usar: (item) => this.usarItem(item),
+      combinar: (a, b) => this.combinarItens(a, b),
+      aviso: (t) => this.toast(t),
+      mapa: () => { LOG.add({ cat: 'mundo', texto: 'menu: Mapa (ainda sem tela de mapa)' }); this.toast('Mapa: em breve.'); },
+    });
+    this.menu.tamanho = () => this.estado.fase.resolucaoBase;
+    this.menu.aoFechar = () => { LOG.add({ cat: 'mundo', texto: 'menu fechado' }); this.entradaJogo.limpar(); };
+    centro.append(this.menu.raiz);
+    this.elToast.hidden = true;
+    centro.append(this.elToast);
     centro.append(this.hud);
+  }
+
+  /** Abre o menu (inventário) sobre a tela do jogo; o jogo fica pausado enquanto ele estiver aberto. */
+  private abrirMenu(tela: 'inventario' | 'arquivos' = 'inventario') {
+    if (!this.mundo || this.morto || this.saindo) return;
+    const cj = this.viewport.cameraJogo();
+    const a = this.viewport.camadaParaTela(cj.x, cj.y, '');
+    this.menu.posicionar(a.x, a.y, this.estado.camera.zoom);
+    this.menu.abrir(tela);
+    this.entradaJogo.limpar();
+    this.elPrompt.hidden = true;
+    const e = espacosDoMenu(this.menuConfig);
+    LOG.add({ cat: 'mundo', texto: `menu aberto (${tela}) · espaços livres: ${arrumarEspacos(this.mundo.inventario, this.itensConfig, e.colunas, e.total).livres}/${e.total}` });
+  }
+
+  /** Usar (menu). Devolve true para fechar o menu. */
+  private usarItem(nome: string): boolean {
+    const m = this.mundo;
+    if (!m || !this.jogador) return true;
+    const it = itemDe(this.itensConfig, nome);
+    const caixa = this.caixaJogador();
+    const areas = m.areasDeUso(caixa);
+    const area = areas.find((o) => (o.comportamentos[0] as { item?: string }).item?.toLowerCase() === nome.toLowerCase()) ?? null;
+    if (this.motor && !this.motor.usarItem(nome, area ?? areas[0] ?? null)) { LOG.add({ cat: 'mundo', texto: `usar ${nome}: cancelado pelo código (aoUsarItem)` }); return true; }
+    const tirar = () => { const q = m.inventario.get(nome) ?? 0; if (q > 1) m.inventario.set(nome, q - 1); else m.inventario.delete(nome); };
+    if (area || it.uso === 'area') {
+      const r = m.usarItem(nome, caixa, this.itensConfig.mensagens.aquiNao);
+      LOG.add({ cat: 'mundo', texto: `usar ${nome}: ${r.usou ? `funcionou em ${area?.nome ?? '?'}` : r.aviso}` });
+      if (!r.usou) { this.toast(r.aviso ?? this.itensConfig.mensagens.aquiNao); return false; }
+      if (r.consome) tirar();
+      this.tratar(r, area ?? undefined);
+      return true;
+    }
+    if (it.uso === 'curar') {
+      if (this.vida >= this.cfgVida.maxima) { this.toast('A vida já está cheia.'); return false; }
+      this.definirVida(this.vida + Math.max(1, it.cura), `usou ${nome}`);
+      if (it.consome) tirar();
+      this.toast(`Usou: ${nome} (+${Math.max(1, it.cura)})`);
+      this.atualizarInventario();
+      return true;
+    }
+    if (it.uso === 'arma') {
+      if (!it.arma) { this.toast(`${nome}: escolha o arquivo da arma em Menu e itens.`); return false; }
+      const atual = this.pers?.dados.arma;
+      if (atual && (atual.nome === nome || it.arma === this.arquivoArma)) { this.toast(`${nome} já está em uso.`); return false; }
+      void this.carregarArma(it.arma).then((a) => {
+        if (!a || !this.pers) { this.toast(`Não consegui carregar a arma ${it.arma}.`); return; }
+        this.pers.dados.arma = a; this.arquivoArma = it.arma; this.municao = a.pente; this.recargaAte = 0;
+        LOG.add({ cat: 'personagem', texto: `equipou ${a.nome} (${a.pente}/${a.pente})` });
+        this.toast(`Equipou: ${a.nome}`);
+      });
+      return true;
+    }
+    this.toast(`Não dá para usar ${nome}.`);
+    return false;
+  }
+  private arquivoArma = '';
+
+  /** Combinar (menu): pela tabela de combinações; o código (aoCombinar) pode cancelar. */
+  private combinarItens(a: string, b: string) {
+    const m = this.mundo;
+    if (!m) return;
+    const r = receitaDe(this.itensConfig, a, b);
+    if (this.motor && !this.motor.combinar(a, b, r?.resultado ?? null)) { LOG.add({ cat: 'mundo', texto: `combinar ${a} + ${b}: cancelado pelo código (aoCombinar)` }); return; }
+    if (!r) { LOG.add({ cat: 'mundo', texto: `combinar ${a} + ${b}: não combinam` }); this.toast(this.itensConfig.mensagens.naoCombina); return; }
+    for (const n of [a, b]) { const q = m.inventario.get(n) ?? 0; if (q > 1) m.inventario.set(n, q - 1); else m.inventario.delete(n); }
+    m.inventario.set(r.resultado, (m.inventario.get(r.resultado) ?? 0) + r.quantidade);
+    LOG.add({ cat: 'mundo', texto: `combinou ${a} + ${b} → ${r.resultado}${r.quantidade > 1 ? ` ×${r.quantidade}` : ''}` });
+    this.toast(`${a} + ${b} → ${r.resultado}`);
+    this.atualizarInventario();
   }
 
   get ativo() { return this.estado.testando; }
@@ -308,6 +406,7 @@ export class ModoTeste {
     window.removeEventListener('blur', this.perderFoco);
     this.hud.hidden = true;
     for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem, this.elHudJogo, this.elMorte]) x.hidden = true;
+    if (this.menu.aberto) { this.menu.aoFechar = () => {}; this.menu.fechar(); this.menu.aoFechar = () => { LOG.add({ cat: 'mundo', texto: 'menu fechado' }); this.entradaJogo.limpar(); }; }
     this.mortoEm = null;
     this.spritePers.alpha = 1;
     this.spritePers.tint = 0xffffff;
@@ -356,6 +455,9 @@ export class ModoTeste {
     }
     this.viewport.quadroTeste = (o) => mundo.quadroAnim(o);
     mundo.podeCurar = () => !this.morto && this.vida < this.cfgVida.maxima;
+    const esp = espacosDoMenu(this.menuConfig);
+    mundo.cabe = (item) => cabeNoMenu(mundo.inventario, this.itensConfig, item, esp.colunas, esp.total);
+    mundo.textoSemEspaco = this.itensConfig.mensagens.semEspaco;
     this.viewport.luzTeste = {
       escura: () => mundo.escura,
       luz: (l) => ({ ligada: mundo.luzes.get(l.id) ?? l.ligada, raio: mundo.ajusteLuz.get(l.id)?.raio ?? l.raio, intensidade: mundo.ajusteLuz.get(l.id)?.intensidade ?? l.intensidade, angulo: mundo.ajusteLuz.get(l.id)?.angulo ?? l.angulo }),
@@ -389,8 +491,11 @@ export class ModoTeste {
     this.municao = arma ? (this.municaoLevada ?? arma.pente) : 0;
     this.municaoLevada = null;
     this.inserirGrafico();
+    const levou = !!this.inventarioLevado;
     if (this.inventarioLevado) for (const [k, v] of this.inventarioLevado) this.mundo.inventario.set(k, v);
     this.inventarioLevado = null;
+    // Começo da partida: a arma equipada já está no menu (ocupa os espaços dela)
+    if (!levou && arma && !this.mundo.inventario.has(arma.nome)) this.mundo.inventario.set(arma.nome, 1);
     this.hudJogo.clear();
     this.valoresHud.clear();
     this.chaveHudTela = '';
@@ -541,6 +646,13 @@ export class ModoTeste {
     if (document.querySelector('.modal-fundo')) return;
     const alvo = ev.target as HTMLElement | null;
     if (alvo && this.hud.contains(alvo) && alvo.tagName === 'INPUT') return; // ajustando um controle do HUD
+    // Menu aberto: as teclas são dele (Esc volta/fecha; a tecla do menu fecha)
+    if (this.menu.aberto && ev.key !== 'F5') {
+      ev.preventDefault(); ev.stopPropagation();
+      if (this.ehDaAcao(ev.code, 'menu') && !ev.repeat) this.menu.fechar();
+      else this.menu.tecla(ev);
+      return;
+    }
     if (ev.key === 'Escape' || ev.key === 'F5') { ev.preventDefault(); this.parar(); return; }
     if (ev.key === 'F6') { ev.preventDefault(); LOG.add({ cat: 'sistema', texto: 'Fase reiniciada (F6)' }); this.reiniciarTudo(); this.toast('Fase reiniciada'); return; }
     // Morto: Enter (ou Interagir) volta logo no checkpoint
@@ -556,6 +668,7 @@ export class ModoTeste {
       return;
     }
     if (TECLAS_RESERVADAS.has(ev.code)) return;
+    if (this.ehDaAcao(ev.code, 'menu') && !ev.repeat && this.mortoEm === null && !this.mensagemAberta) { ev.preventDefault(); ev.stopPropagation(); this.abrirMenu(); return; }
     // Nada de rolar a página, digitar ou acionar atalhos do editor enquanto joga
     ev.preventDefault();
     ev.stopPropagation();
@@ -600,7 +713,7 @@ export class ModoTeste {
     const j = this.jogador;
     const m = this.mundo;
     if (!j || !m) return;
-    if (this.mensagemAberta || this.saindo) { this.desenharJogador(0); return; } // pausado: lendo a mensagem ou trocando de sala
+    if (this.mensagemAberta || this.saindo || this.menu.aberto) { this.desenharJogador(0); return; } // pausado: mensagem, menu ou trocando de sala
     const ent = this.entradaJogo;
     ent.atualizar(performance.now() / 1000);
     for (const a of ent.disparadasAgora) LOG.add({ cat: 'entrada', texto: `dispara a ação "${a}"` });

@@ -13,7 +13,7 @@ import { secaoCamposJogo } from './camposJogo';
 import { AJUSTES_INIMIGO, inimigoPadrao } from '../core/inimigos';
 import { aoMudarDefinicoes } from '../core/definicoes';
 import { EFEITOS_PADRAO, type Efeito, type TipoEfeito } from '../core/efeitos';
-import { ACOES_GATILHO, MODOS_PASSAGEM, NOMES_COMPORTAMENTO, comportamentoPadrao, type AcaoGatilho, type Comportamento, type ModoPassagem, type TipoComportamento } from '../core/comportamentos';
+import { ACOES_GATILHO, ACOES_USO_ITEM, MODOS_PASSAGEM, NOMES_COMPORTAMENTO, comportamentoPadrao, type AcaoGatilho, type AcaoUsoItem, type Comportamento, type ModoPassagem, type TipoComportamento } from '../core/comportamentos';
 import { el } from './dom';
 import { MODOS_ANIM, duracaoFolha, palpiteAnim, tamanhoQuadro, type ModoAnim } from '../core/folha';
 
@@ -235,6 +235,37 @@ export class PainelPropriedades {
         }
         secao.append(marcar('Só na primeira vez', atual.umaVez, (v) => { atual.umaVez = v; }, 'Desmarcado: dispara toda vez que o jogador entra.'),
           el('p', { class: 'dica-campo' }, 'No código do objeto: aoTocar (entrou) e aoSair (saiu).'));
+        break;
+      }
+      case 'usoItem': {
+        const nomesItens = [...new Set([...itensDaFase, ...this.estado.fase.objetos.flatMap((x) => { const c = x.comportamentos[0] as { tipo?: string; requer?: string } | undefined; return (c?.tipo === 'porta' || c?.tipo === 'saida') && c.requer ? [c.requer] : []; })])];
+        const acao = el('select', { id: 'pc-usoacao' }, ...ACOES_USO_ITEM.map((a) => el('option', { value: a.id }, a.nome)));
+        acao.value = atual.acao;
+        acao.addEventListener('change', () => { this.estado.alterar(() => { atual.acao = acao.value as AcaoUsoItem; }); this.render(true); });
+        const labAcao = el('label', { for: 'pc-usoacao' }, 'Ao usar o item certo');
+        dica(labAcao, 'O que acontece', ACOES_USO_ITEM.map((a) => `${a.nome}: ${a.texto}`).join(' '));
+        secao.append(
+          texto('Item aceito', atual.item, (v) => { atual.item = v; }, 'Nome do item que funciona aqui (o mesmo do Coletável e da ferramenta Menu e itens). Ex.: "chave da sala", "pendrive", "alicate".', nomesItens),
+          el('div', { class: 'campo largo' }, labAcao, acao),
+          el('p', { class: 'dica-campo' }, ACOES_USO_ITEM.find((a) => a.id === atual.acao)?.texto ?? ''));
+        if (['abrir', 'acionar', 'mostrar', 'esconder'].includes(atual.acao)) {
+          const alvo = atual.alvo ? this.estado.objeto(atual.alvo) : undefined;
+          const escolher = el('button', { type: 'button', class: 'secundario largo' }, alvo ? `Alvo: ${alvo.nome} (trocar)` : 'Escolher o alvo no cenário…');
+          dica(escolher, 'Escolher alvo', 'Clique aqui e depois no objeto do cenário (a porta, a corrente, o computador…). Esc cancela.');
+          escolher.addEventListener('click', async () => {
+            const id = await this.acoes.escolherAlvo();
+            if (id && id !== o.id) this.estado.alterar(() => { atual.alvo = id; });
+            this.render(true);
+          });
+          secao.append(escolher);
+          if (atual.alvo && !alvo) secao.append(el('p', { class: 'aviso-texto' }, 'O alvo escolhido foi apagado. Escolha outro.'));
+        }
+        secao.append(
+          texto('Mensagem ao usar', atual.texto, (v) => { atual.texto = v; }, 'Opcional: texto que aparece quando o item certo é usado (ex.: "A porta destrancou.").'),
+          texto('Se usar outro item', atual.textoErrado, (v) => { atual.textoErrado = v; }, 'Texto quando o jogador usa um item que não é o desta área. Vazio = "Isso não funciona aqui."'),
+          marcar('Gasta o item', atual.consome, (v) => { atual.consome = v; }, 'O item sai do menu depois de usado aqui.'),
+          marcar('Só funciona uma vez', atual.umaVez, (v) => { atual.umaVez = v; }, 'Depois de usada, a área deixa de aceitar o item.'),
+          el('p', { class: 'dica-campo' }, 'No jogo: pare em cima da área, abra o menu (Tab), escolha o item › Usar. Fora de uma área assim: "Você não deve usar este item aqui." No código do objeto: aoUsarItem(eu, jogo, item).'));
         break;
       }
       case 'mensagem': {

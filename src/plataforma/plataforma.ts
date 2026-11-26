@@ -26,6 +26,10 @@ export interface ConfigProjeto {
   personagemTeste?: string;
   /** Elementos do HUD (ferramenta HUD). Vazio = padrão (munição). */
   hud?: import('../core/hud').ConfigHud;
+  /** Menu do jogo (ferramenta Menu e itens). */
+  menu?: import('../core/menu').ConfigMenu;
+  /** Catálogo de itens, combinações e mensagens (ferramenta Menu e itens). */
+  itens?: import('../core/menu').ConfigItens;
   /** Mapa: salas, passagens e transições (ferramenta Mapa). */
   mapa?: import('../core/mapa').Mapa;
   /** Teclas de cada ação (ferramenta Controles). Vazio = padrão. */

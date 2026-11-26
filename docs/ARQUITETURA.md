@@ -451,6 +451,22 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   `aplicarMudanca` envolve toda mudança: remove conexões sem pontas e apaga as passagens-zona (`PassagemSala.zona`)
   que perderam a última conexão (`passagensUsadas` antes × depois).
 
+### 4.41 Menu do jogo, itens e Área de uso de item
+
+- `core/menu.ts` (puro): `ConfigItens` (itens: nome, tipo item/arquivo, espaços 1–2, imagem, imagemGrande,
+  descrição, uso area/curar/arma/nada, cura, arma, consome; receitas a+b→resultado; mensagens) e `ConfigMenu` (telas
+  inventario/arquivos com `PainelMenu` { tipo imagem/retrato/vida/arma/itens/info/lista/leitura/botao, x, y, w, h,
+  imagem, area, acao, faixas, colunas, linhas, cor } e o submenu). `arrumarEspacos` põe os itens na grade (2 espaços
+  = vizinhos na mesma linha) e `cabeNoMenu` decide se um item novo cabe. projeto.json: `menu` e `itens`.
+- `editor/menuJogo.ts` (`MenuJogo`): desenha e opera o menu em DOM por cima da tela do jogo (px do jogo × zoom).
+  Usado no ▶ Testar (pausa o jogo; teclado e mouse) e como prévia na ferramenta (`previa` = arrastar/redimensionar).
+- `ui/menu.ts` (`EditorMenu`, ferramenta R): abas Tela: Itens, Tela: Arquivos, Submenu, Itens, Combinações,
+  Mensagens. As armas sem cadastro entram no catálogo sozinhas (`catalogoItens` no main).
+- Comportamento `usoItem` (`CompUsoItem`): zona amarela; `MundoInterativo.usarItem` faz a ação ou devolve o aviso;
+  `areasDeUso`. `MundoInterativo.cabe` impede pegar coletável sem espaço.
+- Ganchos `aoUsarItem` (jogo, objeto) e `aoCombinar` (jogo); API `jogo.menu` e `jogo.inventario.espacosLivres/cabe`.
+- Ação de sistema `menu` (Tab); `normalizarControles` acrescenta ações de sistema que faltarem.
+
 ### 4.40 Tudo no Código: luzes, camadas, inimigos, HUD, Controles e Mapa
 
 - Bloco da fase (`blocoFase`): além dos valores gerais, `corEscuro`, `lanternaForma`, `camadas` (id, nome,

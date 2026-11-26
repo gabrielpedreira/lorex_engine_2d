@@ -16,6 +16,7 @@ export const ICONES = {
   play: svg('<path d="M5 3l8 5-8 5z"/>'),
   parar: svg('<rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor"/>'),
   inimigo: svg('<path d="M8 2.5c-3 0-5 2-5 4.6 0 1.6.8 2.8 2 3.5V13h6v-2.4c1.2-.7 2-1.9 2-3.5 0-2.6-2-4.6-5-4.6z"/><circle cx="6" cy="7.5" r="1" fill="currentColor"/><circle cx="10" cy="7.5" r="1" fill="currentColor"/><path d="M7 13v-1.5M9 13v-1.5"/>'),
+  mochila: svg('<path d="M5 4.5V3.5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><rect x="2.5" y="4.5" width="11" height="9.5" rx="1.5"/><path d="M2.5 8.5h11M6.5 8.5v1.5h3V8.5"/>'),
   hud: svg('<rect x="1.5" y="3" width="13" height="10" rx="1.5"/><path d="M3.5 11h3M3.5 5.5h2M11 5.5h1.5"/>'),
   pasta: svg('<path d="M2 4.5V12a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1H8L6.5 3H3a1 1 0 0 0-1 1.5z"/>'),
   novo: svg('<path d="M9 2H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6z"/><path d="M9 2v4h4M8 8.5v3M6.5 10h3"/>'),

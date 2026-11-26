@@ -557,7 +557,7 @@ export class Viewport {
     const zona = !o.asset;
     const tex = zona ? Texture.WHITE : this.texturas.get(o.asset);
     const tipoZona = o.comportamentos[0]?.tipo;
-    sp.tint = !zona ? 0xffffff : tipoZona === 'saida' ? 0xe5484d : tipoZona === 'gatilho' ? 0xa45cf0 : 0x8ea59d;
+    sp.tint = !zona ? 0xffffff : tipoZona === 'saida' ? 0xe5484d : tipoZona === 'gatilho' ? 0xa45cf0 : tipoZona === 'usoItem' ? 0xf2d23a : 0x8ea59d;
     if (tex && o.anim && !zona) {
       const q = this.quadrosDe(tex, o.asset, o.anim);
       sp.texture = q[Math.min(q.length - 1, this.quadroObjeto(o))];

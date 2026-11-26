@@ -49,8 +49,37 @@ export const ACOES_GATILHO: { id: AcaoGatilho; nome: string; texto: string }[] =
   { id: 'checkpoint', nome: 'Checkpoint', texto: 'Ao morrer, o jogador volta aqui (com a vida cheia). Entrar numa sala também marca um checkpoint na chegada.' },
 ];
 export interface CompMensagem { tipo: 'mensagem'; texto: string }
+/**
+ * Área de uso de item: zona (amarela no editor) onde um item do menu funciona. O jogador para em cima, abre o
+ * menu e escolhe Usar: se o item é o certo, faz a ação; fora de uma área assim: "Você não deve usar este item aqui".
+ */
+export interface CompUsoItem {
+  tipo: 'usoItem';
+  /** Item aceito (nome do inventário). */
+  item: string;
+  acao: AcaoUsoItem;
+  /** abrir/acionar/mostrar/esconder: id do objeto. */
+  alvo: string;
+  /** Texto mostrado ao usar certo (opcional). */
+  texto: string;
+  /** Texto ao usar outro item aqui ('' = "Isso não funciona aqui."). */
+  textoErrado: string;
+  /** O item some ao usar. */
+  consome: boolean;
+  /** Só funciona uma vez. */
+  umaVez: boolean;
+}
+export type AcaoUsoItem = 'abrir' | 'acionar' | 'mostrar' | 'esconder' | 'mensagem' | 'nada';
+export const ACOES_USO_ITEM: { id: AcaoUsoItem; nome: string; texto: string }[] = [
+  { id: 'abrir', nome: 'Abrir porta', texto: 'Destranca e abre a porta escolhida (ex.: chave na fechadura).' },
+  { id: 'acionar', nome: 'Acionar objeto', texto: 'Como uma alavanca: abre/fecha uma porta ou mostra/esconde um objeto (ex.: pendrive no computador liga algo).' },
+  { id: 'mostrar', nome: 'Mostrar objeto', texto: 'Faz um objeto aparecer (ex.: a corrente cortada some e aparece a passagem).' },
+  { id: 'esconder', nome: 'Esconder objeto', texto: 'Faz um objeto sumir (ex.: alicate na corrente → a corrente some).' },
+  { id: 'mensagem', nome: 'Só mensagem', texto: 'Só mostra o texto.' },
+  { id: 'nada', nome: 'Só o código', texto: 'Nada sozinho: o código da área recebe aoUsarItem(eu, jogo, item).' },
+];
 
-export type Comportamento = CompColetavel | CompPorta | CompAlavanca | CompSaida | CompMensagem | CompGatilho;
+export type Comportamento = CompColetavel | CompPorta | CompAlavanca | CompSaida | CompMensagem | CompGatilho | CompUsoItem;
 export type TipoComportamento = Comportamento['tipo'];
 
 export const NOMES_COMPORTAMENTO: Record<TipoComportamento, { nome: string; texto: string }> = {
@@ -60,6 +89,7 @@ export const NOMES_COMPORTAMENTO: Record<TipoComportamento, { nome: string; text
   saida: { nome: 'Passagem (porta/saída)', texto: 'Leva para outra sala ao apertar E. Para onde leva e o que acontece no caminho (tela de loading, som) são definidos no Mapa (M).' },
   mensagem: { nome: 'Mensagem / nota', texto: 'Mostra um texto ao apertar E (bilhete, placa, documento, pensamento da personagem).' },
   gatilho: { nome: 'Gatilho (zona)', texto: 'Dispara quando o jogador entra na área: mensagem, inimigos surgindo, luzes, acionar objeto. Use com uma zona (ferramenta Zona, Z).' },
+  usoItem: { nome: 'Área de uso de item', texto: 'Zona amarela onde um item do menu funciona (chave na porta, pendrive no computador, alicate na corrente). Fora dela, usar o item dá "Você não deve usar este item aqui". Crie com a ferramenta Zona (Z).' },
 };
 
 export function comportamentoPadrao(tipo: TipoComportamento, o: ObjetoFase): Comportamento {
@@ -70,6 +100,7 @@ export function comportamentoPadrao(tipo: TipoComportamento, o: ObjetoFase): Com
     case 'saida': return { tipo, destino: '', requer: '', consome: false, modo: 'interagir' };
     case 'gatilho': return { tipo, acao: 'mensagem', texto: '', alvo: '', luz: '', luzAcao: 'alternar', umaVez: true };
     case 'mensagem': return { tipo, texto: '' };
+    case 'usoItem': return { tipo, item: '', acao: 'abrir', alvo: '', texto: '', textoErrado: '', consome: true, umaVez: true };
   }
 }
 
@@ -114,6 +145,10 @@ export interface ResultadoInteracao {
   luz?: boolean;
   /** Gatilho de checkpoint: o jogador volta aqui ao morrer. */
   checkpoint?: boolean;
+  /** Usar item: deu certo (o item deve sair do inventário se consome). */
+  usou?: boolean;
+  /** Usar item numa área: id da área (o código dela recebe aoUsarItem). */
+  area?: string;
 }
 
 /** Estado do mundo durante o jogo: inventário, portas abertas, itens pegos. */
@@ -128,6 +163,12 @@ export class MundoInterativo {
   readonly acionadosPorCodigo = new Set<string>();
   /** Pergunta ao código se pode coletar (aoColetar retornando false impede). */
   podeColetar: (o: ObjetoFase) => boolean = () => true;
+  /** Cabe no menu? (espaços livres; o modo Teste liga ao catálogo de itens) */
+  cabe: (item: string) => boolean = () => true;
+  /** Mensagem quando não cabe ({item} = o nome). */
+  textoSemEspaco = 'Sem espaço para {item}.';
+  /** Coletáveis que já avisaram "sem espaço" (até o jogador sair de cima). */
+  private avisouSemEspaco = new Set<string>();
   private mudou = true;
   private segsPortas: Segmento[] = [];
 
@@ -249,11 +290,16 @@ export class MundoInterativo {
   /** Pega os coletáveis que o jogador está tocando. Retorna os avisos. */
   coletar(jogador: Caixa): string[] {
     const avisos: string[] = [];
+    for (const id of [...this.avisouSemEspaco]) { const o = this.objeto(id); if (!o || !toca(jogador, this.caixa(o))) this.avisouSemEspaco.delete(id); }
     for (const o of this.fase.objetos) {
       const c = comportamentoDe(o);
       const e = this.estados.get(o.id);
       if (c?.tipo !== 'coletavel' || !e || !e.visivel || !toca(jogador, this.caixa(o))) continue;
       if (c.cura && c.cura > 0 && !this.podeCurar()) continue;
+      if (!(c.cura && c.cura > 0) && !this.cabe(c.item)) {
+        if (!this.avisouSemEspaco.has(o.id)) { this.avisouSemEspaco.add(o.id); avisos.push(this.textoSemEspaco.replace('{item}', c.item)); }
+        continue;
+      }
       if (!this.podeColetar(o)) continue;
       if (!e.visivel) continue; // o código escondeu ao coletar
       e.visivel = false;
@@ -276,7 +322,7 @@ export class MundoInterativo {
       if (!e || !e.visivel) continue;
       const b = this.caixa(o);
       if (!toca(jogador, b, 14)) continue;
-      if (c?.tipo === 'gatilho' || (c?.tipo === 'saida' && c.modo === 'tocar')) continue; // zonas: passam sozinhas
+      if (c?.tipo === 'gatilho' || c?.tipo === 'usoItem' || (c?.tipo === 'saida' && c.modo === 'tocar')) continue; // zonas: passam sozinhas
       if (!c || c.tipo === 'coletavel') {
         const d = Math.abs(b.x + b.w / 2 - cx);
         if (!melhor || d < melhor.d) melhor = { o, acao: porCodigo!, d };
@@ -333,6 +379,48 @@ export class MundoInterativo {
       default:
         return {};
     }
+  }
+
+  /** Áreas de uso de item em que o jogador está agora (visíveis e ainda ativas). */
+  areasDeUso(jogador: Caixa): ObjetoFase[] {
+    return this.fase.objetos.filter((o) => {
+      const c = comportamentoDe(o);
+      const e = this.estados.get(o.id);
+      return c?.tipo === 'usoItem' && !!e && e.visivel && !(c.umaVez && e.usado) && toca(jogador, this.caixa(o));
+    });
+  }
+
+  /**
+   * Usar um item (Usar no menu) onde o jogador está. Numa Área de uso que aceita o item: faz a ação. Em outra área:
+   * o texto "errado" dela. Fora: msgFora. Não tira o item do inventário: quem chama tira se "usou" e consome.
+   */
+  usarItem(item: string, jogador: Caixa, msgFora: string): ResultadoInteracao & { consome?: boolean } {
+    const areas = this.areasDeUso(jogador);
+    const certa = areas.find((o) => (comportamentoDe(o) as CompUsoItem).item.toLowerCase() === item.toLowerCase());
+    if (!certa) {
+      const outra = areas[0] ? comportamentoDe(areas[0]) as CompUsoItem : null;
+      return { aviso: outra ? (outra.textoErrado || 'Isso não funciona aqui.') : msgFora };
+    }
+    const c = comportamentoDe(certa) as CompUsoItem;
+    this.estados.get(certa.id)!.usado = true;
+    const r: ResultadoInteracao & { consome?: boolean } = { usou: true, area: certa.id, consome: c.consome };
+    if (c.texto) r.mensagem = c.texto;
+    const alvo = c.alvo ? this.objeto(c.alvo) : undefined;
+    const ea = alvo ? this.estados.get(alvo.id) : undefined;
+    if (['abrir', 'acionar', 'mostrar', 'esconder'].includes(c.acao) && (!alvo || !ea)) { r.aviso = `Usou ${item}, mas a área não tem alvo (escolha no editor).`; return r; }
+    switch (c.acao) {
+      case 'abrir': this.definirAberta(alvo!.id, true); r.acionado = alvo!.id; if (!r.mensagem) r.aviso = `${alvo!.nome}: aberta`; break;
+      case 'acionar':
+        r.acionado = alvo!.id;
+        if (comportamentoDe(alvo!)?.tipo === 'porta') this.definirAberta(alvo!.id, !ea!.aberta);
+        else if (!this.acionadosPorCodigo.has(alvo!.id)) { ea!.visivel = !ea!.visivel; this.mudou = true; }
+        break;
+      case 'mostrar': ea!.visivel = true; this.mudou = true; break;
+      case 'esconder': ea!.visivel = false; this.mudou = true; break;
+      default: break;
+    }
+    if (!r.mensagem && !r.aviso) r.aviso = `Usou: ${item}`;
+    return r;
   }
 
   /** Zonas que o jogador acabou de entrar ou sair (gatilhos e passagens contínuas). */

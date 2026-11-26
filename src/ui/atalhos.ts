@@ -17,7 +17,7 @@ export function gruposAtalhos(teclasTeste: [string, string][]): Grupo[] {
     ] },
     { titulo: 'Ferramentas (barra lateral)', itens: [
       ['V', 'Selecionar e mover'], ['H', 'Mover a visão'], ['C', 'Colisão'], ['I', 'Início do jogador'],
-      ['N', 'Inimigos'], ['Q', 'Tela do jogo (quadro laranja)'], ['Z', 'Zona (gatilho / passagem contínua)'], ['Y', 'Iluminação'], ['Shift+Y', 'Mostrar/ocultar o escuro'], ['K', 'Personagens'], ['U', 'HUD'], ['A', 'Armas'], ['M', 'Mapa (salas e passagens)'], ['B', 'Controles'], ['O', 'Código'], ['F5', '▶ Testar / parar'],
+      ['N', 'Inimigos'], ['Q', 'Tela do jogo (quadro laranja)'], ['Z', 'Zona (gatilho / passagem contínua / área de uso de item)'], ['Y', 'Iluminação'], ['Shift+Y', 'Mostrar/ocultar o escuro'], ['K', 'Personagens'], ['U', 'HUD'], ['R', 'Menu e itens (inventário, Usar/Combinar/Checar, Arquivos)'], ['A', 'Armas'], ['M', 'Mapa (salas e passagens)'], ['B', 'Controles'], ['O', 'Código'], ['F5', '▶ Testar / parar'],
     ] },
     { titulo: 'Objetos', itens: [
       ['Clique', 'Selecionar · arrastar move · alças nos cantos mudam o tamanho'],
@@ -53,7 +53,7 @@ export function gruposAtalhos(teclasTeste: [string, string][]): Grupo[] {
       ['Arrastar o fundo / roda', 'Mover a visão / zoom'], ['Del', 'Excluir a conexão ou a passagem selecionada'], ['Home', 'Enquadrar'], ['Esc', 'Fechar'],
     ] },
     { titulo: '▶ Testar', itens: [
-      ...teclasTeste, ['F6', 'Reiniciar a sala (vida cheia)'], ['Enter (depois de morrer)', 'Voltar já ao último checkpoint'], ['Esc / F5', 'Voltar ao editor'], ['Shift+C', 'Mostrar colisões'],
+      ...teclasTeste, ['Menu aberto: setas / Enter / clique', 'Escolher item › Usar, Combinar, Checar'], ['Menu aberto: Esc', 'Voltar / fechar o menu'], ['F6', 'Reiniciar a sala (vida cheia)'], ['Enter (depois de morrer)', 'Voltar já ao último checkpoint'], ['Esc / F5', 'Voltar ao editor'], ['Shift+C', 'Mostrar colisões'],
     ] },
     { titulo: 'Código (O)', itens: [
       ['Ctrl+S', 'Salvar o script'], ['Ctrl+Shift+S', 'Salvar todos'], ['F5', 'Salvar e testar'],

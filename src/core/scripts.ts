@@ -43,6 +43,8 @@ export const GANCHOS: Gancho[] = [
   { nome: 'aoLevarDano', donos: ['inimigo'], params: 'eu, jogo, dano', texto: 'O inimigo levou um tiro. Retorne false para ignorar o dano.' },
   { nome: 'aoMorrer', donos: ['inimigo', 'personagem'], params: 'eu, jogo, motivo', texto: 'Inimigo: morreu. Jogador: a vida chegou a 0 (motivo = o golpe, "código"…); retorne false para não morrer (fica com 1 de vida).' },
   { nome: 'aoRenascer', donos: ['personagem'], params: 'eu, jogo', texto: 'O jogador voltou no último checkpoint depois de morrer (vida cheia).' },
+  { nome: 'aoUsarItem', donos: ['jogo', 'objeto'], params: 'eu, jogo, item, area', texto: 'O jogador escolheu Usar um item no menu. No jogo.js vale para qualquer item (area = a Área de uso em que ele está, ou null); numa Área de uso, só quando o item é usado nela. Retorne false para cancelar o que a engine faria (curar, equipar, abrir a porta…).' },
+  { nome: 'aoCombinar', donos: ['jogo'], params: 'eu, jogo, a, b, resultado', texto: 'Dois itens foram combinados no menu (resultado = o item novo, ou null se não há receita). Retorne false para cancelar.' },
   { nome: 'aoTrocarFase', donos: ['jogo'], params: 'eu, jogo, fase', texto: 'Quando o jogador chega numa fase ou área (fase = nome do arquivo).' },
   { nome: 'aoPassar', donos: ['jogo', 'fase'], params: 'eu, jogo, passagem, destino', texto: 'Antes de passar por uma passagem para outra sala (Mapa, M). destino = { fase, chegada, transicao } e pode ser mudado aqui (ex.: destino.transicao.efeito = "corte"). Retorne false para não passar.' },
 ];
@@ -420,6 +422,17 @@ interface Inventario {
   tirar(item: NomeItem, quantidade?: number): boolean;
   /** Todos os itens: { "chave vermelha": 1, ... } */
   lista(): Record<string, number>;
+  /** Espaços livres no menu (itens de 2 espaços contam 2). */
+  espacosLivres(): number;
+  /** Cabe mais este item no menu? */
+  cabe(item: NomeItem): boolean;
+}
+
+interface MenuJogo {
+  /** Abre o menu (tela "inventario" ou "arquivos"). */
+  abrir(tela?: 'inventario' | 'arquivos'): void;
+  fechar(): void;
+  readonly aberto: boolean;
 }
 
 interface Hud {
@@ -473,6 +486,8 @@ interface Luz {
 interface Jogo {
   readonly jogador: Jogador;
   readonly inventario: Inventario;
+  /** O menu (ferramenta Menu e itens): abrir, fechar. */
+  readonly menu: MenuJogo;
   readonly hud: Hud;
   /** Variáveis livres que seguem de uma fase para outra (ex.: jogo.variaveis.portaoAberto = true). */
   variaveis: Record<string, any>;

@@ -152,6 +152,10 @@ Na primeira vez, clique no ícone de pasta e escolha a pasta do projeto do jogo.
 - **Código do jogo × engine**: o painel de Código mostra o **Sistema do jogo** (as regras que o jogo usa, em
   JavaScript, ex.: dano por distância, linha do tiro, tiro e recarga) separado da engine; salvar cria o arquivo do
   projeto, que passa a valer. **Módulos próprios** (classes e funções) podem ser importados por qualquer script.
+- **Menu e itens** (`R`): monta o menu do jogo (Tab no teste) com painéis e imagens próprias — retrato da condição,
+  vida, arma em uso, espaços dos itens (1 ou 2 por item), submenu Usar / Combinar / Checar, Arquivos (notas e fotos) —
+  e cadastra os itens, as combinações e as mensagens. **Área de uso de item** (Zona, amarela): onde um item funciona
+  (chave na porta, pendrive no computador); fora dela, "Você não deve usar este item aqui".
 - **Definições** (Código): em **Sistema do jogo › Definições do jogo** (`definicoes.js`) o jogo cria as suas bases —
   campos próprios para personagem, inimigo, arma, objeto e fase (número, texto, sim/não, lista, ação, cor). Cada campo
   aparece no editor (seção "Campos do jogo"), no bloco config e no código (`eu.campos.ataqueForte`). Em

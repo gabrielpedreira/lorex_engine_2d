@@ -259,6 +259,17 @@ ${c.consome ? `    jogo.inventario.tirar(${js(c.requer)});
         '',
       ].join('\n');
     }
+    case 'usoItem':
+      return [
+        `// Script de ${nome} (Área de uso de item). A área pronta aceita "${c.item}" e faz "${c.acao}";`,
+        '// aqui dá para decidir em código. Retornar false cancela o que a área faria.',
+        '',
+        doc('O jogador usou um item (menu › Usar) em cima desta área.', '\n * @param {string} item') + 'export function aoUsarItem(eu, jogo, item) {',
+        `  if (item !== ${js(c.item)}) return;          // outro item: a engine responde "Isso não funciona aqui."`,
+        `  // jogo.aviso('Funcionou!');`,
+        '}',
+        '',
+      ].join('\n');
     case 'mensagem':
       return cab + doc('Ler a mensagem.') + `export function aoInteragir(eu, jogo) {
   jogo.mensagem(${js(c.texto || '')});

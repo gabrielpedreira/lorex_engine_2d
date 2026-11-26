@@ -14,6 +14,7 @@ import { normalizarAjustes } from './inimigos';
 import { normalizarHud, type ConfigHud } from './hud';
 import { normalizarControles, type Atalho, type Controles } from './controles';
 import { normalizarMapa, type Mapa } from './mapa';
+import { normalizarItens, normalizarMenu } from './menu';
 import { definicoes, valoresCampos, type AlvoCampo } from './definicoes';
 
 type Valor = number | string | boolean | null | Valor[] | { [k: string]: Valor };
@@ -464,4 +465,34 @@ export function aplicarBlocoMapa(m: Mapa, b: Bloco): Mapa {
   if (!Array.isArray(b.conexoes)) return m;
   const conexoes = (b.conexoes as Bloco[]).map((c) => ({ ...c, ...(m.conexoes.find((x) => x.id === c?.id)?.pos ? { pos: m.conexoes.find((x) => x.id === c?.id)!.pos } : {}) }));
   return normalizarMapa({ salas: m.salas, conexoes });
+}
+
+// ---------- Menu e itens (projeto.json): menu.js e itens.js no grupo Jogo ----------
+
+export function blocoMenu(m: import('./menu').ConfigMenu): { valores: Bloco; comentarios: Record<string, string> } {
+  return {
+    valores: JSON.parse(JSON.stringify(m)) as Bloco,
+    comentarios: {
+      fundo: 'cor atrás dos painéis', escurecer: 'quanto escurece o jogo atrás do menu (0 a 1)',
+      telas: 'inventario e arquivos: painéis { id, tipo, x, y, w, h, imagem, area [x, y, w, h], acao, faixas, colunas, linhas, cor }. tipo: imagem, retrato, vida, arma, itens, info, lista, leitura, botao; acao (botão): sair, arquivos, menu, mapa',
+      submenu: 'caixa Usar / Combinar / Checar: imagem, tamanho e a área de cada botão [x, y, w, h]', som: 'som ao abrir (opcional)',
+    },
+  };
+}
+export function aplicarBlocoMenu(_m: import('./menu').ConfigMenu, b: Bloco): import('./menu').ConfigMenu {
+  return normalizarMenu(b);
+}
+
+export function blocoItens(i: import('./menu').ConfigItens): { valores: Bloco; comentarios: Record<string, string> } {
+  return {
+    valores: JSON.parse(JSON.stringify(i)) as Bloco,
+    comentarios: {
+      itens: 'cada item: nome (o mesmo do Coletável), tipo "item" ou "arquivo", espacos 1 ou 2, imagem, imagemGrande, descricao (legenda do Checar), uso: "area", "curar", "arma" ou "nada", cura, arma (arquivo), consome',
+      receitas: 'combinações: a + b → resultado (quantidade)',
+      mensagens: 'textos: aquiNao (usar no lugar errado), semEspaco ({item} = nome), naoCombina',
+    },
+  };
+}
+export function aplicarBlocoItens(_i: import('./menu').ConfigItens, b: Bloco): import('./menu').ConfigItens {
+  return normalizarItens(b);
 }
