@@ -36,24 +36,48 @@ export class MenuJogo {
   private checando: string | null = null;
   private arquivo: string | null = null;
   private z = 1;
+  /** Onde está o foco do teclado/controle: 'conteudo' (itens ou lista de arquivos) ou o id de um botão. */
+  private foco = 'conteudo';
+  /** Os painéis desenhados ficam aqui dentro (o fundo escuro cobre a área inteira). */
+  private telaEl: HTMLElement;
   /** Prévia (ferramenta): sem interação de jogo, painel escolhido em destaque. */
   previa: { selecionado: string | null; aoEscolher: (id: string) => void; aoMover: (id: string, x: number, y: number, w: number, h: number) => void } | null = null;
   aoFechar: () => void = () => {};
 
   constructor(private ctx: ContextoMenu) {
     this.raiz = el('div', { class: 'menu-jogo', role: 'dialog', 'aria-label': 'Menu' });
+    this.telaEl = el('div', { class: 'menu-tela' });
+    this.raiz.append(this.telaEl);
     this.raiz.hidden = true;
+    window.addEventListener('resize', () => { if (this.aberto && !this.previa) { this.encaixar(); this.render(); } });
   }
 
   get aberto() { return !this.raiz.hidden; }
 
   abrir(tela: TelaMenu = 'inventario') {
     this.tela = tela;
-    this.submenu = false; this.combinando = null; this.checando = null; this.arquivo = null;
+    this.submenu = false; this.combinando = null; this.checando = null; this.arquivo = tela === 'arquivos' ? this.arquivos()[0] ?? null : null;
+    this.foco = 'conteudo';
     const lista = this.itensNoMenu();
     if (!this.sel || !lista.some((i) => i.nome === this.sel)) this.sel = lista[0]?.nome ?? null;
     this.raiz.hidden = false;
+    if (!this.previa) this.encaixar();
     this.render();
+  }
+
+  /** No jogo: o menu ocupa exatamente o quadro da tela do jogo (rect em px do contêiner). */
+  areaJogo(r: { x: number; y: number; w: number; h: number }) {
+    Object.assign(this.raiz.style, { inset: 'auto', left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
+    if (this.aberto) { this.encaixar(); this.render(); }
+  }
+
+  /** A tela do menu ocupa o maior tamanho que cabe na área dela (mantendo a proporção), centralizada. */
+  encaixar() {
+    const r = this.raiz.getBoundingClientRect();
+    const [w, h] = this.tamanho();
+    if (!r.width || !r.height) return;
+    const z = Math.min(r.width / w, r.height / h);
+    this.posicionar((r.width - w * z) / 2, (r.height - h * z) / 2, z);
   }
 
   fechar() {
@@ -66,11 +90,50 @@ export class MenuJogo {
   posicionar(left: number, top: number, z: number) {
     this.z = z;
     const [w, h] = this.tamanho();
-    Object.assign(this.raiz.style, { left: `${left}px`, top: `${top}px`, width: `${w * z}px`, height: `${h * z}px` });
+    Object.assign(this.telaEl.style, { left: `${left}px`, top: `${top}px`, width: `${w * z}px`, height: `${h * z}px` });
   }
   tamanho: () => [number, number] = () => [640, 360];
 
-  mostrarTela(t: TelaMenu) { this.tela = t; this.submenu = false; this.combinando = null; this.checando = null; this.render(); }
+  mostrarTela(t: TelaMenu) { this.tela = t; this.submenu = false; this.combinando = null; this.checando = null; this.foco = 'conteudo'; this.render(); }
+
+  /** Botões da tela atual (Sair, Arquivos, Menu, Mapa…). */
+  private botoes() { return this.ctx.menu().telas[this.tela].filter((p) => p.tipo === 'botao'); }
+
+  /** O botão mais perto na direção (dx, dy), a partir de um ponto. */
+  private botaoNaDirecao(cx: number, cy: number, dx: number, dy: number, menos?: string): PainelMenu | undefined {
+    let melhor: { p: PainelMenu; d: number } | undefined;
+    for (const p of this.botoes()) {
+      if (p.id === menos) continue;
+      const px = p.x + p.w / 2, py = p.y + p.h / 2;
+      const ax = px - cx, ay = py - cy;
+      if (dx && Math.sign(ax) !== dx) continue;
+      if (dy && (Math.sign(ay) !== dy || Math.abs(ay) < 4)) continue;
+      const d = dx ? Math.abs(ax) + Math.abs(ay) * 3 : Math.abs(ay) + Math.abs(ax) * 0.5;
+      if (!melhor || d < melhor.d) melhor = { p, d };
+    }
+    return melhor?.p;
+  }
+
+  private teclaBotao(k: string): void {
+    const atual = this.botoes().find((p) => p.id === this.foco);
+    if (!atual) { this.foco = 'conteudo'; this.render(); return; }
+    const cx = atual.x + atual.w / 2, cy = atual.y + atual.h / 2;
+    const dir: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    if (dir[k]) {
+      const prox = this.botaoNaDirecao(cx, cy, dir[k][0], dir[k][1], atual.id);
+      if (prox) this.foco = prox.id;
+      else if (k === 'ArrowDown') this.foco = 'conteudo';
+      this.render();
+      return;
+    }
+    if (ehConfirmar(k)) this.botaoPainel(atual);
+  }
+
+  /** Do conteúdo (itens/lista) para o botão acima, o mais perto na horizontal. */
+  private subirParaBotoes(cx: number, cy: number) {
+    const b = this.botaoNaDirecao(cx, cy, 0, -1);
+    if (b) { this.foco = b.id; this.render(); }
+  }
 
   private itensNoMenu(): ItemNoMenu[] {
     const { colunas, total } = espacosDoMenu(this.ctx.menu());
@@ -88,13 +151,19 @@ export class MenuJogo {
       if (this.submenu) this.submenu = false;
       else if (this.checando) this.checando = null;
       else if (this.combinando) { this.combinando = null; }
-      else if (this.tela === 'arquivos' && this.arquivo) this.arquivo = null;
+      else if (this.foco !== 'conteudo') this.foco = 'conteudo';
+      else if (this.tela === 'arquivos') this.tela = 'inventario';
       else { this.fechar(); return; }
       this.render(); return;
     }
+    if (this.checando) { if (ehConfirmar(k)) { this.checando = null; this.render(); } return; }
+    if (this.foco !== 'conteudo' && !this.submenu && !this.combinando) { this.teclaBotao(k); return; }
     if (this.tela === 'arquivos') {
       const l = this.arquivos();
       const i = this.arquivo ? l.indexOf(this.arquivo) : -1;
+      const lista = this.ctx.menu().telas.arquivos.find((p) => p.tipo === 'lista');
+      if (k === 'ArrowUp' && i <= 0) { this.subirParaBotoes(lista ? lista.x + lista.w / 2 : 0, lista ? lista.y : 0); return; }
+      if (k === 'ArrowLeft' || k === 'ArrowRight') { this.subirParaBotoes(lista ? lista.x + lista.w / 2 : 0, lista ? lista.y : 0); return; }
       if (k === 'ArrowDown' || k === 'ArrowUp') { const n = l[Math.max(0, Math.min(l.length - 1, i + (k === 'ArrowDown' ? 1 : -1)))]; if (n) { this.arquivo = n; this.render(); } }
       return;
     }
@@ -103,23 +172,31 @@ export class MenuJogo {
       const i = ordem.indexOf(this.subSel);
       if (k === 'ArrowDown') { this.subSel = ordem[(i + 1) % 3]; this.render(); }
       else if (k === 'ArrowUp') { this.subSel = ordem[(i + 2) % 3]; this.render(); }
-      else if (k === 'Enter' || k === 'e' || k === 'E') this.apertarSubmenu(this.subSel);
+      else if (ehConfirmar(k)) this.apertarSubmenu(this.subSel);
       return;
     }
     const lista = this.itensNoMenu();
-    if (!lista.length) return;
+    const grade = this.ctx.menu().telas.inventario.find((p) => p.tipo === 'itens');
     const { colunas } = espacosDoMenu(this.ctx.menu());
     const atual = lista.find((x) => x.nome === this.sel) ?? lista[0];
+    // Sem item (ou na primeira linha subindo): vai para os botões de cima
+    const centroSlot = (slot: number) => {
+      if (!grade) return { x: 320, y: 0 };
+      const cw = grade.area[2] / grade.colunas;
+      return { x: grade.x + grade.area[0] + ((slot % grade.colunas) + 0.5) * cw, y: grade.y + grade.area[1] };
+    };
+    if (!atual) { if (k.startsWith('Arrow')) { const c = centroSlot(0); this.subirParaBotoes(c.x, c.y); } return; }
     const mover = (alvoSlot: (s: number) => number) => {
       const s = alvoSlot(atual.slot);
       const achado = lista.find((x) => s >= x.slot && s < x.slot + x.espacos);
-      if (achado) { this.sel = achado.nome; this.render(); }
+      if (achado) { this.sel = achado.nome; this.render(); return true; }
+      return false;
     };
     if (k === 'ArrowRight') mover((s) => s + atual.espacos);
     else if (k === 'ArrowLeft') mover((s) => s - 1);
     else if (k === 'ArrowDown') mover((s) => s + colunas);
-    else if (k === 'ArrowUp') mover((s) => s - colunas);
-    else if (k === 'Enter' || k === 'e' || k === 'E') this.escolherItem(atual.nome);
+    else if (k === 'ArrowUp') { if (!mover((s) => s - colunas)) { const c = centroSlot(atual.slot); this.subirParaBotoes(c.x, c.y); } }
+    else if (ehConfirmar(k)) this.escolherItem(atual.nome);
   }
 
   private escolherItem(nome: string) {
@@ -152,8 +229,8 @@ export class MenuJogo {
 
   private botaoPainel(p: PainelMenu) {
     if (p.acao === 'sair') this.fechar();
-    else if (p.acao === 'arquivos') { this.tela = 'arquivos'; this.arquivo = this.arquivos()[0] ?? null; this.render(); }
-    else if (p.acao === 'menu') { this.tela = 'inventario'; this.render(); }
+    else if (p.acao === 'arquivos') { this.tela = 'arquivos'; this.arquivo = this.arquivos()[0] ?? null; this.foco = 'conteudo'; this.render(); }
+    else if (p.acao === 'menu') { this.tela = 'inventario'; this.foco = 'conteudo'; this.render(); }
     else this.ctx.mapa();
   }
 
@@ -162,12 +239,14 @@ export class MenuJogo {
     const m = this.ctx.menu();
     const z = this.z;
     this.raiz.style.setProperty('--z', String(z));
-    this.raiz.style.background = this.previa ? m.fundo : hexAlfa(m.fundo, m.escurecer);
+    this.raiz.style.background = this.previa ? m.fundo : hexAlfa(m.fundo, Math.max(m.escurecer, 0.92));
     const filhos: HTMLElement[] = [];
     for (const p of m.telas[this.tela]) filhos.push(this.painel(p));
     if (this.submenu && this.sel && !this.previa) filhos.push(this.desenharSubmenu());
+    // Checar sem painel de leitura na tela: a foto grande e a legenda por cima de tudo
+    if (this.checando && !this.previa && !m.telas[this.tela].some((p) => p.tipo === 'leitura')) { const [tw, th] = this.tamanho(); const c = this.caixa(0, 0, tw, th, 'menu-checar'); c.append(this.leitura(this.checando, tw, th, true)); filhos.push(c); }
     if (this.combinando && !this.previa) filhos.push(el('div', { class: 'menu-faixa' }, `Combinar ${this.combinando} com… (Esc cancela)`));
-    this.raiz.replaceChildren(...filhos);
+    this.telaEl.replaceChildren(...filhos);
   }
 
   private caixa(x: number, y: number, w: number, h: number, classe = '') {
@@ -186,7 +265,8 @@ export class MenuJogo {
     d.append(area);
     this.conteudo(p, area, aw, ah);
     if (p.tipo === 'botao') {
-      if (!p.imagem) area.append(el('span', { class: 'menu-botao-texto' }, { sair: 'SAIR', arquivos: 'ARQUIVOS', menu: 'MENU', mapa: 'MAPA' }[p.acao]));
+      if (p.texto) area.append(el('span', { class: 'menu-botao-texto' }, p.texto));
+      if (!this.previa && this.foco === p.id) d.classList.add('foco');
       if (!this.previa) d.addEventListener('click', () => this.botaoPainel(p));
     }
     if (this.previa) this.editavel(d, p);
@@ -201,7 +281,7 @@ export class MenuJogo {
     switch (p.tipo) {
       case 'retrato': {
         const f = faixaDaVida(p.faixas, pct);
-        if (f?.imagem) area.append(el('img', { class: 'menu-cheio', src: this.ctx.url(f.imagem), alt: '' }));
+        if (f?.imagem) area.append(comZoom(el('img', { class: 'menu-cheio', src: this.ctx.url(f.imagem), alt: '' }), p.zoom));
         else area.append(el('span', { class: 'menu-vazio' }, `${pct}%`));
         break;
       }
@@ -220,7 +300,7 @@ export class MenuJogo {
       case 'arma': {
         const a = this.ctx.arma();
         if (!a) { area.append(el('span', { class: 'menu-vazio' }, 'sem arma')); break; }
-        if (a.imagem) area.append(el('img', { class: 'menu-cheio', src: this.ctx.url(a.imagem), alt: a.nome }));
+        if (a.imagem) area.append(comZoom(el('img', { class: 'menu-cheio', src: this.ctx.url(a.imagem), alt: a.nome }), p.zoom));
         else area.append(el('span', { class: 'menu-nome' }, a.nome));
         area.append(el('span', { class: 'menu-qtd' }, `${a.municao}/${a.pente}`));
         break;
@@ -231,7 +311,6 @@ export class MenuJogo {
         for (let s = 0; s < p.colunas * p.linhas; s++) {
           area.append(this.caixa((s % p.colunas) * cw + 1, Math.floor(s / p.colunas) * ch + 1, cw - 2, ch - 2, 'menu-slot'));
         }
-        if (this.checando && !this.previa) { area.append(this.leitura(this.checando, aw, ah, true)); break; }
         for (const it of lista) {
           const c = this.caixa((it.slot % p.colunas) * cw + 1, Math.floor(it.slot / p.colunas) * ch + 1, cw * it.espacos - 2, ch - 2,
             'menu-item' + (it.nome === this.sel ? ' sel' : '') + (it.nome === this.combinando ? ' combinando' : ''));
@@ -263,9 +342,12 @@ export class MenuJogo {
         break;
       }
       case 'leitura': {
-        const n = this.tela === 'arquivos' ? this.arquivo : this.checando;
-        if (n) area.append(this.leitura(n, aw, ah, false));
-        else area.append(el('span', { class: 'menu-vazio' }, this.tela === 'arquivos' ? 'Escolha um arquivo na lista.' : ''));
+        // Tela de itens: vazia até Checar (aí a foto grande e a legenda); tela de arquivos: o arquivo aberto
+        if (this.tela === 'arquivos') {
+          if (this.arquivo) area.append(this.leitura(this.arquivo, aw, ah, false));
+          else area.append(el('span', { class: 'menu-vazio' }, 'Escolha um arquivo na lista.'));
+        } else if (this.checando) area.append(this.leitura(this.checando, aw, ah, !this.previa));
+        else if (this.previa && this.sel) area.append(this.leitura(this.sel, aw, ah, false));
         break;
       }
       default: break;
@@ -273,12 +355,13 @@ export class MenuJogo {
   }
 
   /** Foto grande + legenda (Checar um item ou ler um arquivo). */
-  private leitura(nome: string, aw: number, ah: number, fechavel: boolean) {
+  private leitura(nome: string, aw: number, ah: number, fechavel: boolean, comTexto = true) {
     const it = itemDe(this.ctx.itens(), nome);
-    const d = this.caixa(0, 0, aw, ah, 'menu-ler');
+    const d = this.caixa(0, 0, aw, ah, 'menu-ler' + (comTexto ? '' : ' so-imagem'));
     const img = it.imagemGrande || it.imagem;
     if (img) d.append(el('img', { src: this.ctx.url(img), alt: nome }));
-    d.append(el('strong', {}, nome), el('p', {}, it.descricao || '(sem legenda: escreva em Menu e itens › Itens)'));
+    d.append(el('strong', {}, nome));
+    if (comTexto) d.append(el('p', {}, it.descricao || (this.previa ? '(sem legenda: escreva em Menu e itens › Itens)' : '')));
     if (fechavel) { d.append(el('span', { class: 'menu-dica' }, 'Esc ou clique para voltar')); d.addEventListener('click', () => { this.checando = null; this.render(); }); }
     return d;
   }
@@ -339,6 +422,12 @@ export class MenuJogo {
     alca.addEventListener('pointerdown', (ev) => arrastar(ev, true));
   }
 }
+
+/** Aumenta a imagem dentro do quadro (o que passar da borda é cortado). */
+function comZoom(img: HTMLElement, zoom: number) { if (zoom !== 1) img.style.transform = `scale(${zoom})`; return img; }
+
+/** Teclas de confirmar (Enter, Espaço ou E de Interagir). */
+function ehConfirmar(k: string) { return k === 'Enter' || k === ' ' || k === 'e' || k === 'E'; }
 
 /** Cor #rrggbb com transparência (0–1). */
 function hexAlfa(hex: string, a: number) {

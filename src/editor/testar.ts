@@ -241,7 +241,7 @@ export class ModoTeste {
   aoMudarConfig: (c: ConfigJogador) => void = () => {};
   aoMudarEstado: () => void = () => {};
 
-  constructor(private viewport: Viewport, private estado: Estado, centro: HTMLElement) {
+  constructor(private viewport: Viewport, private estado: Estado, private centro: HTMLElement) {
     this.hud = el('div', { class: 'hud-teste' });
     this.hud.hidden = true;
     this.elPrompt = el('div', { class: 'teste-prompt' });
@@ -266,7 +266,7 @@ export class ModoTeste {
       aviso: (t) => this.toast(t),
       mapa: () => { LOG.add({ cat: 'mundo', texto: 'menu: Mapa (ainda sem tela de mapa)' }); this.toast('Mapa: em breve.'); },
     });
-    this.menu.tamanho = () => this.estado.fase.resolucaoBase;
+    this.menu.tamanho = () => this.menuConfig.tamanho; // a tela do menu é fixa; é ampliada para preencher o quadro do jogo
     this.menu.aoFechar = () => { LOG.add({ cat: 'mundo', texto: 'menu fechado' }); this.entradaJogo.limpar(); };
     centro.append(this.menu.raiz);
     this.elToast.hidden = true;
@@ -275,12 +275,39 @@ export class ModoTeste {
   }
 
   /** Abre o menu (inventário) sobre a tela do jogo; o jogo fica pausado enquanto ele estiver aberto. */
-  private abrirMenu(tela: 'inventario' | 'arquivos' = 'inventario') {
-    if (!this.mundo || this.morto || this.saindo) return;
+  /** O quadro da tela do jogo (px relativos ao cenário): menu, tela de morte e transições acontecem só nele. */
+  retanguloTela() {
     const cj = this.viewport.cameraJogo();
     const a = this.viewport.camadaParaTela(cj.x, cj.y, '');
-    this.menu.posicionar(a.x, a.y, this.estado.camera.zoom);
-    this.menu.abrir(tela);
+    const z = this.estado.camera.zoom;
+    const [rw, rh] = this.estado.fase.resolucaoBase;
+    return { x: a.x, y: a.y, w: rw * z, h: rh * z };
+  }
+
+  // ---------- Tela cheia (só durante o ▶ Testar) ----------
+  private saiuTelaCheiaEm = 0;
+  get telaCheia() { return !!document.fullscreenElement; }
+  alternarTelaCheia() {
+    if (!this.ativo) return;
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void this.centro.requestFullscreen().catch((err) => this.toast(`Tela cheia indisponível: ${String(err)}`));
+  }
+  private aoTelaCheia = () => {
+    if (!document.fullscreenElement) this.saiuTelaCheiaEm = performance.now();
+    LOG.add({ cat: 'sistema', texto: document.fullscreenElement ? 'tela cheia (Esc ou F4 volta)' : 'saiu da tela cheia' });
+    // Espera o cenário mudar de tamanho e reencaixa o jogo, o menu e a tela de morte
+    setTimeout(() => {
+      if (!this.ativo) return;
+      this.ajustarZoom();
+      if (this.menu.aberto) this.menu.areaJogo(this.retanguloTela());
+      if (this.mortoEm !== null) this.mostrarTelaMorte();
+    }, 120);
+  };
+
+  private abrirMenu(tela: 'inventario' | 'arquivos' = 'inventario') {
+    if (!this.mundo || this.morto || this.saindo) return;
+    this.menu.areaJogo(this.retanguloTela());
+    this.menu.abrir(tela); // tela cheia: ocupa a área do jogo inteira, centralizado
     this.entradaJogo.limpar();
     this.elPrompt.hidden = true;
     const e = espacosDoMenu(this.menuConfig);
@@ -380,6 +407,7 @@ export class ModoTeste {
     window.addEventListener('keydown', this.tecla, true);
     window.addEventListener('keyup', this.soltarTecla, true);
     window.addEventListener('blur', this.perderFoco);
+    document.addEventListener('fullscreenchange', this.aoTelaCheia);
     this.montarHud();
     this.hud.hidden = false;
     this.ajustarZoom();
@@ -404,6 +432,8 @@ export class ModoTeste {
     window.removeEventListener('keydown', this.tecla, true);
     window.removeEventListener('keyup', this.soltarTecla, true);
     window.removeEventListener('blur', this.perderFoco);
+    document.removeEventListener('fullscreenchange', this.aoTelaCheia);
+    if (document.fullscreenElement && !this.viajando) void document.exitFullscreen();
     this.hud.hidden = true;
     for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem, this.elHudJogo, this.elMorte]) x.hidden = true;
     if (this.menu.aberto) { this.menu.aoFechar = () => {}; this.menu.fechar(); this.menu.aoFechar = () => { LOG.add({ cat: 'mundo', texto: 'menu fechado' }); this.entradaJogo.limpar(); }; }
@@ -646,6 +676,13 @@ export class ModoTeste {
     if (document.querySelector('.modal-fundo')) return;
     const alvo = ev.target as HTMLElement | null;
     if (alvo && this.hud.contains(alvo) && alvo.tagName === 'INPUT') return; // ajustando um controle do HUD
+    // Tela cheia: F4 alterna; Esc sai da tela cheia (sem parar o teste)
+    if (ev.key === 'F4') { ev.preventDefault(); ev.stopPropagation(); this.alternarTelaCheia(); return; }
+    if (ev.key === 'Escape' && !this.menu.aberto && (document.fullscreenElement || performance.now() - this.saiuTelaCheiaEm < 400)) {
+      ev.preventDefault(); ev.stopPropagation();
+      if (document.fullscreenElement) void document.exitFullscreen();
+      return;
+    }
     // Menu aberto: as teclas são dele (Esc volta/fecha; a tecla do menu fecha)
     if (this.menu.aberto && ev.key !== 'F5') {
       ev.preventDefault(); ev.stopPropagation();
@@ -1106,11 +1143,9 @@ export class ModoTeste {
 
   /** Tela de morte (ferramenta HUD › Tela de morte) sobre a tela do jogo. */
   private mostrarTelaMorte() {
-    const cj = this.viewport.cameraJogo();
-    const a = this.viewport.camadaParaTela(cj.x, cj.y, '');
+    const r = this.retanguloTela();
     const z = this.estado.camera.zoom;
-    const [rw, rh] = this.estado.fase.resolucaoBase;
-    Object.assign(this.elMorte.style, { left: `${a.x}px`, top: `${a.y}px`, width: `${rw * z}px`, height: `${rh * z}px` });
+    Object.assign(this.elMorte.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
     this.elMorte.replaceChildren(telaMorte(this.hudConfig.morte, z, this.urlImagem), el('span', { class: 'teste-morte-dica' }, 'Enter volta já ao checkpoint'));
     this.elMorte.hidden = false;
   }
@@ -1264,6 +1299,9 @@ export class ModoTeste {
     const parar = el('button', { type: 'button', class: 'primario' }, 'Voltar ao editor');
     dica(parar, 'Voltar ao editor', 'Para o teste e volta para onde você estava.', 'Esc');
     parar.addEventListener('click', () => this.parar());
+    const cheia = el('button', { type: 'button', class: 'secundario' }, 'Tela cheia');
+    dica(cheia, 'Tela cheia', 'Joga em tela cheia (só o jogo, sem o editor). Esc ou F4 volta.', 'F4');
+    cheia.addEventListener('click', () => this.alternarTelaCheia());
     const reiniciar = el('button', { type: 'button', class: 'secundario' }, 'Reiniciar');
     dica(reiniciar, 'Reiniciar', 'Volta o jogador para a bandeira de início.', 'F6');
     reiniciar.addEventListener('click', () => this.reiniciarTudo());
@@ -1297,7 +1335,7 @@ export class ModoTeste {
         el('span', { class: 'hud-titulo' }, '▶ Testando'),
         el('span', { class: 'hud-dica' }, this.textoDica()),
         this.elAcao = el('span', { class: 'hud-acao' }),
-        reiniciar, parar),
+        cheia, reiniciar, parar),
       ajustes,
     );
   }

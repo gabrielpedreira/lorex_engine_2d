@@ -53,7 +53,7 @@ export function gruposAtalhos(teclasTeste: [string, string][]): Grupo[] {
       ['Arrastar o fundo / roda', 'Mover a visão / zoom'], ['Del', 'Excluir a conexão ou a passagem selecionada'], ['Home', 'Enquadrar'], ['Esc', 'Fechar'],
     ] },
     { titulo: '▶ Testar', itens: [
-      ...teclasTeste, ['Menu aberto: setas / Enter / clique', 'Escolher item › Usar, Combinar, Checar'], ['Menu aberto: Esc', 'Voltar / fechar o menu'], ['F6', 'Reiniciar a sala (vida cheia)'], ['Enter (depois de morrer)', 'Voltar já ao último checkpoint'], ['Esc / F5', 'Voltar ao editor'], ['Shift+C', 'Mostrar colisões'],
+      ...teclasTeste, ['Menu aberto: setas / Enter / clique', 'Escolher item › Usar, Combinar, Checar'], ['Menu aberto: Esc', 'Voltar / fechar o menu'], ['F4', 'Tela cheia (Esc ou F4 volta)'], ['F6', 'Reiniciar a sala (vida cheia)'], ['Enter (depois de morrer)', 'Voltar já ao último checkpoint'], ['Esc / F5', 'Voltar ao editor'], ['Shift+C', 'Mostrar colisões'],
     ] },
     { titulo: 'Código (O)', itens: [
       ['Ctrl+S', 'Salvar o script'], ['Ctrl+Shift+S', 'Salvar todos'], ['F5', 'Salvar e testar'],

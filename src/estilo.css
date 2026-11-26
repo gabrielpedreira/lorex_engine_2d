@@ -396,7 +396,7 @@ input[type='range'] { width: 100%; accent-color: var(--acento); }
 .teste-prompt kbd { color: var(--noite); background: var(--acento); border-radius: 4px; padding: 0 6px; font-weight: 700; }
 .teste-prompt[hidden], .teste-inventario[hidden], .teste-toast[hidden], .teste-mensagem[hidden] { display: none; }
 .teste-inventario {
-  position: absolute; right: 10px; top: 54px; z-index: 8; display: flex; flex-direction: column; gap: 2px; min-width: 150px;
+  position: absolute; right: 10px; bottom: 10px; z-index: 8; display: flex; flex-direction: column; gap: 2px; min-width: 150px; opacity: 0.85;
   padding: 8px 10px; border-radius: 8px; background: rgba(15, 21, 19, 0.92); border: 1px solid var(--borda); font-size: 12px;
 }
 .teste-inventario strong { color: var(--acento); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
@@ -843,9 +843,10 @@ body.redimensionando-x #app, body.redimensionando-y #app { transition: none; }
 .cod-grupo-dica { padding: 0 10px 4px; margin: 0; font-size: 11px; }
 
 /* ---------- Menu do jogo (inventário) e a prévia da ferramenta Menu e itens ---------- */
-.menu-jogo { position: absolute; z-index: 7; overflow: hidden; font-family: 'Press Start 2P', Consolas, 'Cascadia Code', monospace; image-rendering: pixelated; user-select: none; }
+.menu-jogo { position: absolute; inset: 0; z-index: 40; overflow: hidden; font-family: 'Press Start 2P', Consolas, 'Cascadia Code', monospace; image-rendering: pixelated; user-select: none; }
 .menu-jogo[hidden] { display: none; }
-.teste-toast { z-index: 9; }
+.teste-toast { z-index: 41; }
+
 .menu-painel { position: absolute; box-sizing: border-box; }
 .menu-padrao { background: #8d918c; border: calc(2px * var(--z, 1)) solid #1a1d1b; box-shadow: inset 0 0 0 calc(2px * var(--z, 1)) #b9bdb6; }
 .menu-padrao > .menu-area { background: #17502b; box-shadow: inset 0 0 0 1px #0b2414; }
@@ -872,8 +873,8 @@ body.redimensionando-x #app, body.redimensionando-y #app { transition: none; }
 .menu-arquivo:hover, .menu-arquivo.sel { background: rgba(242, 225, 90, 0.18); color: #f2e15a; }
 .menu-ler { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; gap: 3%; padding: 3%; background: rgba(8, 22, 13, 0.96); color: #e8f0e0; text-align: center; cursor: pointer; }
 .menu-ler img { max-width: 90%; max-height: 58%; object-fit: contain; }
-.menu-ler strong { color: #f2e15a; font-size: calc(7px * var(--z, 1)); }
-.menu-ler p { margin: 0; line-height: 1.5; font-size: calc(6px * var(--z, 1)); max-width: 92%; }
+.menu-ler strong { color: #f2e15a; font-size: calc(9px * var(--z, 1)); }
+.menu-ler p { margin: 0; line-height: 1.5; font-size: calc(7.5px * var(--z, 1)); max-width: 92%; }
 .menu-dica { position: absolute; bottom: 3%; opacity: 0.6; font-size: calc(5px * var(--z, 1)); }
 .menu-botao { cursor: pointer; }
 .menu-botao:hover { background: rgba(255, 255, 255, 0.12); }
@@ -890,10 +891,20 @@ body.redimensionando-x #app, body.redimensionando-y #app { transition: none; }
 .menu-alca { display: none; position: absolute; right: -4px; bottom: -4px; width: 9px; height: 9px; background: var(--acento); border: 1px solid #000; cursor: nwse-resize; }
 .menu-editavel.selecionado .menu-alca { display: block; }
 .menu-previa-caixa { position: relative; flex: none; }
-.menu-previa-caixa .menu-jogo { position: absolute; left: 0; top: 0; }
+.menu-previa-caixa .menu-jogo { position: absolute; inset: 0; z-index: 1; }
+.menu-tela { position: absolute; }
+.menu-botao.foco { box-shadow: inset 0 0 0 calc(2px * var(--z, 1)) #f2e15a; background: rgba(242, 225, 90, 0.15); }
 @media (prefers-reduced-motion: reduce) { .menu-barra-cheia { transition: none; } }
 .menu-abas { display: flex; gap: 4px; flex-wrap: wrap; margin-left: 12px; }
 .menu-abas .ativo { border-color: var(--acento); color: var(--acento); }
 .menu-receita { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr 56px auto; gap: 6px; align-items: center; margin-bottom: 6px; }
 .menu-col-larga { flex: 1; max-width: 760px; }
 .tela-menu .linha-botoes { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.menu-checar { position: absolute; z-index: 4; background: rgba(0, 0, 0, 0.6); }
+.menu-checar .menu-ler img { max-height: 70%; }
+.menu-leitura .menu-ler { cursor: default; background: transparent; }
+
+/* Tela cheia do ▶ Testar: só o jogo (sem o painel "Testando" e as barras do editor) */
+.cenario:fullscreen { background: #000; }
+.cenario:fullscreen > :not(canvas):not(.menu-jogo):not(.teste-toast):not(.teste-mensagem):not(.teste-prompt):not(.teste-morte):not(.teste-hud-tela):not(.teste-hud-jogo):not(.tela-transicao) { display: none !important; }
+.tela-transicao.no-jogo { position: absolute; inset: auto; }

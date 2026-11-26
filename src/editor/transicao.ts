@@ -31,6 +31,19 @@ export class TelaTransicao {
 
   get ativa() { return !this.raiz.hidden; }
 
+  /** Durante o ▶ Testar a transição acontece só no quadro da tela do jogo (dentro do cenário); sem quadro, na janela. */
+  noQuadro(pai: HTMLElement | null, r?: { x: number; y: number; w: number; h: number }) {
+    if (pai && r) {
+      if (this.raiz.parentElement !== pai) pai.append(this.raiz);
+      this.raiz.classList.add('no-jogo');
+      Object.assign(this.raiz.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
+    } else {
+      if (this.raiz.parentElement !== document.body) document.body.append(this.raiz);
+      this.raiz.classList.remove('no-jogo');
+      Object.assign(this.raiz.style, { left: '', top: '', width: '', height: '' });
+    }
+  }
+
   /** Começa a transição: toca o som e cobre a tela (instantâneo no corte, com fade nos outros). */
   async cobrir(t: Transicao) {
     this.atual = t;

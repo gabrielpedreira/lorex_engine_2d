@@ -158,7 +158,7 @@ export const TIPOS_PAINEL: { id: TipoPainel; nome: string; texto: string }[] = [
   { id: 'itens', nome: 'Espaços dos itens', texto: 'A grade de espaços (colunas × linhas). Clique num item para Usar / Combinar / Checar.' },
   { id: 'info', nome: 'Informação do item', texto: 'Nome e legenda do item escolhido.' },
   { id: 'lista', nome: 'Lista de arquivos', texto: 'Notas, fotos e documentos pegos no jogo. Clique para ler.' },
-  { id: 'leitura', nome: 'Leitura / Checar', texto: 'Onde aparece a foto grande e o texto (Checar um item ou ler um arquivo).' },
+  { id: 'leitura', nome: 'Item escolhido / leitura', texto: 'Mostra o item escolhido com a legenda embaixo (tela de itens) ou o arquivo aberto (tela de arquivos).' },
   { id: 'botao', nome: 'Botão', texto: 'Área clicável: Sair, Arquivos, Menu (voltar aos itens) ou Mapa.' },
 ];
 
@@ -188,6 +188,10 @@ export interface PainelMenu {
   linhas: number;
   /** Cor do texto/realce. */
   cor: string;
+  /** Botão: texto escrito por cima ('' = nenhum, quando a imagem já tem o desenho do botão). */
+  texto: string;
+  /** Zoom da imagem de dentro (retrato, arma): 1 = cabe inteira; maior = ocupa mais o quadro (corta as bordas vazias). */
+  zoom: number;
 }
 
 export type TelaMenu = 'inventario' | 'arquivos';
@@ -203,6 +207,8 @@ export interface ConfigSubmenu {
 }
 
 export interface ConfigMenu {
+  /** Tamanho da tela do menu (px). É sempre o mesmo: no jogo ela é ampliada para preencher a tela, seja qual for a sala. */
+  tamanho: [number, number];
   /** Cor do fundo atrás dos painéis e quanto escurece o jogo (0 a 1). */
   fundo: string;
   escurecer: number;
@@ -213,7 +219,7 @@ export interface ConfigMenu {
 }
 
 export function painelBase(id: string, tipo: TipoPainel, x: number, y: number, w: number, h: number, d: Partial<PainelMenu> = {}): PainelMenu {
-  return { id, tipo, x, y, w, h, imagem: '', area: [4, 4, Math.max(1, w - 8), Math.max(1, h - 8)], acao: 'sair', faixas: [], colunas: 5, linhas: 2, cor: '#e8f0e0', ...d };
+  return { id, tipo, x, y, w, h, imagem: '', area: [4, 4, Math.max(1, w - 8), Math.max(1, h - 8)], acao: 'sair', faixas: [], colunas: 5, linhas: 2, cor: '#e8f0e0', texto: '', zoom: 1, ...d };
 }
 
 export function faixasVidaPadrao(): FaixaVida[] {
@@ -232,25 +238,25 @@ export function menuPadrao(): ConfigMenu {
     painelBase('arma', 'arma', 321, 11, 104, 90, { area: [6, 33, 92, 51] }),
   ];
   return {
-    fundo: '#2a2d2b', escurecer: 0.85, som: '',
+    tamanho: [640, 360], fundo: '#2a2d2b', escurecer: 0.85, som: '',
     telas: {
       inventario: [
         ...comum(),
-        painelBase('itens', 'itens', 14, 113, 413, 237, { area: [10, 11, 392, 217], colunas: 5, linhas: 2 }),
+        painelBase('item', 'leitura', 14, 113, 413, 237, { area: [10, 11, 392, 217] }),
         painelBase('coluna', 'imagem', 438, 10, 188, 340),
-        painelBase('info', 'info', 448, 81, 167, 260, { area: [0, 0, 167, 260] }),
-        painelBase('sair', 'botao', 438, 10, 188, 28, { acao: 'sair' }),
-        painelBase('arquivos', 'botao', 438, 42, 99, 27, { acao: 'arquivos' }),
-        painelBase('mapa', 'botao', 542, 42, 84, 27, { acao: 'mapa' }),
+        painelBase('itens', 'itens', 448, 81, 167, 260, { area: [0, 0, 167, 260], colunas: 2, linhas: 5 }),
+        painelBase('sair', 'botao', 438, 10, 188, 28, { acao: 'sair', texto: 'SAIR' }),
+        painelBase('arquivos', 'botao', 438, 42, 99, 27, { acao: 'arquivos', texto: 'ARQUIVOS' }),
+        painelBase('mapa', 'botao', 542, 42, 84, 27, { acao: 'mapa', texto: 'MAPA' }),
       ],
       arquivos: [
         ...comum(),
         painelBase('leitura', 'leitura', 14, 113, 413, 237, { area: [10, 11, 392, 217] }),
         painelBase('coluna', 'imagem', 438, 10, 188, 340),
         painelBase('lista', 'lista', 448, 81, 167, 260, { area: [0, 0, 167, 260] }),
-        painelBase('sair', 'botao', 438, 10, 188, 28, { acao: 'sair' }),
-        painelBase('menu', 'botao', 438, 42, 99, 27, { acao: 'menu' }),
-        painelBase('mapa', 'botao', 542, 42, 84, 27, { acao: 'mapa' }),
+        painelBase('sair', 'botao', 438, 10, 188, 28, { acao: 'sair', texto: 'SAIR' }),
+        painelBase('menu', 'botao', 438, 42, 99, 27, { acao: 'menu', texto: 'MENU' }),
+        painelBase('mapa', 'botao', 542, 42, 84, 27, { acao: 'mapa', texto: 'MAPA' }),
       ],
     },
     submenu: { imagem: '', w: 102, h: 83, usar: [2, 2, 99, 27], combinar: [2, 29, 99, 27], checar: [2, 55, 99, 27] },
@@ -277,11 +283,14 @@ export function normalizarMenu(d: unknown): ConfigMenu {
       })).sort((x, y) => x.ate - y.ate) : [],
       colunas: Math.max(1, Math.min(12, Math.round(n(p.colunas, 5)))), linhas: Math.max(1, Math.min(8, Math.round(n(p.linhas, 2)))),
       cor: typeof p.cor === 'string' ? p.cor : base.cor,
+      texto: typeof p.texto === 'string' ? p.texto : '',
+      zoom: Math.max(0.2, Math.min(5, n(p.zoom, 1))),
     };
   };
   const tela = (v: unknown, p: PainelMenu[]) => (Array.isArray(v) ? v.map(painel).filter((x): x is PainelMenu => !!x) : p);
   const s = (m.submenu ?? {}) as Partial<ConfigSubmenu>;
   return {
+    tamanho: Array.isArray(m.tamanho) && m.tamanho.length === 2 ? [Math.max(64, n(m.tamanho[0], 640)), Math.max(64, n(m.tamanho[1], 360))] : b.tamanho,
     fundo: typeof m.fundo === 'string' ? m.fundo : b.fundo,
     escurecer: Math.max(0, Math.min(1, n(m.escurecer, b.escurecer))),
     som: typeof m.som === 'string' ? m.som : '',

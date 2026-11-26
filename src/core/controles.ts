@@ -47,7 +47,7 @@ export function controlesPadrao(): Controles {
 }
 
 /** Teclas que a engine usa durante o teste e não podem virar atalho. */
-export const TECLAS_RESERVADAS = new Set(['Escape', 'F5', 'F6']);
+export const TECLAS_RESERVADAS = new Set(['Escape', 'F4', 'F5', 'F6']);
 
 /** Junta lados esquerdo/direito dos modificadores. */
 export function normalizarCodigo(code: string): string {

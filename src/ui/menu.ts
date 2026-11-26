@@ -72,10 +72,10 @@ export class EditorMenu {
 
   get aberta() { return !this.raiz.hidden; }
 
-  abrir(m: ConfigMenu, itens: ConfigItens, resolucao: [number, number]) {
+  abrir(m: ConfigMenu, itens: ConfigItens, _resolucao?: [number, number]) {
     this.m = structuredClone(m);
     this.it = structuredClone(itens);
-    this.res = resolucao;
+    this.res = this.m.tamanho;
     this.listaImagens = null;
     this.raiz.hidden = false;
     void Promise.all([this.acoes.nomesItens(), this.acoes.armas()]).then(([n, a]) => { this.nomes = n; this.armas = a; this.montarExemplo(); if (this.aberta) this.render(); });
@@ -184,7 +184,12 @@ export class EditorMenu {
       });
       novo.append(b);
     }
-    col.append(novo, el('p', { class: 'dica-campo' }, 'A ordem da lista é a ordem de desenho: os de baixo ficam por cima. Botões podem ficar por cima de uma imagem que já tem o desenho do botão.'));
+    const tam = this.m.tamanho;
+    col.append(novo, el('h3', {}, 'Tela do menu'),
+      el('div', { class: 'linha2' },
+        this.campo('Largura', this.numero(tam[0], (v) => { tam[0] = Math.max(64, Math.round(v)); this.res = tam; }), 'Tamanho fixo da tela do menu (px). No jogo ela é ampliada para preencher a tela, seja qual for o tamanho da sala.'),
+        this.campo('Altura', this.numero(tam[1], (v) => { tam[1] = Math.max(64, Math.round(v)); this.res = tam; }), 'Tamanho fixo da tela do menu (px).')),
+      el('p', { class: 'dica-campo' }, 'A ordem da lista é a ordem de desenho: os de baixo ficam por cima. Botões podem ficar por cima de uma imagem que já tem o desenho do botão.'));
     return col;
   }
 
@@ -219,11 +224,15 @@ export class EditorMenu {
       el('div', { class: 'linha2' }, this.campo('Área X', this.numero(p.area[0], (v) => { p.area[0] = Math.round(v); }), 'px a partir da esquerda do painel'), this.campo('Área Y', this.numero(p.area[1], (v) => { p.area[1] = Math.round(v); }), 'px a partir do topo do painel')),
       el('div', { class: 'linha2' }, this.campo('Área largura', this.numero(p.area[2], (v) => { p.area[2] = Math.max(1, Math.round(v)); }), 'px'), this.campo('Área altura', this.numero(p.area[3], (v) => { p.area[3] = Math.max(1, Math.round(v)); }), 'px')),
       this.campo('Cor do texto', this.cor(p.cor, (v) => { p.cor = v; }), 'Cor dos textos dentro do painel.'));
+    if (p.tipo === 'retrato' || p.tipo === 'arma') {
+      col.append(this.campo('Zoom da imagem', this.numero(p.zoom, (v) => { p.zoom = Math.max(0.2, Math.min(5, v)); }, 0.05), 'Aumenta a imagem dentro do quadro (1 = cabe inteira). Útil quando a arte tem muita borda vazia: o que passar da borda é cortado.'));
+    }
     if (p.tipo === 'botao') {
       const acao = el('select', {}, ...ACOES_BOTAO.map((a) => el('option', { value: a.id }, a.nome)));
       acao.value = p.acao;
       acao.addEventListener('change', () => { p.acao = acao.value as PainelMenu['acao']; this.mudou(); });
-      col.append(this.campo('Ao clicar', acao, 'Sair fecha o menu; Arquivos abre a tela de arquivos; Voltar aos itens volta à tela de itens; Mapa (em breve).'));
+      col.append(this.campo('Ao clicar', acao, 'Sair fecha o menu; Arquivos abre a tela de arquivos; Voltar aos itens volta à tela de itens; Mapa (em breve).'),
+        this.campo('Texto escrito', this.texto(p.texto, (v) => { p.texto = v; }), 'Texto por cima do botão. Deixe vazio quando a imagem (moldura ou a coluna atrás) já tem o nome desenhado, para não sobrepor.'));
     }
     if (p.tipo === 'itens') {
       col.append(el('div', { class: 'linha2' },

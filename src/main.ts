@@ -57,7 +57,7 @@ function modeloPersonagem(p: DadosPersonagem): { modelo?: string; pronto?: strin
 function comBloco(texto: string, b: { valores: import('./core/configScript').Bloco; comentarios: Record<string, string> }, titulo: string) {
   return escreverBloco(texto, b.valores, b.comentarios, titulo);
 }
-import { NOMES_COMPORTAMENTO, comportamentoDe } from './core/comportamentos';
+import { NOMES_COMPORTAMENTO, comportamentoDe, comportamentoPadrao } from './core/comportamentos';
 import type { FontesScripts } from './editor/motorScripts';
 import { normalizarPersonagem, type Personagem } from './core/personagem';
 import { JOGADOR_PADRAO } from './core/fisica';
@@ -369,12 +369,17 @@ viewport.aoCriarZona = (x, y, w, h) => {
   const obj: ObjetoFase = {
     id: novoIdObjeto(estado.fase), tipo: 'interativo', nome: `Zona ${n}`, asset: '', camada,
     x, y, w, h, escala: 1, rotacao: 0, espelharX: false, espelharY: false, opacidade: 1, visivel: true,
-    efeitos: [], comportamentos: [{ tipo: 'gatilho', acao: 'mensagem', texto: '', alvo: '', luz: '', luzAcao: 'alternar', umaVez: true }], conexoes: {}, script: null,
+    efeitos: [], comportamentos: [], conexoes: {}, script: null,
   };
+  obj.comportamentos = [comportamentoPadrao(zonaNova, obj)];
+  if (zonaNova === 'saida') (obj.comportamentos[0] as { modo: string }).modo = 'tocar';
+  obj.nome = `${zonaNova === 'usoItem' ? 'Área de uso' : zonaNova === 'saida' ? 'Passagem' : 'Zona'} ${n}`;
   estado.alterar((f) => { f.objetos.push(obj); });
   estado.definirModo('selecionar');
   estado.selecionar(obj.id);
-  estado.avisar(`${obj.nome} criada (${w}×${h} px): escolha o que ela faz em Propriedades › Comportamento. Para uma passagem contínua, troque para "Passagem".`);
+  estado.avisar(zonaNova === 'usoItem' ? `${obj.nome} criada: em Propriedades escolha o item aceito e o que ele faz (ex.: abrir a porta).`
+    : zonaNova === 'saida' ? `${obj.nome} criada: conecte-a no Mapa (M) para dizer aonde leva.`
+    : `${obj.nome} criada (${w}×${h} px): escolha o que ela faz em Propriedades › Comportamento.`);
 };
 biblioteca.aoAdicionar = (c) => { void adicionarAsset(c); };
 if (plat.tipo === 'electron') {
@@ -598,6 +603,7 @@ teste.aoIrPara = async (v) => {
   if (outraSala && estado.sujo) {
     if (!(await podeDescartar())) { teste.cancelarViagem(); estado.avisar('Passagem cancelada: a fase tem alterações não salvas.'); return; }
   }
+  telaTransicao.noQuadro(centro, teste.retanguloTela());
   await telaTransicao.cobrir(v.transicao);
   teste.prepararViagem(v);
   teste.parar();
@@ -620,6 +626,7 @@ teste.aoIrPara = async (v) => {
   teste.levarInventario(inv);
   teste.iniciar();
   estado.avisar(`Chegou em ${estado.fase.nome}.`);
+  telaTransicao.noQuadro(centro, teste.retanguloTela());
   await telaTransicao.descobrir();
 };
 
@@ -1421,6 +1428,8 @@ function atualizarModos() {
   barraInimigos.hidden = estado.modo !== 'inimigo' || estado.testando;
   barraTela.hidden = estado.modo !== 'tela' || estado.testando;
   barraLuz.hidden = estado.modo !== 'luz' || estado.testando;
+  barraZona.hidden = estado.modo !== 'zona' || estado.testando;
+  if (estado.modo === 'zona') atualizarBarraZona();
   if (estado.modo === 'luz') atualizarBarraLuz();
   if (estado.modo === 'tela') atualizarBarraTela();
   if (estado.modo === 'inimigo') atualizarBarraInimigos();
@@ -1493,6 +1502,28 @@ const barraLuz = el('div', { class: 'barra-flutuante barra-tela' }, el('strong',
   el('span', { class: 'dica-campo' }, 'Clique para criar · centro move · alça muda tamanho/direção · Shift+Y esconde o escuro'));
 barraLuz.hidden = true;
 centro.append(barraLuz);
+// ---------- Ferramenta Zona: o que a zona nova vai ser ----------
+type TipoZonaNova = 'gatilho' | 'saida' | 'usoItem';
+let zonaNova: TipoZonaNova = 'gatilho';
+const TIPOS_ZONA: { id: TipoZonaNova; nome: string; texto: string }[] = [
+  { id: 'gatilho', nome: 'Gatilho', texto: 'Dispara ao entrar: mensagem, inimigos surgindo, luzes, acionar objeto, checkpoint. Roxa no editor.' },
+  { id: 'saida', nome: 'Passagem contínua', texto: 'Leva para outra sala ao atravessar (fim de rua, corredor que continua). Vermelha no editor; conecte no Mapa (M).' },
+  { id: 'usoItem', nome: 'Área de uso de item', texto: 'Onde um item do menu funciona (chave na porta, pendrive no computador, alicate na corrente). Amarela no editor.' },
+];
+const tiposZona = el('div', { class: 'grupo-presets' }, ...TIPOS_ZONA.map((t) => {
+  const b = el('button', { type: 'button', class: 'secundario' }, t.nome);
+  dica(b, t.nome, `${t.texto} A próxima zona desenhada já nasce assim (dá para trocar depois em Propriedades › Comportamento).`);
+  b.addEventListener('click', () => { zonaNova = t.id; atualizarBarraZona(); });
+  return b;
+}));
+const barraZona = el('div', { class: 'barra-flutuante barra-tela' }, el('strong', { class: 'rotulo-barra' }, 'Zona nova:'), tiposZona,
+  el('span', { class: 'dica-campo' }, 'Arraste no cenário para desenhar a área'));
+barraZona.hidden = true;
+centro.append(barraZona);
+function atualizarBarraZona() {
+  tiposZona.querySelectorAll('button').forEach((b, i) => b.classList.toggle('ligado', TIPOS_ZONA[i].id === zonaNova));
+}
+
 function atualizarBarraLuz() {
   formasLuz.querySelectorAll('button').forEach((b, i) => b.classList.toggle('ligado', FORMAS_LUZ[i].id === estado.formaLuzNova));
 }
