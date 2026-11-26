@@ -59,10 +59,19 @@ export interface MensagensItens {
   naoCombina: string;
 }
 
+/** Aparência da inspeção (pontos de inspeção e tudo o que tem interação). */
+export interface ConfigInspecao {
+  /** Imagem do olho acima da personagem ('' = o olho padrão). */
+  olho: string;
+  /** Força do "foco" (escurece levemente as bordas) perto de um ponto de inspeção: 0 a 1 (0 = sem foco). */
+  foco: number;
+}
+
 export interface ConfigItens {
   itens: ConfigItem[];
   receitas: ReceitaItem[];
   mensagens: MensagensItens;
+  inspecao: ConfigInspecao;
 }
 
 export function itemBase(nome: string, d: Partial<ConfigItem> = {}): ConfigItem {
@@ -74,6 +83,7 @@ export function itensPadrao(): ConfigItens {
     itens: [],
     receitas: [],
     mensagens: { aquiNao: 'Você não deve usar este item aqui.', semEspaco: 'Sem espaço para {item}.', naoCombina: 'Esses itens não combinam.' },
+    inspecao: { olho: '', foco: 0.35 },
   };
 }
 
@@ -96,7 +106,12 @@ export function normalizarItens(d: unknown): ConfigItens {
     .filter((r) => r && typeof r.a === 'string' && typeof r.b === 'string' && typeof r.resultado === 'string' && r.a && r.b && r.resultado)
     .map((r) => ({ a: r.a, b: r.b, resultado: r.resultado, quantidade: Math.max(1, Math.round(Number(r.quantidade) || 1)) }));
   const m = (x.mensagens ?? {}) as Partial<MensagensItens>;
-  return { itens, receitas, mensagens: { aquiNao: s(m.aquiNao, b.mensagens.aquiNao), semEspaco: s(m.semEspaco, b.mensagens.semEspaco), naoCombina: s(m.naoCombina, b.mensagens.naoCombina) } };
+  const ins = (x.inspecao ?? {}) as Partial<ConfigInspecao>;
+  return {
+    itens, receitas,
+    mensagens: { aquiNao: s(m.aquiNao, b.mensagens.aquiNao), semEspaco: s(m.semEspaco, b.mensagens.semEspaco), naoCombina: s(m.naoCombina, b.mensagens.naoCombina) },
+    inspecao: { olho: s(ins.olho), foco: Number.isFinite(Number(ins.foco)) ? Math.max(0, Math.min(1, Number(ins.foco))) : b.inspecao.foco },
+  };
 }
 
 /** O item do catálogo (sem diferença de maiúsculas); sem cadastro = item comum de 1 espaço. */

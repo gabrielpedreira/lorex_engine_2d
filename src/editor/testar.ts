@@ -3,8 +3,8 @@ import { Graphics, Rectangle, Sprite, Texture } from 'pixi.js';
 import { Animador, animacaoPara, ancoraPes, estadoDoJogador, extras, retanguloQuadro, vidaPadrao, type ConfigVida, type Personagem } from '../core/personagem';
 import { EntradaJogo, TECLAS_RESERVADAS, controlesPadrao, nomeTecla, normalizarCodigo, textoAtalho, type Controles } from '../core/controles';
 import { LOG } from '../core/log';
-import { Jogador, JOGADOR_PADRAO, montarSegmentos, type ConfigJogador, type Entrada, type Segmento } from '../core/fisica';
-import { MundoInterativo, type EstadoObjeto, type ResultadoInteracao } from '../core/comportamentos';
+import { Jogador, JOGADOR_PADRAO, montarSegmentos, xEm, yEm, type ConfigJogador, type Entrada, type Segmento } from '../core/fisica';
+import { MundoInterativo, type EstadoObjeto, type EtapaInspecao, type ResultadoInteracao } from '../core/comportamentos';
 import { mapaVazio, resumoTransicao, transicaoPadrao, viagemDe, type Mapa, type Transicao, type Viagem } from '../core/mapa';
 import { MotorScripts, type FontesScripts } from './motorScripts';
 import type { ObjetoFase } from '../core/tipos';
@@ -14,12 +14,42 @@ import { normalizarHud, type ConfigHud } from '../core/hud';
 import { elementoHud, posicionarHud, telaMorte } from '../ui/hud';
 import { el } from '../ui/dom';
 import { MenuJogo } from './menuJogo';
-import { arrumarEspacos, cabeNoMenu, espacosDoMenu, itemDe, itensPadrao, menuPadrao, receitaDe, type ConfigItens, type ConfigMenu } from '../core/menu';
+import { arrumarEspacos, cabeNoMenu, espacosDoMenu, itemBase, itemDe, itensPadrao, menuPadrao, receitaDe, type ConfigItens, type ConfigMenu } from '../core/menu';
 import { dica } from '../ui/legenda';
 import type { Estado } from './estado';
 import type { Viewport } from './viewport';
 
 const PASSO = 1 / 120;
+
+/** Um objeto empurrado pode ir para o lado dir? (sem parede na frente e com chão embaixo da frente) */
+function objetoPodeIr(segs: Segmento[], b: { x: number; y: number; w: number; h: number }, dir: number): boolean {
+  const frente = dir > 0 ? b.x + b.w + 3 : b.x - 3;
+  const base = b.y + b.h;
+  let chao = false;
+  for (const s of segs) {
+    if (s.tipo === 'chao') {
+      const yi = yEm(s, frente);
+      if (yi !== null && yi > base - 40 && yi < base + 60) chao = true;
+    } else if (s.tipo === 'parede') {
+      for (const hy of [b.y + b.h * 0.4, base - 8]) {
+        const xi = xEm(s, hy);
+        if (xi !== null && Math.abs(xi - frente) < 6) return false;
+      }
+    }
+  }
+  return chao;
+}
+
+/** O olho padrão (pixel art) acima da personagem quando há algo com interação por perto. */
+function olhoPadrao(): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg';
+  const s = document.createElementNS(ns, 'svg');
+  s.setAttribute('viewBox', '0 0 14 10'); s.setAttribute('shape-rendering', 'crispEdges'); s.setAttribute('width', '100%'); s.setAttribute('height', '100%');
+  s.innerHTML = '<path fill="#111" d="M4 1h6v1h2v1h1v1h1v2h-1v1h-1v1h-2v1H4v-1H2V7H1V6H0V4h1V3h1V2h2z"/>'
+    + '<path fill="#f2f2e8" d="M4 2h6v1h2v1h1v2h-1v1h-2v1H4V7H2V6H1V4h1V3h2z"/>'
+    + '<path fill="#2b8f6c" d="M5 3h4v4H5z"/><path fill="#0b0b0b" d="M6 4h2v2H6z"/><path fill="#fff" d="M6 4h1v1H6z"/>';
+  return s;
+}
 
 /** Inimigo ouve o tiro dado em x (se estiver perto o bastante). */
 function ouvir(i: InimigoVivo, x: number): EventoIA[] {
@@ -36,6 +66,15 @@ export class ModoTeste {
   private cameraAntes = { x: 0, y: 0, zoom: 1 };
   private colisoesAntes = true;
   private grafico = new Graphics();
+  /** Brilho dos pontos de inspeção marcados como importantes. */
+  private brilhos = new Graphics();
+  private elOlho!: HTMLElement;
+  private elFoco!: HTMLElement;
+  private elVer!: HTMLElement;
+  /** Empurrando um objeto: id, distância do jogador até ele e a velocidade normal (para devolver ao soltar). */
+  private empurrando: { id: string; offset: number; velocidadeAntes: number } | null = null;
+  /** Arquivos achados em pontos de inspeção nesta partida (entram no catálogo para a lista de Arquivos do menu). */
+  private descobertos = new Map<string, import('../core/menu').ConfigItem>();
   private hud: HTMLElement;
   private camAlvo = { x: 0, y: 0 };
   private mundo: MundoInterativo | null = null;
@@ -232,7 +271,7 @@ export class ModoTeste {
   private saindo = false;
   private chegadaPendente = '';
   /** O que mudou em cada sala já visitada nesta partida (portas, itens pegos, inimigos mortos). */
-  private memoriaSalas = new Map<string, { estados: Map<string, EstadoObjeto>; mortos: Set<string>; luzes: Map<string, boolean>; escura: boolean }>();
+  private memoriaSalas = new Map<string, { estados: Map<string, EstadoObjeto>; mortos: Set<string>; luzes: Map<string, boolean>; escura: boolean; desloc?: Map<string, { dx: number; dy: number }> }>();
   /** Inimigos que só surgem por um gatilho (spawner). */
   private aguardando: import('../core/tipos').InimigoFase[] = [];
 
@@ -255,6 +294,12 @@ export class ModoTeste {
     centro.append(this.elMorte);
     centro.append(this.elHudTela);
     this.elHudTela.hidden = true;
+    this.elOlho = el('div', { class: 'teste-olho', 'aria-hidden': 'true' });
+    this.elFoco = el('div', { class: 'teste-foco', 'aria-hidden': 'true' });
+    this.elVer = el('div', { class: 'teste-ver', role: 'dialog' });
+    this.elVer.hidden = true;
+    this.elOlho.hidden = true;
+    centro.append(this.elFoco, this.elVer, this.elOlho);
     for (const x of [this.elPrompt, this.elInventario, this.elMensagem, this.elHudJogo]) { x.hidden = true; centro.append(x); }
     this.menu = new MenuJogo({
       menu: () => this.menuConfig, itens: () => this.itensConfig, url: (c) => this.urlImagem(c),
@@ -381,7 +426,7 @@ export class ModoTeste {
     this.colisoesAntes = e.mostrarColisoes;
     e.mostrarColisoes = false;
     this.cameraAntes = { ...e.camera };
-    this.segs = montarSegmentos(e.fase.colisoes);
+    this.segs = montarSegmentos(e.fase.colisoes.filter((c) => !c.objeto)); // as presas a objetos (empurráveis) andam com eles
     const continuando = this.viajando;
     if (continuando) LOG.add({ cat: 'mundo', texto: `chegou em ${e.fase.nome}${e.arquivoFase ? ` (${e.arquivoFase})` : ''}${this.chegadaPendente ? ` · na passagem ${e.objeto(this.chegadaPendente)?.nome ?? this.chegadaPendente}` : ' · no início do jogador'}` });
     else {
@@ -389,6 +434,9 @@ export class ModoTeste {
       this.memoriaSalas.clear();
     }
     this.ultimoEstado = ''; this.ultimoProx = '';
+    // Arquivos achados em inspeções de outras salas continuam na lista de Arquivos
+    if (!continuando) this.descobertos.clear();
+    for (const [n, it] of this.descobertos) if (!this.itensConfig.itens.some((i) => i.nome === n)) this.itensConfig = { ...this.itensConfig, itens: [...this.itensConfig.itens, it] };
     this.saindo = false;
     this.reiniciarJogador();
     this.reiniciarMundo(continuando);
@@ -435,7 +483,10 @@ export class ModoTeste {
     document.removeEventListener('fullscreenchange', this.aoTelaCheia);
     if (document.fullscreenElement && !this.viajando) void document.exitFullscreen();
     this.hud.hidden = true;
-    for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem, this.elHudJogo, this.elMorte]) x.hidden = true;
+    for (const x of [this.elPrompt, this.elInventario, this.elToast, this.elMensagem, this.elHudJogo, this.elMorte, this.elOlho, this.elVer]) x.hidden = true;
+    this.elFoco.classList.remove('ativo');
+    this.soltarEmpurrar(false);
+    this.brilhos.removeFromParent(); this.brilhos.clear();
     if (this.menu.aberto) { this.menu.aoFechar = () => {}; this.menu.fechar(); this.menu.aoFechar = () => { LOG.add({ cat: 'mundo', texto: 'menu fechado' }); this.entradaJogo.limpar(); }; }
     this.mortoEm = null;
     this.spritePers.alpha = 1;
@@ -479,6 +530,7 @@ export class ModoTeste {
         if (o?.anim && est.aberta) mundo.definirQuadro(id, o.anim.quadros - 1);
       }
       for (const [id, v] of mem.luzes) mundo.luzes.set(id, v);
+      for (const [id, d] of mem.desloc ?? []) mundo.deslocamentos.set(id, { ...d });
       mundo.escura = mem.escura;
       mundo.marcarMudanca();
       LOG.add({ cat: 'mundo', texto: `${this.renascendo ? 'sala recomeça do checkpoint (portas e itens como estavam)' : 'sala já visitada: estado anterior restaurado'}${mem.mortos.size ? ` (${mem.mortos.size} inimigo(s) continuam mortos)` : ''}` });
@@ -571,6 +623,8 @@ export class ModoTeste {
     if (r.checkpoint && this.jogador) { this.marcarCheckpoint(this.jogador.x, this.jogador.y, origem?.nome ?? 'gatilho'); this.toast('Checkpoint'); }
     if (r.luz && this.mundo) LOG.add({ cat: 'mundo', texto: `iluminação: ${this.mundo.escura ? 'sala escura' : 'sala clara'} · luzes ligadas: ${[...this.mundo.luzes].filter(([, v]) => v).map(([id]) => this.estado.luz(id)?.nome ?? id).join(', ') || 'nenhuma'}` });
     if (r.aviso) this.toast(r.aviso);
+    if (r.inspecao) this.executarEtapa(r.inspecao, origem);
+    if (r.empurrar) this.comecarEmpurrar(r.empurrar);
     if (r.mensagem) {
       this.mensagemAberta = true;
       this.elMensagem.replaceChildren(el('p', {}, r.mensagem), el('span', { class: 'teste-fechar' }, 'E ou Enter para fechar'));
@@ -622,6 +676,8 @@ export class ModoTeste {
       mortos: new Set([...this.estado.fase.inimigos.map((d) => d.id)].filter((id) => !this.aguardando.some((d) => d.id === id) && !this.inimigos.some((i) => i.id === id && i.vivo))),
       luzes: new Map(this.mundo.luzes),
       escura: this.mundo.escura,
+      // Objetos empurrados ficam onde foram deixados
+      desloc: new Map([...this.mundo.deslocamentos].map(([id, d]) => [id, { ...d }])),
     });
   }
 
@@ -667,7 +723,8 @@ export class ModoTeste {
     const cont = camada ? this.viewport.conteinerCamada(camada.id) : undefined;
     if (!cont) return;
     for (const i of this.inimigos) i.inserir(cont);
-    // Jogador e o rastro do tiro sempre por cima dos inimigos
+    // Jogador e o rastro do tiro sempre por cima dos inimigos (o brilho dos pontos importantes fica atrás)
+    cont.addChild(this.brilhos);
     if (this.pers) cont.addChild(this.spritePers);
     cont.addChild(this.grafico);
   }
@@ -690,6 +747,7 @@ export class ModoTeste {
       else this.menu.tecla(ev);
       return;
     }
+    if (this.mensagemAberta && ev.key === 'Escape') { ev.preventDefault(); this.mensagemAberta = false; this.elMensagem.hidden = true; this.elVer.hidden = true; return; }
     if (ev.key === 'Escape' || ev.key === 'F5') { ev.preventDefault(); this.parar(); return; }
     if (ev.key === 'F6') { ev.preventDefault(); LOG.add({ cat: 'sistema', texto: 'Fase reiniciada (F6)' }); this.reiniciarTudo(); this.toast('Fase reiniciada'); return; }
     // Morto: Enter (ou Interagir) volta logo no checkpoint
@@ -699,9 +757,9 @@ export class ModoTeste {
       return;
     }
     if (ev.code === 'KeyC' && ev.shiftKey && !this.usada('KeyC')) { this.estado.mostrarColisoes = !this.estado.mostrarColisoes; this.estado.emit('opcoes'); return; }
-    if (this.mensagemAberta && (ev.key === 'Enter' || this.ehDaAcao(ev.code, 'interagir'))) {
-      ev.preventDefault();
-      this.mensagemAberta = false; this.elMensagem.hidden = true;
+    if (this.mensagemAberta && (ev.key === 'Enter' || ev.key === 'Escape' || this.ehDaAcao(ev.code, 'interagir'))) {
+      ev.preventDefault(); ev.stopPropagation();
+      this.mensagemAberta = false; this.elMensagem.hidden = true; this.elVer.hidden = true;
       return;
     }
     if (TECLAS_RESERVADAS.has(ev.code)) return;
@@ -790,9 +848,13 @@ export class ModoTeste {
       this.tratarEventosInimigo(ini, ini.pensar(dtQ, alvo, segsInimigos, externo));
     }
     this.acumulado = Math.min(this.acumulado + ms / 1000, 0.25);
+    // Pular solta o objeto empurrado
+    if (this.empurrando && (this.puloApertado || this.morto)) this.soltarEmpurrar(true);
     while (this.acumulado >= PASSO) {
       const segs = m.segmentosPortas().length ? this.segs.concat(m.segmentosPortas()) : this.segs;
+      const xAntes = j.x;
       const vivo = j.passo(PASSO, this.entrada(), segs, fw, fh);
+      if (this.empurrando) this.passoEmpurrar(j.x - xAntes);
       for (const ini of this.inimigos) ini.passoFisica(PASSO, segs, fw, fh);
       this.puloApertado = false;
       this.acumulado -= PASSO;
@@ -834,7 +896,8 @@ export class ModoTeste {
     }
     if (this.interagirApertado) {
       this.interagirApertado = false;
-      if (prox) this.interagirCom(prox.o);
+      if (this.empurrando) this.soltarEmpurrar(true);
+      else if (prox) this.interagirCom(prox.o);
     }
     if (this.cenaMudou) { this.cenaMudou = false; this.aplicarVisibilidade(); this.atualizarInventario(); }
     this.posicionarCamera(false, ms / 1000);
@@ -844,18 +907,164 @@ export class ModoTeste {
     this.desenharRastro(dtQ);
     this.atualizarHudTela();
     this.mostrarPrompt(prox);
+    this.desenharBrilhos();
   }
 
+  /**
+   * Algo com interação por perto: o olho acima da personagem e, no canto de baixo à direita da tela do jogo, a tecla e a
+   * ação. Perto de um ponto de inspeção a tela ganha um leve foco (bordas mais escuras).
+   */
   private mostrarPrompt(prox: { o: ObjetoFase; acao: string } | null) {
-    if (!prox || this.mensagemAberta || !this.mundo) { this.elPrompt.hidden = true; return; }
-    const o = prox.o;
-    const b = this.mundo.caixa(o);
-    const p = this.viewport.camadaParaTela(b.x + b.w / 2, b.y, o.camada);
+    const j = this.jogador;
+    const r = this.retanguloTela();
+    const empurrando = !!this.empurrando;
+    if ((!prox && !empurrando) || this.mensagemAberta || !this.mundo || !j || this.morto) {
+      this.elPrompt.hidden = true; this.elOlho.hidden = true; this.elFoco.classList.remove('ativo');
+      return;
+    }
     const tecla = this.controles.acoes.interagir?.[0];
-    this.elPrompt.replaceChildren(el('kbd', {}, tecla ? textoAtalho(tecla) : 'E'), el('span', {}, prox.acao));
-    this.elPrompt.style.left = `${Math.round(p.x)}px`;
-    this.elPrompt.style.top = `${Math.round(p.y - 10)}px`;
+    this.elPrompt.classList.add('canto');
+    this.elPrompt.replaceChildren(el('kbd', {}, tecla ? textoAtalho(tecla) : 'E'), el('span', {}, empurrando ? 'Soltar' : prox!.acao));
+    this.elPrompt.style.left = `${Math.round(r.x + r.w - 12)}px`;
+    this.elPrompt.style.top = `${Math.round(r.y + r.h - 12)}px`;
     this.elPrompt.hidden = false;
+    // Olho acima da cabeça
+    const cab = this.viewport.camadaParaTela(j.x, j.y - j.cfg.altura - 6, '');
+    const olho = this.itensConfig.inspecao.olho;
+    if (this.elOlho.dataset.img !== olho) {
+      this.elOlho.dataset.img = olho;
+      this.elOlho.replaceChildren(olho ? el('img', { src: this.urlImagem(olho), alt: '' }) : olhoPadrao());
+    }
+    const z = this.estado.camera.zoom;
+    Object.assign(this.elOlho.style, { left: `${Math.round(cab.x)}px`, top: `${Math.round(cab.y)}px`, width: `${Math.max(14, 14 * z)}px`, height: `${Math.max(10, 10 * z)}px` });
+    this.elOlho.hidden = empurrando;
+    // Foco sutil perto de um ponto de inspeção
+    const foco = !empurrando && prox?.o.comportamentos[0]?.tipo === 'inspecionar' ? this.itensConfig.inspecao.foco : 0;
+    if (foco > 0) {
+      Object.assign(this.elFoco.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px`,
+        background: `radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, rgba(0,0,0,${(foco * 0.85).toFixed(2)}) 100%)` });
+      this.elFoco.classList.add('ativo');
+    } else this.elFoco.classList.remove('ativo');
+  }
+
+  /** Pontos de inspeção importantes: brilho suave pulsando no lugar (até serem inspecionados por completo). */
+  private desenharBrilhos() {
+    const m = this.mundo;
+    const g = this.brilhos.clear();
+    if (!m) return;
+    const t = this.tempoJogo;
+    for (const o of this.estado.fase.objetos) {
+      const c = o.comportamentos[0];
+      if (c?.tipo !== 'inspecionar' || !c.destaque) continue;
+      const e = m.estados.get(o.id);
+      if (!e || !e.visivel || (e.etapa ?? 0) >= c.etapas.length) continue;
+      const b = m.caixa(o);
+      const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+      const p = 0.5 + 0.5 * Math.sin(t * 3 + cx * 0.01);
+      const raio = Math.max(10, Math.min(b.w, b.h) * 0.35);
+      g.circle(cx, cy, raio * (0.9 + p * 0.25)).fill({ color: 0xfff1a8, alpha: 0.10 + p * 0.12 });
+      g.circle(cx, cy, raio * 0.35).fill({ color: 0xffffff, alpha: 0.18 + p * 0.25 });
+      const s = 3 + p * 3; // estrelinha
+      g.moveTo(cx - s, cy - raio * 0.6).lineTo(cx + s, cy - raio * 0.6).moveTo(cx, cy - raio * 0.6 - s).lineTo(cx, cy - raio * 0.6 + s).stroke({ width: 1, color: 0xffffff, alpha: 0.5 + p * 0.4 });
+    }
+  }
+
+  /** Ponto de inspeção: faz a etapa (legenda, pegar item, pegar arquivo, ver de perto). */
+  private executarEtapa(et: EtapaInspecao, origem?: ObjetoFase) {
+    const quem = origem?.nome ?? 'ponto';
+    switch (et.tipo) {
+      case 'legenda':
+        LOG.add({ cat: 'mundo', texto: `inspecionou ${quem}: legenda` });
+        this.mensagemAberta = true;
+        this.elMensagem.replaceChildren(el('p', {}, et.texto || '…'), el('span', { class: 'teste-fechar' }, 'E ou Enter para fechar'));
+        this.elMensagem.hidden = false;
+        break;
+      case 'item':
+        LOG.add({ cat: 'mundo', texto: `inspecionou ${quem}: pegou ${et.item || '(sem nome)'}${et.quantidade > 1 ? ` ×${et.quantidade}` : ''}` });
+        this.toast(et.texto || `Pegou: ${et.item}${et.quantidade > 1 ? ` ×${et.quantidade}` : ''}`);
+        break;
+      case 'arquivo': {
+        const nome = et.item || 'Arquivo';
+        if (!itemDe(this.itensConfig, nome).nome || !this.itensConfig.itens.some((i) => i.nome.toLowerCase() === nome.toLowerCase())) {
+          const novo = itemBase(nome, { tipo: 'arquivo', descricao: et.texto, imagem: et.imagem, imagemGrande: et.imagem, uso: 'nada', consome: false });
+          this.descobertos.set(nome, novo);
+          this.itensConfig = { ...this.itensConfig, itens: [...this.itensConfig.itens, novo] };
+        }
+        LOG.add({ cat: 'mundo', texto: `inspecionou ${quem}: arquivo "${nome}"` });
+        this.toast(`Novo arquivo: ${nome} (Menu › Arquivos)`);
+        break;
+      }
+      case 'ver': {
+        LOG.add({ cat: 'mundo', texto: `inspecionou ${quem}: viu de perto` });
+        const r = this.retanguloTela();
+        Object.assign(this.elVer.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
+        this.elVer.replaceChildren(...(et.imagem ? [el('img', { src: this.urlImagem(et.imagem), alt: '' })] : []),
+          ...(et.texto ? [el('p', {}, et.texto)] : []), el('span', { class: 'teste-fechar' }, 'E, Enter ou Esc para voltar'));
+        this.elVer.hidden = false;
+        this.mensagemAberta = true;
+        break;
+      }
+    }
+    this.atualizarInventario();
+  }
+
+  // ---------- Empurrar ----------
+  private comecarEmpurrar(id: string) {
+    const m = this.mundo, j = this.jogador;
+    const o = this.estado.objeto(id);
+    if (!m || !j || !o) return;
+    if (!j.noChao) { this.toast('Fique no chão para empurrar.'); return; }
+    const c = o.comportamentos[0];
+    const vel = c?.tipo === 'empurravel' ? c.velocidade : 60;
+    const b = m.caixa(o);
+    this.empurrando = { id, offset: b.x - j.x, velocidadeAntes: j.cfg.velocidade };
+    j.cfg = { ...j.cfg, velocidade: Math.min(j.cfg.velocidade, vel) };
+    j.olhandoDireita = b.x + b.w / 2 > j.x;
+    m.empurrando = id; m.marcarMudanca();
+    LOG.add({ cat: 'personagem', texto: `empurrando ${o.nome}` });
+    this.toast(`Empurrando ${o.nome} · ← → movem · Interagir ou pular solta`);
+    if (this.pers?.dados.animacoes.empurrar) this.pers.animador.tocar('empurrar', true);
+  }
+
+  private soltarEmpurrar(avisar: boolean) {
+    const e = this.empurrando;
+    if (!e) return;
+    this.empurrando = null;
+    if (this.mundo) { this.mundo.empurrando = null; this.mundo.marcarMudanca(); }
+    if (this.jogador) this.jogador.cfg = { ...this.jogador.cfg, velocidade: e.velocidadeAntes };
+    if (this.pers?.animador.acaoAtual === 'empurrar') this.pers.animador.parar();
+    if (avisar) LOG.add({ cat: 'personagem', texto: `soltou ${this.estado.objeto(e.id)?.nome ?? e.id}` });
+  }
+
+  /** A cada passo da física: o objeto vai junto com o jogador; parede ou beirada na frente dele, o jogador para. */
+  private passoEmpurrar(dx: number) {
+    const e = this.empurrando, m = this.mundo, j = this.jogador;
+    if (!e || !m || !j || !dx) return;
+    if (!j.noChao) { this.soltarEmpurrar(true); return; }
+    const o = this.estado.objeto(e.id);
+    if (!o) { this.soltarEmpurrar(false); return; }
+    const b = m.caixa(o);
+    const alvoX = j.x + e.offset;
+    const mover = alvoX - b.x;
+    if (!mover) return;
+    const dir = mover > 0 ? 1 : -1;
+    // Só testa o lado para onde o objeto vai (a colisão dele mesmo fica de fora)
+    const segs = this.segs.concat(m.segmentosPortas().filter((s) => !this.segDoObjeto(s, b)));
+    if (Math.sign(mover) === Math.sign(b.x + b.w / 2 - j.x) && !objetoPodeIr(segs, b, dir)) {
+      j.x -= dx; // empurrando contra parede/beirada: não anda
+      return;
+    }
+    m.deslocar(o.id, mover, 0);
+    for (const z of this.estado.fase.objetos) {
+      const c = z.comportamentos[0];
+      if (c?.tipo === 'pontoEmpurrar' && c.alvo === o.id) m.deslocar(z.id, mover, 0);
+    }
+    this.cenaMudou = true; // redesenha o objeto no lugar novo (uma vez por quadro)
+  }
+  /** O segmento é da colisão do próprio objeto (dentro da caixa dele)? */
+  private segDoObjeto(s: Segmento, b: { x: number; y: number; w: number; h: number }) {
+    const dentro = (x: number, y: number) => x >= b.x - 2 && x <= b.x + b.w + 2 && y >= b.y - 2 && y <= b.y + b.h + 2;
+    return dentro(s.ax, s.ay) && dentro(s.bx, s.by);
   }
 
   /** Espaço ocupado no topo pelo painel "Testando" (a tela do jogo fica abaixo dele, sem nada do HUD escondido). */

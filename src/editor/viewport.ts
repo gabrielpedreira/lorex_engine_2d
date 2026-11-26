@@ -1,7 +1,7 @@
 // Área do cenário: desenha a fase com PixiJS e trata mouse (selecionar, mover, redimensionar, zoom, pan).
 import 'pixi.js/unsafe-eval';
 import { Application, Assets, BlurFilter, ColorMatrixFilter, Container, Graphics, Rectangle, RenderTexture, Sprite, Texture, TextureStyle } from 'pixi.js';
-import { novoIdLuz } from '../core/fase';
+import { moverVinculados, novoIdLuz } from '../core/fase';
 import type { LuzFase } from '../core/tipos';
 import { quadroDaFolha, retanguloFolha, type AnimFolha } from '../core/folha';
 import { calcularEfeitos, faseDoId, type EfeitoBrilhar, type ResultadoEfeitos } from '../core/efeitos';
@@ -557,7 +557,7 @@ export class Viewport {
     const zona = !o.asset;
     const tex = zona ? Texture.WHITE : this.texturas.get(o.asset);
     const tipoZona = o.comportamentos[0]?.tipo;
-    sp.tint = !zona ? 0xffffff : tipoZona === 'saida' ? 0xe5484d : tipoZona === 'gatilho' ? 0xa45cf0 : tipoZona === 'usoItem' ? 0xf2d23a : 0x8ea59d;
+    sp.tint = !zona ? 0xffffff : tipoZona === 'saida' ? 0xe5484d : tipoZona === 'gatilho' ? 0xa45cf0 : tipoZona === 'usoItem' ? 0xf2d23a : tipoZona === 'pontoEmpurrar' ? 0x4aa3ff : tipoZona === 'inspecionar' ? 0x5ee0c8 : 0x8ea59d;
     if (tex && o.anim && !zona) {
       const q = this.quadrosDe(tex, o.asset, o.anim);
       sp.texture = q[Math.min(q.length - 1, this.quadroObjeto(o))];
@@ -1521,8 +1521,10 @@ export class Viewport {
         }
         this.altPressionado = e.altKey;
         const enc = this.encaixarEmObjetos(nx, ny, o.w * o.escala, o.h * o.escala, o.camada, o.id);
+        const [ax, ay] = [o.x, o.y];
         o.x = enc.x;
         o.y = enc.y;
+        moverVinculados(this.estado.fase, o.id, o.x - ax, o.y - ay); // empurrável: colisão e pontos de empurrar vão junto
       } else {
         if (!o.asset) {
           // Zona (sem imagem): largura e altura livres

@@ -171,7 +171,7 @@ function normalizarColisoes(lista: unknown): Colisao[] {
         .map(([x, y]) => [Math.round(Number(x) || 0), Math.round(Number(y) || 0)] as [number, number]);
       const forma = (['bloco', 'rampa', 'poligono', 'linha'] as const).find((f) => f === b.forma) ?? 'poligono';
       if (pontos.length >= (forma === 'linha' ? 2 : 3)) {
-        saida.push({ id, forma, comportamento: b.comportamento === 'atravessavel' ? 'atravessavel' : 'solido', pontos });
+        saida.push({ id, forma, comportamento: b.comportamento === 'atravessavel' ? 'atravessavel' : 'solido', pontos, ...(typeof b.objeto === 'string' && b.objeto ? { objeto: b.objeto } : {}) });
       }
       return;
     }
@@ -195,4 +195,20 @@ export function novoIdColisao(fase: Fase): string {
     if (m) maior = Math.max(maior, Number(m[1]));
   }
   return 'col_' + String(maior + 1).padStart(3, '0');
+}
+
+/** Empurrável: as coisas presas a ele (colisão e pontos de empurrar) andam junto quando ele é movido no editor. */
+export function moverVinculados(fase: Fase, id: string, dx: number, dy: number) {
+  if (!dx && !dy) return;
+  for (const c of fase.colisoes) if (c.objeto === id) c.pontos = c.pontos.map(([x, y]) => [x + dx, y + dy]);
+  for (const o of fase.objetos) {
+    const c = o.comportamentos[0] as { tipo?: string; alvo?: string } | undefined;
+    if (c?.tipo === 'pontoEmpurrar' && c.alvo === id) { o.x += dx; o.y += dy; }
+  }
+}
+
+/** Apaga o que estava preso a um objeto removido (colisão e pontos de empurrar). */
+export function removerVinculados(fase: Fase, id: string) {
+  fase.colisoes = fase.colisoes.filter((c) => c.objeto !== id);
+  fase.objetos = fase.objetos.filter((o) => { const c = o.comportamentos[0] as { tipo?: string; alvo?: string } | undefined; return !(c?.tipo === 'pontoEmpurrar' && c.alvo === id); });
 }

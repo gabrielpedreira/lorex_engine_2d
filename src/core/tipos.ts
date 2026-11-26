@@ -12,6 +12,8 @@ export interface Colisao {
   forma: 'bloco' | 'rampa' | 'poligono' | 'linha';
   /** Vértices em pixels do mundo. */
   pontos: [number, number][];
+  /** Presa a um objeto (empurrável): anda junto com ele no jogo e no editor; fica fora da colisão fixa da fase. */
+  objeto?: string;
 }
 
 export interface Camada {

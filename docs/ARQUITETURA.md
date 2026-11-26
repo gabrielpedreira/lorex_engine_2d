@@ -451,6 +451,18 @@ um clique no cenário (`estado.escolhendoAlvo`), e linhas tracejadas mostram as 
   `aplicarMudanca` envolve toda mudança: remove conexões sem pontas e apaga as passagens-zona (`PassagemSala.zona`)
   que perderam a última conexão (`passagensUsadas` antes × depois).
 
+### 4.42 Inspecionar e empurrar
+
+- `CompInspecionar` { etapas: EtapaInspecao[] (legenda/item/arquivo/ver), destaque, repetir, rotulo };
+  `EstadoObjeto.etapa` guarda a próxima. `MundoInterativo.interagir` devolve `inspecao` (e já dá item/arquivo);
+  o ▶ Testar mostra legenda, toast, cadastra arquivos achados (`descobertos`, valem entre salas) ou a tela "ver de
+  perto" (`.teste-ver`, no quadro do jogo). Olho (`.teste-olho`), botão no canto (`.teste-prompt.canto`) e foco
+  (`.teste-foco`) em `mostrarPrompt`; brilho em `desenharBrilhos` (Graphics atrás do jogador). `ConfigItens.inspecao`.
+- `CompEmpurravel` { velocidade } + `CompPontoEmpurrar` { alvo }; `Colisao.objeto` = colisão presa (fora de
+  `this.segs`; entra em `segmentosPortas` com o deslocamento do objeto). `moverVinculados`/`removerVinculados`
+  (core/fase.ts). ▶ Testar: `comecarEmpurrar`, `passoEmpurrar` (a cada passo da física, `objetoPodeIr` testa parede e
+  chão à frente), `soltarEmpurrar`; deslocamentos entram na memória da sala.
+
 ### 4.41 Menu do jogo, itens e Área de uso de item
 
 - `core/menu.ts` (puro): `ConfigItens` (itens: nome, tipo item/arquivo, espaços 1–2, imagem, imagemGrande,

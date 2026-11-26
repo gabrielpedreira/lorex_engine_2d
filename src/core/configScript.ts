@@ -490,6 +490,7 @@ export function blocoItens(i: import('./menu').ConfigItens): { valores: Bloco; c
       itens: 'cada item: nome (o mesmo do Coletável), tipo "item" ou "arquivo", espacos 1 ou 2, imagem, imagemGrande, descricao (legenda do Checar), uso: "area", "curar", "arma" ou "nada", cura, arma (arquivo), consome',
       receitas: 'combinações: a + b → resultado (quantidade)',
       mensagens: 'textos: aquiNao (usar no lugar errado), semEspaco ({item} = nome), naoCombina',
+      inspecao: 'olho = imagem acima da personagem perto de algo com interação ("" = padrão); foco = 0 a 1, escurece as bordas perto de um ponto de inspeção',
     },
   };
 }

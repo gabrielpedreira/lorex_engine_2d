@@ -6,7 +6,7 @@
 //   Combinações: A + B → C.  Mensagens: "Você não deve usar este item aqui" etc.
 // Salva sozinho em jogo/projeto.json ("menu" e "itens"); no Código: menu.js e itens.js (grupo Jogo).
 import {
-  ACOES_BOTAO, TIPOS_PAINEL, USOS_ITEM, faixasVidaPadrao, itemBase, menuPadrao, painelBase,
+  ACOES_BOTAO, TIPOS_PAINEL, USOS_ITEM, faixasVidaPadrao, itemBase, itensPadrao, menuPadrao, painelBase,
   type ConfigItem, type ConfigItens, type ConfigMenu, type PainelMenu, type TelaMenu, type TipoPainel, type UsoItem,
 } from '../core/menu';
 import { MenuJogo } from '../editor/menuJogo';
@@ -30,13 +30,13 @@ const ABAS: { id: Aba; nome: string; texto: string }[] = [
   { id: 'submenu', nome: 'Submenu', texto: 'A caixa Usar / Combinar / Checar que aparece ao escolher um item.' },
   { id: 'itens', nome: 'Itens', texto: 'O que cada item é: espaços, imagens, legenda do Checar, o que faz ao Usar.' },
   { id: 'combinacoes', nome: 'Combinações', texto: 'Quais dois itens viram outro (ex.: remédio P + remédio P → remédio M).' },
-  { id: 'mensagens', nome: 'Mensagens', texto: 'Textos do menu: usar no lugar errado, sem espaço, não combina.' },
+  { id: 'mensagens', nome: 'Mensagens e inspeção', texto: 'Textos do menu (usar no lugar errado, sem espaço, não combina) e a aparência da inspeção (olho e foco).' },
 ];
 
 export class EditorMenu {
   private raiz: HTMLElement;
   private m: ConfigMenu = menuPadrao();
-  private it: ConfigItens = { itens: [], receitas: [], mensagens: { aquiNao: '', semEspaco: '', naoCombina: '' } };
+  private it: ConfigItens = itensPadrao();
   private aba: Aba = 'inventario';
   private sel: string | null = null;
   private itemSel: string | null = null;
@@ -380,7 +380,11 @@ export class EditorMenu {
     return el('section', { class: 'pers-col pers-config menu-col-larga' }, el('h3', {}, 'Mensagens'),
       this.campo('Usar no lugar errado', this.texto(ms.aquiNao, (v) => { ms.aquiNao = v; }), 'Quando o jogador usa um item fora de uma Área de uso que o aceite.'),
       this.campo('Sem espaço', this.texto(ms.semEspaco, (v) => { ms.semEspaco = v; }), 'Ao encostar num item sem espaço livre no menu. {item} = nome do item.'),
-      this.campo('Não combinam', this.texto(ms.naoCombina, (v) => { ms.naoCombina = v; }), 'Ao combinar dois itens sem combinação cadastrada.'));
+      this.campo('Não combinam', this.texto(ms.naoCombina, (v) => { ms.naoCombina = v; }), 'Ao combinar dois itens sem combinação cadastrada.'),
+      el('h3', {}, 'Inspeção'),
+      el('p', { class: 'dica-campo' }, 'Perto de qualquer coisa com interação aparece um olho acima da personagem e, no canto de baixo à direita, o botão a apertar. Perto de um ponto de inspeção a tela ganha um leve foco.'),
+      this.campoImagem('Imagem do olho', this.it.inspecao.olho, (v) => { this.it.inspecao.olho = v; }, 'Ícone acima da personagem. Sem imagem: o olho padrão.', 'Olho padrão'),
+      this.campo('Força do foco', this.numero(this.it.inspecao.foco, (v) => { this.it.inspecao.foco = Math.max(0, Math.min(1, v)); }, 0.05), '0 = sem foco; 1 = bordas bem escuras. Sugestão: 0,3 a 0,4 (sutil).'));
   }
 
   // ---------- Campos ----------

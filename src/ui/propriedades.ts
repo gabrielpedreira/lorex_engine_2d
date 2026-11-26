@@ -13,7 +13,7 @@ import { secaoCamposJogo } from './camposJogo';
 import { AJUSTES_INIMIGO, inimigoPadrao } from '../core/inimigos';
 import { aoMudarDefinicoes } from '../core/definicoes';
 import { EFEITOS_PADRAO, type Efeito, type TipoEfeito } from '../core/efeitos';
-import { ACOES_GATILHO, ACOES_USO_ITEM, MODOS_PASSAGEM, NOMES_COMPORTAMENTO, comportamentoPadrao, type AcaoGatilho, type AcaoUsoItem, type Comportamento, type ModoPassagem, type TipoComportamento } from '../core/comportamentos';
+import { ACOES_GATILHO, ACOES_USO_ITEM, MODOS_PASSAGEM, NOMES_COMPORTAMENTO, TIPOS_ETAPA, comportamentoPadrao, etapaBase, type TipoEtapa, type AcaoGatilho, type AcaoUsoItem, type Comportamento, type ModoPassagem, type TipoComportamento } from '../core/comportamentos';
 import { el } from './dom';
 import { MODOS_ANIM, duracaoFolha, palpiteAnim, tamanhoQuadro, type ModoAnim } from '../core/folha';
 
@@ -49,6 +49,12 @@ export interface AcoesObjeto {
   sincronizarModo(id: string, modo: ModoPassagem): void;
   /** Tamanho (px) da imagem do objeto, para recortar o spritesheet. */
   tamanhoImagem(o: ObjetoFase): Promise<{ w: number; h: number }>;
+  /** Empurrável: cria a colisão presa e os dois pontos de empurrar (se faltarem). */
+  prepararEmpurravel(id: string, refazerPontos?: boolean): void;
+  /** Imagens do projeto (para "ver de perto" e arquivos) e cópia para jogo/assets. */
+  imagens(): Promise<string[]>;
+  garantirImagem(caminhoRaiz: string): Promise<string>;
+  url(caminhoJogo: string): string;
 }
 
 export class PainelPropriedades {
@@ -115,6 +121,7 @@ export class PainelPropriedades {
     dica(sel, 'Comportamento', atual ? NOMES_COMPORTAMENTO[atual.tipo].texto : 'Escolha o que este objeto faz no jogo.');
     sel.addEventListener('change', () => {
       this.estado.alterar(() => { o.comportamentos = sel.value ? [comportamentoPadrao(sel.value as TipoComportamento, o)] : []; });
+      if (sel.value === 'empurravel') this.acoes.prepararEmpurravel(o.id);
       this.render(true);
     });
     secao.append(sel);
@@ -235,6 +242,67 @@ export class PainelPropriedades {
         }
         secao.append(marcar('Só na primeira vez', atual.umaVez, (v) => { atual.umaVez = v; }, 'Desmarcado: dispara toda vez que o jogador entra.'),
           el('p', { class: 'dica-campo' }, 'No código do objeto: aoTocar (entrou) e aoSair (saiu).'));
+        break;
+      }
+      case 'inspecionar': {
+        const lista = el('div', { class: 'etapas' });
+        atual.etapas.forEach((et, i) => {
+          const tipo = el('select', { 'aria-label': `Etapa ${i + 1}` }, ...TIPOS_ETAPA.map((t) => el('option', { value: t.id }, t.nome)));
+          tipo.value = et.tipo;
+          dica(tipo, 'Tipo da etapa', TIPOS_ETAPA.map((t) => `${t.nome}: ${t.texto}`).join(' '));
+          tipo.addEventListener('change', () => { this.estado.alterar(() => { et.tipo = tipo.value as TipoEtapa; }); this.render(true); });
+          const subir = el('button', { type: 'button', class: 'secundario mini' }, '↑');
+          dica(subir, 'Subir', 'Esta etapa acontece antes.');
+          subir.disabled = i === 0;
+          subir.addEventListener('click', () => { this.estado.alterar(() => { atual.etapas.splice(i, 1); atual.etapas.splice(i - 1, 0, et); }); this.render(true); });
+          const tirar = el('button', { type: 'button', class: 'perigo mini' }, '×');
+          dica(tirar, 'Tirar etapa', 'Remove esta etapa.');
+          tirar.addEventListener('click', () => { this.estado.alterar(() => { atual.etapas.splice(i, 1); }); this.render(true); });
+          const bloco = el('div', { class: 'etapa' }, el('div', { class: 'etapa-topo' }, el('strong', {}, `${i + 1}.`), tipo, subir, tirar));
+          const area = el('textarea', { rows: 2, placeholder: et.tipo === 'legenda' ? 'Ex.: "Ele ainda segura o celular…"' : et.tipo === 'ver' ? 'Legenda embaixo da imagem' : et.tipo === 'arquivo' ? 'Texto do arquivo (aparece em Arquivos)' : 'Aviso ao pegar (opcional)' }) as HTMLTextAreaElement;
+          area.value = et.texto;
+          area.addEventListener('change', () => this.estado.alterar(() => { et.texto = area.value; }));
+          bloco.append(area);
+          if (et.tipo === 'item' || et.tipo === 'arquivo') {
+            bloco.append(texto(et.tipo === 'item' ? `Item (etapa ${i + 1})` : `Arquivo (etapa ${i + 1})`, et.item, (v) => { et.item = v; }, et.tipo === 'item' ? 'Nome do item (o mesmo de Menu e itens). Ex.: "celular", "chave do depósito".' : 'Nome do arquivo na lista de Arquivos. Ex.: "Mensagens do celular".', itensDaFase));
+            if (et.tipo === 'item') bloco.append(this.num(`Quantidade (etapa ${i + 1})`, et.quantidade, (v) => { et.quantidade = Math.max(1, Math.round(v)); }, { min: 1 }));
+          }
+          if (et.tipo === 'ver' || et.tipo === 'arquivo') bloco.append(this.seletorImagem(`Imagem (etapa ${i + 1})`, et.imagem, (v) => { et.imagem = v; }));
+          lista.append(bloco);
+        });
+        const mais = el('button', { type: 'button', class: 'secundario largo' }, '+ Etapa');
+        dica(mais, 'Nova etapa', 'Cada vez que o jogador interage acontece a próxima etapa (ex.: 1ª ver as mensagens do celular, 2ª pegar a chave).');
+        mais.addEventListener('click', () => { this.estado.alterar(() => { atual.etapas.push(etapaBase('legenda')); }); this.render(true); });
+        secao.append(
+          texto('Texto do botão', atual.rotulo, (v) => { atual.rotulo = v || 'Inspecionar'; }, 'O que aparece no canto da tela junto da tecla (ex.: Inspecionar, Revistar, Ler, Examinar).'),
+          el('h4', {}, 'Etapas (uma por interação)'), lista, mais,
+          marcar('Brilho (item importante)', atual.destaque, (v) => { atual.destaque = v; }, 'Um brilho suave pulsa no lugar, para o jogador achar mais fácil. Desligado = sutil (só o olho e o foco quando passa perto).'),
+          marcar('Pode ver de novo ao terminar', atual.repetir, (v) => { atual.repetir = v; }, 'Depois da última etapa, interagir repete a última (bom para legendas e cartazes). Desmarcado: o ponto se apaga.'),
+          el('p', { class: 'dica-campo' }, 'Pode ser uma zona (ferramenta Zona › Ponto de inspeção) por cima de algo do cenário, ou o próprio objeto. No código do objeto: aoInteragir(eu, jogo) — retorne false para fazer outra coisa.'));
+        break;
+      }
+      case 'empurravel': {
+        const refazer = el('button', { type: 'button', class: 'secundario largo' }, 'Recriar os pontos de empurrar');
+        dica(refazer, 'Recriar pontos', 'Apaga os pontos de empurrar deste objeto e cria de novo, um de cada lado.');
+        refazer.addEventListener('click', () => this.acoes.prepararEmpurravel(o.id, true));
+        const temCol = this.estado.fase.colisoes.some((c) => c.objeto === o.id);
+        secao.append(
+          this.num('Velocidade empurrando (px/s)', atual.velocidade, (v) => { atual.velocidade = Math.max(5, v); }, { min: 5, passo: 5 }),
+          el('p', { class: temCol ? 'dica-campo' : 'aviso-texto' }, temCol ? 'A colisão presa a ele (ferramenta Colisão, C) é "atravessável": a personagem passa na frente e pode pular em cima. Arraste os vértices para o formato do objeto.' : 'Sem colisão presa: clique em "Recriar" ou troque o comportamento.'),
+          refazer,
+          el('p', { class: 'dica-campo' }, 'No jogo: parada num ponto azul, Interagir empurra; ← → movem junto; Interagir de novo ou pular solta. Quando houver a animação "empurrar" no personagem, ela toca.'));
+        if (!temCol) setTimeout(() => this.acoes.prepararEmpurravel(o.id));
+        break;
+      }
+      case 'pontoEmpurrar': {
+        const alvo = atual.alvo ? this.estado.objeto(atual.alvo) : undefined;
+        const escolher = el('button', { type: 'button', class: 'secundario largo' }, alvo ? `Empurra: ${alvo.nome} (trocar)` : 'Escolher o objeto empurrável…');
+        escolher.addEventListener('click', async () => {
+          const id = await this.acoes.escolherAlvo();
+          if (id && id !== o.id) this.estado.alterar(() => { atual.alvo = id; });
+          this.render(true);
+        });
+        secao.append(escolher, el('p', { class: 'dica-campo' }, 'Zona azul: parada aqui, a personagem pode empurrar o objeto. Ela anda junto com o objeto no editor e no jogo.'));
         break;
       }
       case 'usoItem': {
@@ -597,6 +665,35 @@ export class PainelPropriedades {
     sel.value = valor;
     sel.addEventListener('change', () => { this.estado.alterar(() => aplicar(sel.value as 'fase' | 'area')); this.render(true); });
     return el('div', { class: 'campo largo' }, el('label', { for: 'p-tipo-cena' }, 'Tipo'), sel);
+  }
+
+  /** Escolher uma imagem do projeto (relativa a jogo/). */
+  private seletorImagem(rotulo: string, valor: string, aplicar: (v: string) => void) {
+    const id = 'pi-' + rotulo.replace(/\W+/g, '');
+    const sel = el('select', { id }, el('option', { value: '' }, 'Sem imagem'), ...(valor ? [el('option', { value: 'jogo/' + valor }, valor.split('/').pop()!)] : [])) as HTMLSelectElement;
+    sel.value = valor ? 'jogo/' + valor : '';
+    const preencher = async () => {
+      if (sel.dataset.cheio) return;
+      sel.dataset.cheio = '1';
+      const todas = await this.acoes.imagens();
+      const atual = sel.value;
+      sel.replaceChildren(el('option', { value: '' }, 'Sem imagem'), ...todas.map((c) => el('option', { value: c }, c)));
+      if (atual && !todas.includes(atual)) sel.append(el('option', { value: atual }, atual));
+      sel.value = atual;
+    };
+    sel.addEventListener('focus', () => void preencher());
+    sel.addEventListener('pointerdown', () => void preencher());
+    sel.addEventListener('change', async () => {
+      const v = sel.value;
+      const rel = !v ? '' : v.startsWith('jogo/') ? v.slice(5) : await this.acoes.garantirImagem(v);
+      this.estado.alterar(() => aplicar(rel));
+      this.render(true);
+    });
+    const lab = el('label', { for: id }, rotulo);
+    dica(lab, rotulo, 'A imagem mostrada ampliada (mensagens do celular, tela do computador, cartaz) ou a foto do arquivo.');
+    const c = el('div', { class: 'campo largo' }, lab, sel);
+    if (valor) c.append(el('img', { class: 'mini-previa', src: this.acoes.url(valor), alt: '' }));
+    return c;
   }
 
   private renderInimigo(i: InimigoFase) {

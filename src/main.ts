@@ -1,7 +1,7 @@
 // Lorex Engine 2D: Construtor de Fases (etapa 1)
 import './estilo.css';
 import { palpiteAnim, pareceFolha, tamanhoQuadro } from './core/folha';
-import { criarFase, nomeArquivoFase, nomeDoArquivo, normalizarFase, novoIdObjeto, type OpcoesFase } from './core/fase';
+import { criarFase, moverVinculados, nomeArquivoFase, nomeDoArquivo, normalizarFase, novoIdColisao, novoIdObjeto, removerVinculados, type OpcoesFase } from './core/fase';
 import type { ObjetoFase } from './core/tipos';
 import { Estado } from './editor/estado';
 import { Viewport, escalaFullHd, formatarPct } from './editor/viewport';
@@ -149,7 +149,7 @@ function excluirSelecionado() {
   }
   const id = estado.selecionado;
   if (!id) return;
-  estado.alterar((f) => { f.objetos = f.objetos.filter((o) => o.id !== id); });
+  estado.alterar((f) => { f.objetos = f.objetos.filter((o) => o.id !== id); removerVinculados(f, id); });
   estado.selecionar(null);
 }
 
@@ -231,7 +231,7 @@ function moverSelecionado(dx: number, dy: number) {
   if (c) { estado.alterar(() => { c.pontos = c.pontos.map(([x, y]) => [x + dx, y + dy]); }); return; }
   const o = estado.objetoSelecionado();
   if (!o) return;
-  estado.alterar(() => { o.x += dx; o.y += dy; });
+  estado.alterar((f) => { o.x += dx; o.y += dy; moverVinculados(f, o.id, dx, dy); });
 }
 
 new PainelPropriedades(painelProps, estado, {
@@ -266,6 +266,10 @@ new PainelPropriedades(painelProps, estado, {
       .then(() => LOG.add({ cat: 'sistema', texto: `Mapa: a passagem do outro lado (${outra.fase}) também ficou "${modo === 'tocar' ? 'ao atravessar' : 'apertando Interagir'}"` }));
   },
   tamanhoImagem: async (o) => { const t = await viewport.textura(o.asset); return { w: t.width, h: t.height }; },
+  prepararEmpurravel: (id, refazer) => prepararEmpurravel(id, refazer),
+  imagens: () => plat.listarAssets(),
+  garantirImagem: (c) => (c.startsWith('jogo/') ? Promise.resolve(c.slice(5)) : plat.garantirEmUso(c, 'cenas')),
+  url: (c) => urlAsset(plat, c) + anticache(),
   escolherAlvo: () => new Promise((resolve) => {
     if (estado.modo !== 'selecionar') estado.definirModo('selecionar');
     const origem = estado.selecionado;
@@ -290,12 +294,13 @@ function salvarConfigDepois() {
 
 /** Coloca um asset na camada ativa. (sx, sy) = posição na tela; sem posição = centro da visão.
  *  escala: 0/undefined = automática (a última usada para esta imagem, ou reduzida para caber na tela). */
-async function adicionarAsset(caminhoRaiz: string, sx?: number, sy?: number, tipo: TipoObjeto = 'estatico', escala?: number) {
+async function adicionarAsset(caminhoRaiz: string, sx?: number, sy?: number, tipo: TipoObjeto = 'estatico', escala?: number): Promise<string | null> {
+  let novoId: string | null = null;
   const camada = estado.camada(estado.camadaAtiva);
-  if (!camada) return;
+  if (!camada) return null;
   if (camada.travada || !camada.visivel) {
     estado.avisar(`A camada "${camada.nome}" está ${camada.travada ? 'travada' : 'oculta'}. Escolha outra camada.`);
-    return;
+    return null;
   }
   try {
     // Tamanho original (pela imagem de origem) e escala desejada
@@ -335,6 +340,7 @@ async function adicionarAsset(caminhoRaiz: string, sx?: number, sy?: number, tip
       ...(anim ? { anim } : {}),
     };
     estado.alterar((f) => { f.objetos.push(obj); });
+    novoId = obj.id;
     if (anim) LOG.add({ cat: 'sistema', texto: `${obj.nome}: spritesheet colocado como objeto animado (${anim.quadros} quadros, ${anim.fps} fps) — ajuste em Propriedades › Animação` });
     estado.selecionar(obj.id);
     estado.avisar(`"${obj.nome}" (${tipo === 'interativo' ? 'interativo' : 'estático'}) adicionado em ${camada.nome}`
@@ -346,6 +352,7 @@ async function adicionarAsset(caminhoRaiz: string, sx?: number, sy?: number, tip
   } catch (err) {
     estado.avisar(`Erro ao adicionar asset: ${String(err)}`);
   }
+  return novoId;
 }
 viewport.aoSoltarAsset = (c, sx, sy) => { void adicionarAsset(c, sx, sy); };
 // Biblioteca › Atualizar (F9): imagens novas, apagadas ou trocadas na pasta
@@ -362,6 +369,75 @@ async function atualizarBiblioteca() {
   estado.avisar(`Biblioteca atualizada${copiadas.length ? ` (${copiadas.length} imagem(ns) trocada(s) recarregada(s))` : ''}.`);
 }
 biblioteca.aoAtualizar = () => void atualizarBiblioteca();
+// ---------- Empurrável (lixeira, caixote, escada) ----------
+/** Prepara um objeto como empurrável: colisão de cima presa a ele (dá para subir) e um ponto de empurrar de cada lado. */
+function prepararEmpurravel(id: string, refazerPontos = false) {
+  const o = estado.objeto(id);
+  if (!o) return;
+  const w = Math.round(o.w * o.escala), h = Math.round(o.h * o.escala);
+  estado.alterar((f) => {
+    const obj = f.objetos.find((x) => x.id === id)!;
+    obj.tipo = 'interativo';
+    if (obj.comportamentos[0]?.tipo !== 'empurravel') obj.comportamentos = [comportamentoPadrao('empurravel', obj)];
+    if (!f.colisoes.some((c) => c.objeto === id)) {
+      f.colisoes.push({ id: novoIdColisao(f), forma: 'bloco', comportamento: 'atravessavel', objeto: id,
+        pontos: [[obj.x, obj.y], [obj.x + w, obj.y], [obj.x + w, obj.y + h], [obj.x, obj.y + h]] });
+    }
+    const pontos = f.objetos.filter((x) => { const c = x.comportamentos[0] as { tipo?: string; alvo?: string } | undefined; return c?.tipo === 'pontoEmpurrar' && c.alvo === id; });
+    if (refazerPontos) f.objetos = f.objetos.filter((x) => !pontos.includes(x));
+    if (!pontos.length || refazerPontos) {
+      const zh = Math.min(Math.max(h, 40), 120), lw = 26;
+      for (const [lado, x] of [['esq.', obj.x - lw + 4], ['dir.', obj.x + w - 4]] as const) {
+        const z: ObjetoFase = {
+          id: novoIdObjeto(f), tipo: 'interativo', nome: `Empurrar ${obj.nome} (${lado})`, asset: '', camada: obj.camada,
+          x: Math.round(x), y: obj.y + h - zh, w: lw, h: zh, escala: 1, rotacao: 0, espelharX: false, espelharY: false, opacidade: 1, visivel: true,
+          efeitos: [], comportamentos: [{ tipo: 'pontoEmpurrar', alvo: id }], conexoes: {}, script: null,
+        };
+        f.objetos.push(z);
+      }
+    }
+  });
+  estado.selecionar(id);
+  estado.avisar(`${o.nome} é empurrável: ajuste a colisão (dá para subir em cima) com a ferramenta Colisão (C) e os pontos de empurrar (zonas azuis) arrastando.`);
+}
+
+/** Ferramenta Empurrável: escolhe a imagem e coloca na camada dos objetos, já com colisão e pontos de empurrar. */
+async function novoEmpurravel() {
+  const imagens = biblioteca.caminhos.filter((c) => /\.(png|jpe?g|webp|gif)$/i.test(c));
+  const busca = el('input', { type: 'search', placeholder: 'Buscar imagem (ex.: lixeira)', class: 'largo' }) as HTMLInputElement;
+  const grade = el('div', { class: 'grade-imagens' });
+  let escolher: (c: string | null) => void = () => {};
+  const desenhar = () => {
+    const q = busca.value.trim().toLowerCase();
+    grade.replaceChildren(...imagens.filter((c) => !q || c.toLowerCase().includes(q)).slice(0, 200).map((c) => {
+      const b = el('button', { type: 'button', class: 'grade-imagem' }, el('img', { src: plat.urlRaiz(c), alt: '', loading: 'lazy' }), el('span', {}, nomeDoArquivo(c)));
+      dica(b, nomeDoArquivo(c), c);
+      b.addEventListener('click', () => escolher(c));
+      return b;
+    }));
+  };
+  busca.addEventListener('input', desenhar);
+  desenhar();
+  const cancelar = el('button', { type: 'button', class: 'secundario' }, 'Cancelar');
+  const fundo = el('div', { class: 'modal-fundo' }, el('div', { class: 'modal modal-largo', role: 'dialog', 'aria-modal': 'true' },
+    el('h2', {}, 'Objeto empurrável'),
+    el('p', { class: 'dica-campo' }, 'Escolha a imagem (lixeira, caixote, escada…). Ela entra na camada dos objetos, atrás só dos personagens, já com a colisão de cima (para subir) e um ponto de empurrar de cada lado. Dica: marque os empurráveis com fita amarela na arte, para o jogador reconhecer.'),
+    busca, grade, el('div', { class: 'linha-botoes' }, cancelar)));
+  document.body.append(fundo);
+  busca.focus();
+  const c = await new Promise<string | null>((resolve) => {
+    escolher = resolve;
+    cancelar.addEventListener('click', () => resolve(null));
+    fundo.addEventListener('keydown', (e) => { if (e.key === 'Escape') resolve(null); e.stopPropagation(); });
+  });
+  fundo.remove();
+  if (!c) return;
+  const camObj = estado.fase.camadas.find((x) => x.id === 'objetos');
+  if (camObj) estado.ativarCamada(camObj.id);
+  const id = await adicionarAsset(c, undefined, undefined, 'interativo');
+  if (id) prepararEmpurravel(id);
+}
+
 // Ferramenta Zona: retângulo desenhado vira um objeto sem imagem (gatilho por padrão)
 viewport.aoCriarZona = (x, y, w, h) => {
   const camada = estado.fase.camadas.find((c) => c.id === 'objetos')?.id ?? estado.camadaAtiva;
@@ -373,11 +449,11 @@ viewport.aoCriarZona = (x, y, w, h) => {
   };
   obj.comportamentos = [comportamentoPadrao(zonaNova, obj)];
   if (zonaNova === 'saida') (obj.comportamentos[0] as { modo: string }).modo = 'tocar';
-  obj.nome = `${zonaNova === 'usoItem' ? 'Área de uso' : zonaNova === 'saida' ? 'Passagem' : 'Zona'} ${n}`;
+  obj.nome = `${zonaNova === 'usoItem' ? 'Área de uso' : zonaNova === 'saida' ? 'Passagem' : zonaNova === 'inspecionar' ? 'Inspeção' : 'Zona'} ${n}`;
   estado.alterar((f) => { f.objetos.push(obj); });
   estado.definirModo('selecionar');
   estado.selecionar(obj.id);
-  estado.avisar(zonaNova === 'usoItem' ? `${obj.nome} criada: em Propriedades escolha o item aceito e o que ele faz (ex.: abrir a porta).`
+  estado.avisar(zonaNova === 'inspecionar' ? `${obj.nome} criada: em Propriedades escreva as etapas (legenda, pegar item, pegar arquivo, ver de perto).` : zonaNova === 'usoItem' ? `${obj.nome} criada: em Propriedades escolha o item aceito e o que ele faz (ex.: abrir a porta).`
     : zonaNova === 'saida' ? `${obj.nome} criada: conecte-a no Mapa (M) para dizer aonde leva.`
     : `${obj.nome} criada (${w}×${h} px): escolha o que ela faz em Propriedades › Comportamento.`);
 };
@@ -1394,6 +1470,8 @@ const itensTrilho: (ItemTrilho | 'sep')[] = [
     texto: 'Cria e edita as armas do jogo: pente, espaços no inventário, alcance, dano por distância, linha do tiro (visível, pouco visível, invisível) e as imagens do HUD, da bala e do menu. Cada arma também aparece no painel de Código.' },
   { id: 'hud', ico: 'hud', titulo: 'HUD', atalho: 'U', acao: () => void abrirHud(),
     texto: 'Edita o que aparece na tela durante o jogo: munição, inimigos vivos, itens, valores do código. Arraste os elementos na prévia da tela.' },
+  { id: 'empurravel', ico: 'caixa', titulo: 'Objeto empurrável', atalho: 'J', acao: () => void novoEmpurravel(),
+    texto: 'Escolha a imagem (lixeira, caixote, escada): ela entra atrás só dos personagens, com a colisão de cima (a personagem passa na frente e pode subir em cima) e um ponto de empurrar (zona azul) de cada lado. Parada num ponto, Interagir empurra; Interagir de novo ou pular solta. Ajuste a colisão com a ferramenta Colisão (C).' },
   { id: 'menuItens', ico: 'mochila', titulo: 'Menu e itens', atalho: 'R', acao: () => void abrirMenuItens(),
     texto: 'Monta o menu do jogo (Tab no ▶ Testar): retrato da condição, vida, arma, espaços dos itens, Usar / Combinar / Checar e Arquivos. Também cadastra os itens (espaços, imagens, legenda, uso) e as combinações. Para "usar a chave na porta", crie uma Área de uso de item com a ferramenta Zona (Z).' },
   { id: 'mapa', ico: 'mapa', titulo: 'Mapa', atalho: 'M', acao: () => void abrirMapa(),
@@ -1503,12 +1581,13 @@ const barraLuz = el('div', { class: 'barra-flutuante barra-tela' }, el('strong',
 barraLuz.hidden = true;
 centro.append(barraLuz);
 // ---------- Ferramenta Zona: o que a zona nova vai ser ----------
-type TipoZonaNova = 'gatilho' | 'saida' | 'usoItem';
+type TipoZonaNova = 'gatilho' | 'saida' | 'usoItem' | 'inspecionar';
 let zonaNova: TipoZonaNova = 'gatilho';
 const TIPOS_ZONA: { id: TipoZonaNova; nome: string; texto: string }[] = [
   { id: 'gatilho', nome: 'Gatilho', texto: 'Dispara ao entrar: mensagem, inimigos surgindo, luzes, acionar objeto, checkpoint. Roxa no editor.' },
   { id: 'saida', nome: 'Passagem contínua', texto: 'Leva para outra sala ao atravessar (fim de rua, corredor que continua). Vermelha no editor; conecte no Mapa (M).' },
   { id: 'usoItem', nome: 'Área de uso de item', texto: 'Onde um item do menu funciona (chave na porta, pendrive no computador, alicate na corrente). Amarela no editor.' },
+  { id: 'inspecionar', nome: 'Ponto de inspeção', texto: 'Algo para o jogador verificar (cadáver, computador, painel, cartaz): olho acima da personagem e etapas (legenda, pegar item, pegar arquivo, ver de perto). Verde-água no editor.' },
 ];
 const tiposZona = el('div', { class: 'grupo-presets' }, ...TIPOS_ZONA.map((t) => {
   const b = el('button', { type: 'button', class: 'secundario' }, t.nome);
@@ -1739,6 +1818,7 @@ window.addEventListener('keydown', (e) => {
       else if (k === 'n') estado.definirModo(estado.modo === 'inimigo' ? 'selecionar' : 'inimigo');
       else if (k === 'u') void abrirHud();
       else if (k === 'r') void abrirMenuItens();
+      else if (k === 'j') void novoEmpurravel();
       else if (k === 'a') void abrirArmas();
       else if (k === 'm') void abrirMapa();
       else if (k === 'y' && e.shiftKey) { estado.previaLuz = !estado.previaLuz; estado.emit('opcoes'); estado.avisar(`Prévia do escuro ${estado.previaLuz ? 'ligada' : 'desligada'}.`); }
