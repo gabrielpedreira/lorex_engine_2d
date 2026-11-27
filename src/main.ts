@@ -266,7 +266,7 @@ new PainelPropriedades(painelProps, estado, {
       .then(() => LOG.add({ cat: 'sistema', texto: `Mapa: a passagem do outro lado (${outra.fase}) também ficou "${modo === 'tocar' ? 'ao atravessar' : 'apertando Interagir'}"` }));
   },
   tamanhoImagem: async (o) => { const t = await viewport.textura(o.asset); return { w: t.width, h: t.height }; },
-  prepararEmpurravel: (id, refazer) => prepararEmpurravel(id, refazer),
+  prepararEmpurravel: (id, refazer, contato) => prepararEmpurravel(id, refazer, contato),
   imagens: () => plat.listarAssets(),
   garantirImagem: (c) => (c.startsWith('jogo/') ? Promise.resolve(c.slice(5)) : plat.garantirEmUso(c, 'cenas')),
   url: (c) => urlAsset(plat, c) + anticache(),
@@ -371,7 +371,7 @@ async function atualizarBiblioteca() {
 biblioteca.aoAtualizar = () => void atualizarBiblioteca();
 // ---------- Empurrável (lixeira, caixote, escada) ----------
 /** Prepara um objeto como empurrável: colisão de cima presa a ele (dá para subir) e um ponto de empurrar de cada lado. */
-function prepararEmpurravel(id: string, refazerPontos = false) {
+function prepararEmpurravel(id: string, refazerPontos = false, refazerContato = false) {
   const o = estado.objeto(id);
   if (!o) return;
   const w = Math.round(o.w * o.escala), h = Math.round(o.h * o.escala);
@@ -379,9 +379,12 @@ function prepararEmpurravel(id: string, refazerPontos = false) {
     const obj = f.objetos.find((x) => x.id === id)!;
     obj.tipo = 'interativo';
     if (obj.comportamentos[0]?.tipo !== 'empurravel') obj.comportamentos = [comportamentoPadrao('empurravel', obj)];
+    if (refazerContato) f.colisoes = f.colisoes.filter((c) => c.objeto !== id);
     if (!f.colisoes.some((c) => c.objeto === id)) {
+      // Um pouco para dentro da imagem (as bordas costumam ser transparentes) e para não cair em cima das alças de tamanho
+      const mx = Math.round(w * 0.1), topo = Math.round(obj.y + h * 0.12);
       f.colisoes.push({ id: novoIdColisao(f), forma: 'bloco', comportamento: 'atravessavel', objeto: id,
-        pontos: [[obj.x, obj.y], [obj.x + w, obj.y], [obj.x + w, obj.y + h], [obj.x, obj.y + h]] });
+        pontos: [[obj.x + mx, topo], [obj.x + w - mx, topo], [obj.x + w - mx, obj.y + h], [obj.x + mx, obj.y + h]] });
     }
     const pontos = f.objetos.filter((x) => { const c = x.comportamentos[0] as { tipo?: string; alvo?: string } | undefined; return c?.tipo === 'pontoEmpurrar' && c.alvo === id; });
     if (refazerPontos) f.objetos = f.objetos.filter((x) => !pontos.includes(x));
@@ -398,7 +401,7 @@ function prepararEmpurravel(id: string, refazerPontos = false) {
     }
   });
   estado.selecionar(id);
-  estado.avisar(`${o.nome} é empurrável: ajuste a colisão (dá para subir em cima) com a ferramenta Colisão (C) e os pontos de empurrar (zonas azuis) arrastando.`);
+  estado.avisar(`${o.nome} é empurrável: arraste os pontos laranja (área de contato, onde ela pisa ao subir) e as zonas azuis (pontos de empurrar).`);
 }
 
 /** Ferramenta Empurrável: escolhe a imagem e coloca na camada dos objetos, já com colisão e pontos de empurrar. */
@@ -1471,7 +1474,7 @@ const itensTrilho: (ItemTrilho | 'sep')[] = [
   { id: 'hud', ico: 'hud', titulo: 'HUD', atalho: 'U', acao: () => void abrirHud(),
     texto: 'Edita o que aparece na tela durante o jogo: munição, inimigos vivos, itens, valores do código. Arraste os elementos na prévia da tela.' },
   { id: 'empurravel', ico: 'caixa', titulo: 'Objeto empurrável', atalho: 'J', acao: () => void novoEmpurravel(),
-    texto: 'Escolha a imagem (lixeira, caixote, escada): ela entra atrás só dos personagens, com a colisão de cima (a personagem passa na frente e pode subir em cima) e um ponto de empurrar (zona azul) de cada lado. Parada num ponto, Interagir empurra; Interagir de novo ou pular solta. Ajuste a colisão com a ferramenta Colisão (C).' },
+    texto: 'Escolha a imagem (lixeira, caixote, escada): ela entra atrás só dos personagens, com a colisão de cima (a personagem passa na frente e pode subir em cima) e um ponto de empurrar (zona azul) de cada lado. Parada num ponto, segurar Interagir empurra; soltar a tecla ou pular solta (em cima do objeto não empurra). Ajuste a colisão com a ferramenta Colisão (C).' },
   { id: 'menuItens', ico: 'mochila', titulo: 'Menu e itens', atalho: 'R', acao: () => void abrirMenuItens(),
     texto: 'Monta o menu do jogo (Tab no ▶ Testar): retrato da condição, vida, arma, espaços dos itens, Usar / Combinar / Checar e Arquivos. Também cadastra os itens (espaços, imagens, legenda, uso) e as combinações. Para "usar a chave na porta", crie uma Área de uso de item com a ferramenta Zona (Z).' },
   { id: 'mapa', ico: 'mapa', titulo: 'Mapa', atalho: 'M', acao: () => void abrirMapa(),

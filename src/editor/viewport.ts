@@ -54,7 +54,9 @@ type Arraste =
   | { tipo: 'luz'; id: string; mexeu: boolean; dx: number; dy: number }
   | { tipo: 'raioLuz'; id: string; mexeu: boolean }
   | { tipo: 'zona'; x0: number; y0: number; x1: number; y1: number }
-  | { tipo: 'tela'; cx: number; razao: number; mexeu: boolean };
+  | { tipo: 'tela'; cx: number; razao: number; mexeu: boolean }
+  /** Vértice da área de contato (colisão presa) de um empurrável selecionado. */
+  | { tipo: 'contato'; id: string; i: number; mexeu: boolean };
 
 /** Halo (efeito Brilhar): cópia da imagem em silhueta colorida e borrada, atrás do objeto. */
 interface Halo { sp: Sprite; blur: BlurFilter; chave: string; raio: number }
@@ -926,7 +928,29 @@ export class Viewport {
         g.rect(Math.round(cx - TAM_ALCA / 2), Math.round(cy - TAM_ALCA / 2), TAM_ALCA, TAM_ALCA)
           .fill({ color: 0xffffff }).stroke({ width: 1, color: COR_SELECAO });
       }
+      // Empurrável: a área de contato (colisão presa) com os vértices em laranja, arrastáveis
+      const col = this.contatoDe(sel.id);
+      if (col) {
+        const pts = col.pontos.map(([x, y]) => this.camadaParaTela(x, y, ''));
+        g.poly(pts.flatMap((p) => [Math.round(p.x) + 0.5, Math.round(p.y) + 0.5])).fill({ color: 0xf89715, alpha: 0.18 }).stroke({ width: 2, color: 0xf89715 });
+        for (const p of pts) g.circle(Math.round(p.x), Math.round(p.y), 5).fill({ color: 0xf89715 }).stroke({ width: 1, color: 0xffffff });
+      }
     }
+  }
+
+  /** Colisão presa a um objeto (área de contato do empurrável). */
+  private contatoDe(id: string) { return this.estado.fase.colisoes.find((c) => c.objeto === id); }
+
+  /** Vértice da área de contato do selecionado sob o mouse (índice), ou -1. */
+  private verticeContatoEm(sx: number, sy: number): { id: string; i: number } | null {
+    const sel = this.estado.objetoSelecionado();
+    const col = sel ? this.contatoDe(sel.id) : undefined;
+    if (!col) return null;
+    for (let i = 0; i < col.pontos.length; i++) {
+      const p = this.camadaParaTela(col.pontos[i][0], col.pontos[i][1], '');
+      if (Math.hypot(p.x - sx, p.y - sy) <= 8) return { id: col.id, i };
+    }
+    return null;
   }
 
   /** Quadro da tela do jogador, na tela do editor. */
@@ -1369,6 +1393,8 @@ export class Viewport {
         this.arraste = { tipo: 'inicio', mexeu: false, dx: w.x - ix, dy: w.y - iy };
         return;
       }
+      const vc = e.altKey ? null : this.verticeContatoEm(p.x, p.y); // Alt: ignora a área de contato (pega a alça da imagem)
+      if (vc) { this.arraste = { tipo: 'contato', id: vc.id, i: vc.i, mexeu: false }; return; }
       const sel = this.estado.objetoSelecionado();
       const canto = sel ? this.sobreAlca(p.x, p.y) : null;
       if (sel && canto) {
@@ -1424,6 +1450,11 @@ export class Viewport {
       if (!a) {
         if (this.espacoPressionado || this.estado.modo === 'mao') { cv.style.cursor = 'grab'; this.aoPairar(null, 0, 0); return; }
         if (this.estado.modo === 'inicio') { cv.style.cursor = 'crosshair'; this.aoPairar(null, 0, 0); return; }
+        if (this.estado.modo === 'selecionar' && this.verticeContatoEm(p.x, p.y)) {
+          cv.style.cursor = 'pointer';
+          this.aoPairar({ titulo: 'Área de contato', texto: 'Arraste o vértice para ajustar onde a personagem pisa (as bordas de cima seguram; ela passa na frente). Para mais vértices, use a ferramenta Colisão (C): duplo clique numa borda.' }, e.clientX, e.clientY);
+          return;
+        }
         if (this.luzesAtivas()) {
           const hit = this.luzEm(p.x, p.y);
           if (hit) {
@@ -1493,6 +1524,16 @@ export class Viewport {
         this.estado.marcarAlterado();
         return;
       }
+      if (a.tipo === 'contato') {
+        const c = this.estado.colisao(a.id);
+        if (!c) return;
+        if (!a.mexeu) { this.estado.checkpoint(); a.mexeu = true; }
+        const w = this.telaParaCamada(p.x, p.y, '');
+        c.pontos[a.i] = [Math.round(w.x), Math.round(w.y)];
+        this.mostrarLegenda('Área de contato: só as bordas de cima seguram (dá para subir)', p.x, p.y);
+        this.estado.marcarAlterado();
+        return;
+      }
       if (a.tipo === 'inimigo') {
         const ini = this.estado.inimigo(a.id);
         if (!ini) return;
@@ -1554,7 +1595,7 @@ export class Viewport {
         if (a.mexeu && o) this.aoEscalar(o);
       }
       if (!a && this.estado.modo === 'colisao') this.ferrColisao.pointerUp();
-      if (a?.tipo === 'raioLuz' || a?.tipo === 'tela') this.mostrarLegenda(null);
+      if (a?.tipo === 'raioLuz' || a?.tipo === 'tela' || a?.tipo === 'contato') this.mostrarLegenda(null);
       if (a?.tipo === 'tela' && a.mexeu) this.aoMudarTela();
       if (a?.tipo === 'zona') {
         let x = Math.min(a.x0, a.x1), y = Math.min(a.y0, a.y1), w = Math.abs(a.x1 - a.x0), h = Math.abs(a.y1 - a.y0);

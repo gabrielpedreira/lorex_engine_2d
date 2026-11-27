@@ -10,7 +10,7 @@ export class PainelCamadas {
   constructor(raiz: HTMLElement, private estado: Estado) {
     this.lista = el('div', { class: 'camadas-lista' });
     const titulo = el('div', { class: 'painel-titulo' }, 'Camadas');
-    dica(titulo, 'Camadas', 'A de cima aparece na frente. Clique numa camada para torná-la ativa: é nela que os elementos novos entram. O número é o parallax: 0 = parada no fundo, 1 = anda junto com o jogador, maior que 1 = primeiro plano.');
+    dica(titulo, 'Camadas', 'A de cima aparece na frente. Clique numa camada para torná-la ativa: é nela que os elementos novos entram. O número é o parallax: 0 = parada no fundo, 1 = anda junto com o jogador, maior que 1 = primeiro plano. Para um efeito natural, só o que está bem ao fundo se desloca: céu/horizonte 0,3–0,5; prédios distantes 0,7–0,8; perto do jogador 0,95–1; primeiro plano 1,05.');
     raiz.append(titulo, this.lista);
     estado.on('fase', () => this.render());
     this.render();

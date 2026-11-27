@@ -849,7 +849,8 @@ export class ModoTeste {
     }
     this.acumulado = Math.min(this.acumulado + ms / 1000, 0.25);
     // Pular solta o objeto empurrado
-    if (this.empurrando && (this.puloApertado || this.morto)) this.soltarEmpurrar(true);
+    // Empurrar só enquanto Interagir estiver segurado: soltou a tecla (ou pulou/morreu), solta o objeto
+    if (this.empurrando && (this.puloApertado || this.morto || !ent.segurando('interagir'))) this.soltarEmpurrar(true);
     while (this.acumulado >= PASSO) {
       const segs = m.segmentosPortas().length ? this.segs.concat(m.segmentosPortas()) : this.segs;
       const xAntes = j.x;
@@ -896,8 +897,7 @@ export class ModoTeste {
     }
     if (this.interagirApertado) {
       this.interagirApertado = false;
-      if (this.empurrando) this.soltarEmpurrar(true);
-      else if (prox) this.interagirCom(prox.o);
+      if (!this.empurrando && prox) this.interagirCom(prox.o);
     }
     if (this.cenaMudou) { this.cenaMudou = false; this.aplicarVisibilidade(); this.atualizarInventario(); }
     this.posicionarCamera(false, ms / 1000);
@@ -924,7 +924,7 @@ export class ModoTeste {
     }
     const tecla = this.controles.acoes.interagir?.[0];
     this.elPrompt.classList.add('canto');
-    this.elPrompt.replaceChildren(el('kbd', {}, tecla ? textoAtalho(tecla) : 'E'), el('span', {}, empurrando ? 'Soltar' : prox!.acao));
+    this.elPrompt.replaceChildren(el('kbd', {}, tecla ? textoAtalho(tecla) : 'E'), el('span', {}, empurrando ? 'Segure para empurrar' : prox!.acao));
     this.elPrompt.style.left = `${Math.round(r.x + r.w - 12)}px`;
     this.elPrompt.style.top = `${Math.round(r.y + r.h - 12)}px`;
     this.elPrompt.hidden = false;
@@ -1014,6 +1014,7 @@ export class ModoTeste {
     const o = this.estado.objeto(id);
     if (!m || !j || !o) return;
     if (!j.noChao) { this.toast('Fique no chão para empurrar.'); return; }
+    if (!m.noChaoAoLado(this.caixaJogador(), o)) return; // em cima do objeto: não empurra
     const c = o.comportamentos[0];
     const vel = c?.tipo === 'empurravel' ? c.velocidade : 60;
     const b = m.caixa(o);
@@ -1022,7 +1023,7 @@ export class ModoTeste {
     j.olhandoDireita = b.x + b.w / 2 > j.x;
     m.empurrando = id; m.marcarMudanca();
     LOG.add({ cat: 'personagem', texto: `empurrando ${o.nome}` });
-    this.toast(`Empurrando ${o.nome} · ← → movem · Interagir ou pular solta`);
+    this.toast(`Empurrando ${o.nome} · segure Interagir e use ← → · soltar a tecla ou pular solta`);
     if (this.pers?.dados.animacoes.empurrar) this.pers.animador.tocar('empurrar', true);
   }
 

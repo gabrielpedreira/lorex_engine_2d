@@ -50,7 +50,7 @@ export interface AcoesObjeto {
   /** Tamanho (px) da imagem do objeto, para recortar o spritesheet. */
   tamanhoImagem(o: ObjetoFase): Promise<{ w: number; h: number }>;
   /** Empurrável: cria a colisão presa e os dois pontos de empurrar (se faltarem). */
-  prepararEmpurravel(id: string, refazerPontos?: boolean): void;
+  prepararEmpurravel(id: string, refazerPontos?: boolean, refazerContato?: boolean): void;
   /** Imagens do projeto (para "ver de perto" e arquivos) e cópia para jogo/assets. */
   imagens(): Promise<string[]>;
   garantirImagem(caminhoRaiz: string): Promise<string>;
@@ -286,11 +286,14 @@ export class PainelPropriedades {
         dica(refazer, 'Recriar pontos', 'Apaga os pontos de empurrar deste objeto e cria de novo, um de cada lado.');
         refazer.addEventListener('click', () => this.acoes.prepararEmpurravel(o.id, true));
         const temCol = this.estado.fase.colisoes.some((c) => c.objeto === o.id);
+        const refazerCol = el('button', { type: 'button', class: 'secundario largo' }, 'Refazer a área de contato');
+        dica(refazerCol, 'Refazer a área de contato', 'Cria de novo a área laranja, um pouco para dentro da imagem (fica fácil pegar as alças de tamanho da imagem).');
+        refazerCol.addEventListener('click', () => this.acoes.prepararEmpurravel(o.id, false, true));
         secao.append(
           this.num('Velocidade empurrando (px/s)', atual.velocidade, (v) => { atual.velocidade = Math.max(5, v); }, { min: 5, passo: 5 }),
-          el('p', { class: temCol ? 'dica-campo' : 'aviso-texto' }, temCol ? 'A colisão presa a ele (ferramenta Colisão, C) é "atravessável": a personagem passa na frente e pode pular em cima. Arraste os vértices para o formato do objeto.' : 'Sem colisão presa: clique em "Recriar" ou troque o comportamento.'),
-          refazer,
-          el('p', { class: 'dica-campo' }, 'No jogo: parada num ponto azul, Interagir empurra; ← → movem junto; Interagir de novo ou pular solta. Quando houver a animação "empurrar" no personagem, ela toca.'));
+          el('p', { class: temCol ? 'dica-campo' : 'aviso-texto' }, temCol ? 'Área de contato (laranja, aparece com ele selecionado): só as bordas de cima seguram — a personagem passa na frente e pode subir em cima. Arraste os pontos laranja para o formato do objeto (Alt + arrastar no canto pega a alça da imagem). Mais vértices: ferramenta Colisão (C), duplo clique numa borda.' : 'Sem área de contato: clique em "Refazer a área de contato".'),
+          refazerCol, refazer,
+          el('p', { class: 'dica-campo' }, 'No jogo: no chão num ponto azul, SEGURE Interagir e use ← → para empurrar; soltar a tecla ou pular solta. Em cima do objeto não empurra. Quando houver a animação "empurrar" no personagem, ela toca.'));
         if (!temCol) setTimeout(() => this.acoes.prepararEmpurravel(o.id));
         break;
       }

@@ -130,7 +130,7 @@ export const NOMES_COMPORTAMENTO: Record<TipoComportamento, { nome: string; text
   gatilho: { nome: 'Gatilho (zona)', texto: 'Dispara quando o jogador entra na área: mensagem, inimigos surgindo, luzes, acionar objeto. Use com uma zona (ferramenta Zona, Z).' },
   inspecionar: { nome: 'Ponto de inspeção', texto: 'O jogador vê um olho acima da personagem ao passar; cada interação faz a próxima etapa: legenda, pegar item, pegar arquivo ou ver de perto (ex.: cadáver com celular e depois uma chave; computador; cartaz). Pode brilhar para itens importantes.' },
   empurravel: { nome: 'Empurrável', texto: 'Lixeira, caixote, escada: a personagem passa na frente, pode subir em cima (a colisão de cima segura) e empurra parada num ponto de empurrar (zona azul) apertando Interagir.' },
-  pontoEmpurrar: { nome: 'Ponto de empurrar', texto: 'Zona ao lado de um empurrável: parada aqui, Interagir começa a empurrar (Interagir de novo ou pular solta).' },
+  pontoEmpurrar: { nome: 'Ponto de empurrar', texto: 'Zona ao lado de um empurrável: no chão aqui, SEGURE Interagir para empurrar (soltar a tecla ou pular solta; em cima do objeto não empurra).' },
   usoItem: { nome: 'Área de uso de item', texto: 'Zona amarela onde um item do menu funciona (chave na porta, pendrive no computador, alicate na corrente). Fora dela, usar o item dá "Você não deve usar este item aqui". Crie com a ferramenta Zona (Z).' },
 };
 
@@ -370,6 +370,12 @@ export class MundoInterativo {
     return avisos;
   }
 
+  /** Os pés do jogador estão na altura da base do objeto (no chão ao lado, não em cima dele)? */
+  noChaoAoLado(jogador: Caixa, alvo: ObjetoFase): boolean {
+    const b = this.caixa(alvo);
+    return jogador.y + jogador.h > b.y + b.h * 0.6;
+  }
+
   /** Objeto interagível (tecla E) mais próximo do jogador, com o texto do botão. */
   proximo(jogador: Caixa): { o: ObjetoFase; acao: string } | null {
     let melhor: { o: ObjetoFase; acao: string; d: number } | null = null;
@@ -387,6 +393,7 @@ export class MundoInterativo {
       if (c?.tipo === 'pontoEmpurrar') {
         const alvo = this.objeto(c.alvo);
         if (!alvo || !this.estados.get(alvo.id)?.visivel || this.empurrando === alvo.id) continue;
+        if (!this.noChaoAoLado(jogador, alvo)) continue; // em cima do objeto não empurra
       }
       if (!c || c.tipo === 'coletavel') {
         const d = Math.abs(b.x + b.w / 2 - cx);

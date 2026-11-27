@@ -6,17 +6,18 @@ import { normalizarAjustes } from './inimigos';
 
 export const VERSAO_FASE = 1;
 
+/** Parallax padrão: só o que está bem ao fundo se desloca de verdade; camadas perto do jogador ficam quase em 1. */
 export function camadasPadrao(): Camada[] {
   const c = (id: string, nome: string, p: number): Camada =>
     ({ id, nome, parallax: [p, p], visivel: true, travada: false });
   return [
-    c('fundo3', 'Fundo 3 (mais distante)', 0.2),
-    c('fundo2', 'Fundo 2', 0.5),
-    c('fundo1', 'Fundo 1', 0.8),
+    c('fundo3', 'Fundo 3 (mais distante)', 0.4),
+    c('fundo2', 'Fundo 2', 0.75),
+    c('fundo1', 'Fundo 1', 0.95),
     c('decoracao', 'Decoração de trás', 1),
     c('terreno', 'Terreno', 1),
     c('objetos', 'Objetos', 1),
-    c('frente', 'Primeiro plano', 1.2),
+    c('frente', 'Primeiro plano', 1.05),
   ];
 }
 
