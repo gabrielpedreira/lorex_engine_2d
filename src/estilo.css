@@ -404,12 +404,14 @@ input[type='range'] { width: 100%; accent-color: var(--acento); }
   position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 8; pointer-events: none;
   padding: 8px 14px; border-radius: 999px; background: rgba(8, 57, 51, 0.95); border: 1px solid var(--acento-2); font-size: 13px;
 }
-.teste-mensagem {
-  position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 9; width: min(560px, 80%);
-  padding: 16px 18px 12px; border-radius: 10px; background: rgba(12, 17, 16, 0.97); border: 1px solid var(--acento);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-}
-.teste-mensagem p { margin: 0 0 10px; font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
+/* Legenda do jogo: texto branco direto sobre a tela, embaixo (estilo Resident Evil clássico), sem caixa */
+.teste-mensagem { position: absolute; z-index: 9; display: flex; justify-content: center; pointer-events: none; background: none; border: 0; padding: 0; }
+.legenda-jogo { margin: 0; max-width: 84%; line-height: 1.35; white-space: pre-wrap; text-align: left; letter-spacing: 0.02em; font-weight: 400; }
+.legenda-jogo strong { font-weight: 700; }
+.legenda-jogo em { font-style: italic; }
+.legenda-seta { font-size: 0.6em; vertical-align: middle; animation: legenda-piscar 0.9s steps(2, start) infinite; }
+@keyframes legenda-piscar { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .legenda-seta { animation: none; } }
 .teste-fechar { display: block; text-align: right; color: var(--texto-2); font-size: 11px; }
 .aviso-texto { margin: 0; color: var(--laranja); font-size: 12px; }
 textarea { font: inherit; color: inherit; background: var(--fundo); border: 1px solid var(--borda); border-radius: 4px; padding: 6px; width: 100%; resize: vertical; }
@@ -925,12 +927,15 @@ body.redimensionando-x #app, body.redimensionando-y #app { transition: none; }
 .teste-olho img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
 .teste-olho[hidden] { display: none; }
 @keyframes olho-flutua { 0%, 100% { margin-top: 0; } 50% { margin-top: -3px; } }
-.teste-prompt.canto { transform: translate(-100%, -100%); font-size: 13px; }
+.teste-prompt.canto { transform: translate(-100%, -100%); background: none; border: 0; padding: 0; gap: 0.5em; }
+.teste-prompt .prompt-tecla { font-weight: 700; }
 .teste-foco { position: absolute; z-index: 6; pointer-events: none; opacity: 0; transition: opacity 0.6s ease; }
 .teste-foco.ativo { opacity: 1; }
 .teste-ver { position: absolute; z-index: 9; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(0, 0, 0, 0.88); color: #e8f0e0; text-align: center; padding: 3%; box-sizing: border-box; }
 .teste-ver[hidden] { display: none; }
 .teste-ver img { max-width: 92%; max-height: 72%; object-fit: contain; image-rendering: pixelated; }
 .teste-ver p { margin: 0; max-width: 80%; line-height: 1.5; font-size: 14px; }
+.teste-ver .legenda-jogo { text-align: center; }
 .teste-ver .teste-fechar { opacity: 0.6; font-size: 11px; }
 @media (prefers-reduced-motion: reduce) { .teste-olho { animation: none; } .teste-foco { transition: none; } }
+.legenda-previa { margin: 8px 0 0; padding: 14px; background: #3a3f3c linear-gradient(160deg, #6f7a73, #262b28); border-radius: 6px; line-height: 1.35; white-space: pre-wrap; }

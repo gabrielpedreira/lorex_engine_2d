@@ -67,11 +67,57 @@ export interface ConfigInspecao {
   foco: number;
 }
 
+/** Legendas do jogo (mensagens, legendas da inspeção): texto direto sobre a tela, embaixo, sem caixa. */
+export interface ConfigLegenda {
+  /** Arquivos de fonte em jogo/ (ex.: assets/fontes/x.ttf); '' = fonte padrão. */
+  fonte: string;
+  fonteNegrito: string;
+  fonteItalico: string;
+  /** Tamanho da letra em pixels da tela do jogo (640×360 → ampliado junto com a tela). */
+  tamanho: number;
+  cor: string;
+  /** Sombra/contorno escuro para ler sobre cenário claro: 0 a 1. */
+  sombra: number;
+  /** Distância da base da tela, em % da altura (0 a 40). */
+  margem: number;
+}
+
+export function legendaPadrao(): ConfigLegenda {
+  return { fonte: '', fonteNegrito: '', fonteItalico: '', tamanho: 14, cor: '#ffffff', sombra: 0.9, margem: 7 };
+}
+
+export function normalizarLegenda(d: unknown): ConfigLegenda {
+  const b = legendaPadrao();
+  const x = (d && typeof d === 'object' ? d : {}) as Partial<ConfigLegenda>;
+  const s = (v: unknown) => (typeof v === 'string' ? v : '');
+  const n = (v: unknown, p: number, min: number, max: number) => (Number.isFinite(Number(v)) && v !== '' && v !== null ? Math.max(min, Math.min(max, Number(v))) : p);
+  return {
+    fonte: s(x.fonte), fonteNegrito: s(x.fonteNegrito), fonteItalico: s(x.fonteItalico),
+    tamanho: n(x.tamanho, b.tamanho, 6, 48), cor: /^#[0-9a-f]{6}$/i.test(String(x.cor)) ? String(x.cor) : b.cor,
+    sombra: n(x.sombra, b.sombra, 0, 1), margem: n(x.margem, b.margem, 0, 40),
+  };
+}
+
+/** Texto da legenda em partes: **negrito** e *itálico* (o resto é texto normal). */
+export function partesLegenda(texto: string): { t: string; negrito: boolean; italico: boolean }[] {
+  const out: { t: string; negrito: boolean; italico: boolean }[] = [];
+  const re = /\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+  let i = 0, m: RegExpExecArray | null;
+  while ((m = re.exec(texto))) {
+    if (m.index > i) out.push({ t: texto.slice(i, m.index), negrito: false, italico: false });
+    out.push(m[1] !== undefined ? { t: m[1], negrito: true, italico: false } : { t: m[2], negrito: false, italico: true });
+    i = re.lastIndex;
+  }
+  if (i < texto.length) out.push({ t: texto.slice(i), negrito: false, italico: false });
+  return out;
+}
+
 export interface ConfigItens {
   itens: ConfigItem[];
   receitas: ReceitaItem[];
   mensagens: MensagensItens;
   inspecao: ConfigInspecao;
+  legenda: ConfigLegenda;
 }
 
 export function itemBase(nome: string, d: Partial<ConfigItem> = {}): ConfigItem {
@@ -84,6 +130,7 @@ export function itensPadrao(): ConfigItens {
     receitas: [],
     mensagens: { aquiNao: 'Você não deve usar este item aqui.', semEspaco: 'Sem espaço para {item}.', naoCombina: 'Esses itens não combinam.' },
     inspecao: { olho: '', foco: 0.35 },
+    legenda: legendaPadrao(),
   };
 }
 
@@ -111,6 +158,7 @@ export function normalizarItens(d: unknown): ConfigItens {
     itens, receitas,
     mensagens: { aquiNao: s(m.aquiNao, b.mensagens.aquiNao), semEspaco: s(m.semEspaco, b.mensagens.semEspaco), naoCombina: s(m.naoCombina, b.mensagens.naoCombina) },
     inspecao: { olho: s(ins.olho), foco: Number.isFinite(Number(ins.foco)) ? Math.max(0, Math.min(1, Number(ins.foco))) : b.inspecao.foco },
+    legenda: normalizarLegenda(x.legenda),
   };
 }
 

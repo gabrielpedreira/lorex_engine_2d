@@ -52,6 +52,8 @@ export interface PonteTeste {
   menuAbrir(tela?: string): void;
   menuFechar(): void;
   menuAberto(): boolean;
+  legendaTamanho(): number;
+  definirLegendaTamanho(n: number | null): void;
   inimigos(): InimigoVivo[];
   municao(): number;
   definirMunicao(n: number): void;
@@ -611,6 +613,11 @@ export class MotorScripts {
         abrir: (tela?: string) => ponte.menuAbrir(tela),
         fechar: () => ponte.menuFechar(),
         get aberto() { return ponte.menuAberto(); },
+      },
+      legenda: {
+        get tamanho() { return ponte.legendaTamanho(); },
+        set tamanho(n: number) { ponte.definirLegendaTamanho(Number.isFinite(Number(n)) ? Number(n) : null); },
+        padrao: () => ponte.definirLegendaTamanho(null),
       },
       hud: {
         definir: (r: string, v: string | number) => ponte.hudDefinir(String(r), String(v)),

@@ -14,7 +14,7 @@ import { normalizarHud, type ConfigHud } from '../core/hud';
 import { elementoHud, posicionarHud, telaMorte } from '../ui/hud';
 import { el } from '../ui/dom';
 import { MenuJogo } from './menuJogo';
-import { arrumarEspacos, cabeNoMenu, espacosDoMenu, itemBase, itemDe, itensPadrao, menuPadrao, receitaDe, type ConfigItens, type ConfigMenu } from '../core/menu';
+import { arrumarEspacos, cabeNoMenu, espacosDoMenu, itemBase, itemDe, itensPadrao, menuPadrao, partesLegenda, receitaDe, type ConfigItens, type ConfigMenu } from '../core/menu';
 import { dica } from '../ui/legenda';
 import type { Estado } from './estado';
 import type { Viewport } from './viewport';
@@ -237,6 +237,8 @@ export class ModoTeste {
       menuAbrir: (tela?: string) => t.abrirMenu(tela === 'arquivos' ? 'arquivos' : 'inventario'),
       menuFechar: () => t.menu.fechar(),
       menuAberto: () => t.menu.aberto,
+      legendaTamanho: () => t.tamanhoLegenda ?? t.itensConfig.legenda.tamanho,
+      definirLegendaTamanho: (n: number | null) => { t.tamanhoLegenda = n === null ? null : Math.max(6, Math.min(48, n)); LOG.add({ cat: 'mundo', texto: `tamanho da legenda: ${t.tamanhoLegenda ?? 'padrão'}` }); },
       checkpoint: (x?: number, y?: number) => { if (t.jogador) t.marcarCheckpoint(x ?? t.jogador.x, y ?? t.jogador.y, 'código'); },
     };
   }
@@ -346,6 +348,7 @@ export class ModoTeste {
       this.ajustarZoom();
       if (this.menu.aberto) this.menu.areaJogo(this.retanguloTela());
       if (this.mortoEm !== null) this.mostrarTelaMorte();
+      if (!this.elMensagem.hidden) this.posicionarLegenda();
     }, 120);
   };
 
@@ -627,8 +630,7 @@ export class ModoTeste {
     if (r.empurrar) this.comecarEmpurrar(r.empurrar);
     if (r.mensagem) {
       this.mensagemAberta = true;
-      this.elMensagem.replaceChildren(el('p', {}, r.mensagem), el('span', { class: 'teste-fechar' }, 'E ou Enter para fechar'));
-      this.elMensagem.hidden = false;
+      this.mostrarLegenda(r.mensagem);
     }
     if (r.passagem || r.irPara) {
       const arquivo = this.estado.arquivoFase ?? '';
@@ -808,7 +810,7 @@ export class ModoTeste {
     const j = this.jogador;
     const m = this.mundo;
     if (!j || !m) return;
-    if (this.mensagemAberta || this.saindo || this.menu.aberto) { this.desenharJogador(0); return; } // pausado: mensagem, menu ou trocando de sala
+    if (this.mensagemAberta || this.saindo || this.menu.aberto) { this.acompanharLegenda(); this.desenharJogador(0); return; } // pausado: mensagem, menu ou trocando de sala
     const ent = this.entradaJogo;
     ent.atualizar(performance.now() / 1000);
     for (const a of ent.disparadasAgora) LOG.add({ cat: 'entrada', texto: `dispara a ação "${a}"` });
@@ -924,7 +926,9 @@ export class ModoTeste {
     }
     const tecla = this.controles.acoes.interagir?.[0];
     this.elPrompt.classList.add('canto');
-    this.elPrompt.replaceChildren(el('kbd', {}, tecla ? textoAtalho(tecla) : 'E'), el('span', {}, empurrando ? 'Segure para empurrar' : prox!.acao));
+    // Sem caixa: a tecla em negrito e a ação, na fonte e cor das legendas, direto sobre a tela
+    this.elPrompt.replaceChildren(el('strong', { class: 'prompt-tecla' }, tecla ? textoAtalho(tecla) : 'E'), el('span', {}, empurrando ? 'Segure para empurrar' : prox!.acao));
+    this.estiloLegenda(this.elPrompt, r.h, 0.85);
     this.elPrompt.style.left = `${Math.round(r.x + r.w - 12)}px`;
     this.elPrompt.style.top = `${Math.round(r.y + r.h - 12)}px`;
     this.elPrompt.hidden = false;
@@ -969,6 +973,71 @@ export class ModoTeste {
     }
   }
 
+  // ---------- Legendas (estilo Resident Evil clássico: texto direto na tela, embaixo, sem caixa) ----------
+  /** Tamanho escolhido pelo jogador (menu de pausa, futuro) ou pelo código; null = o da configuração. */
+  tamanhoLegenda: number | null = null;
+  private fontesLegenda = '';
+  /** Registra as fontes da legenda (normal, negrito, itálico) como a família "LegendaJogo". */
+  private carregarFontesLegenda() {
+    const l = this.itensConfig.legenda;
+    const chave = [l.fonte, l.fonteNegrito, l.fonteItalico].join('|');
+    if (chave === this.fontesLegenda) return;
+    this.fontesLegenda = chave;
+    for (const f of [...document.fonts]) if (f.family === 'LegendaJogo') document.fonts.delete(f);
+    const pares: [string, FontFaceDescriptors][] = [[l.fonte, {}], [l.fonteNegrito, { weight: '700' }], [l.fonteItalico, { style: 'italic' }]];
+    for (const [arq, desc] of pares) {
+      if (!arq) continue;
+      const ff = new FontFace('LegendaJogo', `url("${this.urlImagem(arq)}")`, desc);
+      document.fonts.add(ff);
+      ff.load().catch(() => LOG.add({ cat: 'sistema', texto: `fonte da legenda não carregou: ${arq}` }));
+    }
+  }
+  /** O parágrafo da legenda, com **negrito** e *itálico*, no tamanho da tela do jogo (altura alturaTela em px). */
+  private textoLegenda(texto: string, alturaTela: number) {
+    const p = el('p', { class: 'legenda-jogo' }, ...partesLegenda(texto).map((x) => x.negrito ? el('strong', {}, x.t) : x.italico ? el('em', {}, x.t) : document.createTextNode(x.t)));
+    this.estiloLegenda(p, alturaTela, 1);
+    return p;
+  }
+  /** Fonte, tamanho (fator × tamanho da legenda, na escala da tela), cor e sombra da legenda num elemento. */
+  private estiloLegenda(p: HTMLElement, alturaTela: number, fator: number) {
+    this.carregarFontesLegenda();
+    const l = this.itensConfig.legenda;
+    const escala = alturaTela / (this.estado.fase.resolucaoBase[1] || 360);
+    const px = (this.tamanhoLegenda ?? l.tamanho) * fator * escala;
+    const s = l.sombra;
+    Object.assign(p.style, {
+      fontFamily: `${l.fonte || l.fonteNegrito || l.fonteItalico ? '"LegendaJogo", ' : ''}"Courier New", monospace`,
+      fontSize: `${px}px`, color: l.cor,
+      textShadow: s > 0 ? `0 0 ${Math.max(1, px * 0.12)}px rgba(0,0,0,${s}), ${px * 0.07}px ${px * 0.07}px 0 rgba(0,0,0,${s}), -1px -1px 0 rgba(0,0,0,${s * 0.6}), 1px -1px 0 rgba(0,0,0,${s * 0.6}), -1px 1px 0 rgba(0,0,0,${s * 0.6})` : 'none',
+    });
+  }
+  /** Mostra a legenda embaixo da tela do jogo (pausa até fechar com Interagir/Enter). */
+  mostrarLegenda(texto: string) {
+    this.mensagemAberta = true;
+    this.textoLegendaAtual = texto;
+    this.posicionarLegenda();
+    this.elMensagem.hidden = false;
+  }
+  private textoLegendaAtual = '';
+  private quadroLegenda = '';
+  /** A tela do jogo mudou de lugar/tamanho com a legenda aberta (câmera, zoom, tela cheia): reposiciona. */
+  private acompanharLegenda() {
+    if (this.elMensagem.hidden) return;
+    const r = this.retanguloTela();
+    const k = `${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.w)},${Math.round(r.h)}`;
+    if (k !== this.quadroLegenda) { this.quadroLegenda = k; this.posicionarLegenda(); }
+  }
+  private posicionarLegenda() {
+    const r = this.retanguloTela();
+    const l = this.itensConfig.legenda;
+    const p = this.textoLegenda(this.textoLegendaAtual, r.h);
+    p.append(el('span', { class: 'legenda-seta', 'aria-hidden': 'true' }, ' ▼'));
+    this.elMensagem.replaceChildren(p);
+    this.elMensagem.title = 'E ou Enter para continuar';
+    Object.assign(this.elMensagem.style, { left: `${r.x}px`, width: `${r.w}px`, top: '', bottom: '', transform: 'translateY(-100%)' });
+    this.elMensagem.style.top = `${r.y + r.h * (1 - l.margem / 100)}px`;
+  }
+
   /** Ponto de inspeção: faz a etapa (legenda, pegar item, pegar arquivo, ver de perto). */
   private executarEtapa(et: EtapaInspecao, origem?: ObjetoFase) {
     const quem = origem?.nome ?? 'ponto';
@@ -976,8 +1045,7 @@ export class ModoTeste {
       case 'legenda':
         LOG.add({ cat: 'mundo', texto: `inspecionou ${quem}: legenda` });
         this.mensagemAberta = true;
-        this.elMensagem.replaceChildren(el('p', {}, et.texto || '…'), el('span', { class: 'teste-fechar' }, 'E ou Enter para fechar'));
-        this.elMensagem.hidden = false;
+        this.mostrarLegenda(et.texto || '…');
         break;
       case 'item':
         LOG.add({ cat: 'mundo', texto: `inspecionou ${quem}: pegou ${et.item || '(sem nome)'}${et.quantidade > 1 ? ` ×${et.quantidade}` : ''}` });
@@ -999,7 +1067,7 @@ export class ModoTeste {
         const r = this.retanguloTela();
         Object.assign(this.elVer.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
         this.elVer.replaceChildren(...(et.imagem ? [el('img', { src: this.urlImagem(et.imagem), alt: '' })] : []),
-          ...(et.texto ? [el('p', {}, et.texto)] : []), el('span', { class: 'teste-fechar' }, 'E, Enter ou Esc para voltar'));
+          ...(et.texto ? [this.textoLegenda(et.texto, r.h)] : []), el('span', { class: 'teste-fechar' }, 'E, Enter ou Esc para voltar'));
         this.elVer.hidden = false;
         this.mensagemAberta = true;
         break;

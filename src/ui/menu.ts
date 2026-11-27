@@ -6,7 +6,7 @@
 //   Combinações: A + B → C.  Mensagens: "Você não deve usar este item aqui" etc.
 // Salva sozinho em jogo/projeto.json ("menu" e "itens"); no Código: menu.js e itens.js (grupo Jogo).
 import {
-  ACOES_BOTAO, TIPOS_PAINEL, USOS_ITEM, faixasVidaPadrao, itemBase, itensPadrao, menuPadrao, painelBase,
+  partesLegenda, ACOES_BOTAO, TIPOS_PAINEL, USOS_ITEM, faixasVidaPadrao, itemBase, itensPadrao, menuPadrao, painelBase,
   type ConfigItem, type ConfigItens, type ConfigMenu, type PainelMenu, type TelaMenu, type TipoPainel, type UsoItem,
 } from '../core/menu';
 import { MenuJogo } from '../editor/menuJogo';
@@ -384,7 +384,40 @@ export class EditorMenu {
       el('h3', {}, 'Inspeção'),
       el('p', { class: 'dica-campo' }, 'Perto de qualquer coisa com interação aparece um olho acima da personagem e, no canto de baixo à direita, o botão a apertar. Perto de um ponto de inspeção a tela ganha um leve foco.'),
       this.campoImagem('Imagem do olho', this.it.inspecao.olho, (v) => { this.it.inspecao.olho = v; }, 'Ícone acima da personagem. Sem imagem: o olho padrão.', 'Olho padrão'),
-      this.campo('Força do foco', this.numero(this.it.inspecao.foco, (v) => { this.it.inspecao.foco = Math.max(0, Math.min(1, v)); }, 0.05), '0 = sem foco; 1 = bordas bem escuras. Sugestão: 0,3 a 0,4 (sutil).'));
+      this.campo('Força do foco', this.numero(this.it.inspecao.foco, (v) => { this.it.inspecao.foco = Math.max(0, Math.min(1, v)); }, 0.05), '0 = sem foco; 1 = bordas bem escuras. Sugestão: 0,3 a 0,4 (sutil).'),
+      ...this.legendas());
+  }
+
+  private legendas() {
+    const lg = this.it.legenda;
+    const fonte = (rotulo: string, v: string, aplicar: (v: string) => void, texto: string) =>
+      this.campo(rotulo, this.texto(v, aplicar), `${texto} Caminho dentro de jogo/, ex.: assets/fontes/minha_fonte.ttf (.ttf, .otf, .woff). Vazio = fonte padrão.`);
+    const previa = el('p', { class: 'legenda-previa' });
+    const atualizar = () => {
+      previa.replaceChildren(...partesLegenda('Não pode ser…\nComo ele me **encontrou**?! *(exemplo)*').map((x) => x.negrito ? el('strong', {}, x.t) : x.italico ? el('em', {}, x.t) : document.createTextNode(x.t)));
+      Object.assign(previa.style, { color: lg.cor, fontSize: `${lg.tamanho * 1.6}px`, textShadow: lg.sombra > 0 ? `2px 2px 0 rgba(0,0,0,${lg.sombra})` : 'none',
+        fontFamily: lg.fonte ? `"LegendaPrevia", "Courier New", monospace` : '"Courier New", monospace' });
+      for (const f of [...document.fonts]) if (f.family === 'LegendaPrevia') document.fonts.delete(f);
+      for (const [arq, d] of [[lg.fonte, {}], [lg.fonteNegrito, { weight: '700' }], [lg.fonteItalico, { style: 'italic' }]] as [string, FontFaceDescriptors][]) {
+        if (!arq) continue;
+        const ff = new FontFace('LegendaPrevia', `url("${this.acoes.url(arq)}")`, d);
+        document.fonts.add(ff); ff.load().catch(() => {});
+      }
+    };
+    atualizar();
+    dica(previa, 'Prévia da legenda', 'Como as legendas aparecem no jogo (aqui ampliadas). No texto das mensagens use **negrito** e *itálico*.');
+    return [
+      el('h3', {}, 'Legendas'),
+      el('p', { class: 'dica-campo' }, 'Mensagens e legendas da inspeção aparecem escritas direto sobre a tela, embaixo, sem caixa (como nos Resident Evil clássicos). O botão de interação usa a mesma fonte. No texto: **negrito** e *itálico*.'),
+      fonte('Fonte', lg.fonte, (v) => { lg.fonte = v.trim(); atualizar(); }, 'Fonte normal das legendas.'),
+      fonte('Fonte negrito', lg.fonteNegrito, (v) => { lg.fonteNegrito = v.trim(); atualizar(); }, 'Usada no texto entre **dois asteriscos**.'),
+      fonte('Fonte itálico', lg.fonteItalico, (v) => { lg.fonteItalico = v.trim(); atualizar(); }, 'Usada no texto entre *um asterisco*.'),
+      this.campo('Tamanho', this.numero(lg.tamanho, (v) => { lg.tamanho = Math.max(6, Math.min(48, v)); atualizar(); }, 1), 'Tamanho da letra em pixels da tela do jogo (ampliado junto com a tela). O jogador poderá mudar no menu de pausa (código: jogo.legenda.tamanho).'),
+      this.campo('Cor', this.cor(lg.cor, (v) => { lg.cor = v; atualizar(); }), 'Cor do texto (padrão: branco).'),
+      this.campo('Sombra', this.numero(lg.sombra, (v) => { lg.sombra = Math.max(0, Math.min(1, v)); atualizar(); }, 0.1), 'Contorno escuro para ler sobre cenário claro: 0 = sem sombra, 1 = forte.'),
+      this.campo('Distância da base (%)', this.numero(lg.margem, (v) => { lg.margem = Math.max(0, Math.min(40, v)); }, 1), 'Altura da legenda a partir de baixo da tela, em % da altura.'),
+      previa,
+    ];
   }
 
   // ---------- Campos ----------

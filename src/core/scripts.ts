@@ -435,6 +435,14 @@ interface MenuJogo {
   readonly aberto: boolean;
 }
 
+/** Legendas do jogo (mensagens e legendas da inspeção): texto direto na tela, embaixo. */
+interface Legenda {
+  /** Tamanho da letra (px da tela do jogo). Ex.: o menu de pausa muda: jogo.legenda.tamanho = 18. */
+  tamanho: number;
+  /** Volta ao tamanho da configuração (Menu e itens › Mensagens e inspeção). */
+  padrao(): void;
+}
+
 interface Hud {
   /** Define o valor de um elemento do HUD (ferramenta HUD) pela chave; se não houver elemento, mostra uma linha no canto. */
   definir(chave: ChaveHud, valor: string | number): void;
@@ -488,6 +496,8 @@ interface Jogo {
   readonly inventario: Inventario;
   /** O menu (ferramenta Menu e itens): abrir, fechar. */
   readonly menu: MenuJogo;
+  /** Legendas: tamanho da letra (o texto aceita **negrito** e *itálico*). */
+  readonly legenda: Legenda;
   readonly hud: Hud;
   /** Variáveis livres que seguem de uma fase para outra (ex.: jogo.variaveis.portaoAberto = true). */
   variaveis: Record<string, any>;
@@ -510,7 +520,7 @@ interface Jogo {
   escura: boolean;
   /** Aviso rápido na tela. */
   aviso(texto: string): void;
-  /** Caixa de mensagem (pausa o jogo até fechar). */
+  /** Legenda embaixo da tela (pausa o jogo até fechar). Aceita **negrito** e *itálico*. */
   mensagem(texto: string): void;
   /** Vai para outra sala. chegada = id da passagem onde aparece (vazio = início do jogador); transicao = "corte" | "escurecer" | "tela" ou { efeito, animacao, som, duracao, cor, texto }. */
   irPara(fase: NomeFase, opcoes?: { chegada?: string; transicao?: EfeitoTransicao | Partial<Transicao> }): void;

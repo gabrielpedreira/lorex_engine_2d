@@ -491,6 +491,7 @@ export function blocoItens(i: import('./menu').ConfigItens): { valores: Bloco; c
       receitas: 'combinações: a + b → resultado (quantidade)',
       mensagens: 'textos: aquiNao (usar no lugar errado), semEspaco ({item} = nome), naoCombina',
       inspecao: 'olho = imagem acima da personagem perto de algo com interação ("" = padrão); foco = 0 a 1, escurece as bordas perto de um ponto de inspeção',
+      legenda: 'legendas do jogo (mensagens e legendas da inspeção), escritas direto na tela embaixo: fonte/fonteNegrito/fonteItalico = arquivos em jogo/ ("" = padrão); tamanho em px da tela do jogo; cor; sombra 0 a 1; margem = % da altura a partir da base. No texto: **negrito** e *itálico*',
     },
   };
 }
